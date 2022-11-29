@@ -29,10 +29,10 @@ tickLabels <- c("Birth", "1", "2", "5", "10", "20")
 # Use the median SurfaceHoles value
 # Make one set of data for each sex
 dataToPredictM <- data.frame(logAgeDays=ageRange,
-                             SurfaceHoles=c(rep(median(df$SurfaceHoles), length(ageRange))),
+                             SurfaceHoles=c(rep(median(sampleData$SurfaceHoles), length(ageRange))),
                              sex=c(rep(as.factor("M"), length(ageRange))))
 dataToPredictF <- data.frame(logAgeDays=ageRange,
-                             SurfaceHoles=c(rep(median(df$SurfaceHoles), length(ageRange))),
+                             SurfaceHoles=c(rep(median(sampleData$SurfaceHoles), length(ageRange))),
                              sex=c(rep(as.factor("F"), length(ageRange))))
 
 
@@ -67,7 +67,7 @@ medianPhenotype <- (predictedPhenotypeM + predictedPhenotypeF)/2
 
 # Plot the original data and the predicted centiles
 medianPlot <- ggplot() +
-    geom_point(data=df, aes(x=logAgeDays, y=phenotype, color=sex), alpha=0.4) +
+    geom_point(data=sampleData, aes(x=logAgeDays, y=phenotype, color=sex), alpha=0.4) +
     geom_line(aes(ageRange, medianPhenotype, linetype="Predicted Centile")) +
     scale_x_continuous(breaks=tickMarks, labels=tickLabels) +
     xlab("Age at scan (log(years)") +
