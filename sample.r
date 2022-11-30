@@ -38,7 +38,7 @@ dataToPredictF <- data.frame(logAgeDays=ageRange,
 
 # Part 1: create the models and train them on the desired data
 # Generate GAMLSS model
-formula <- as.formula("phenotype ~ fp(logAgeDays) + SurfaceHoles + sex")    # smooth the age
+formula <- as.formula("phenotype ~ fp(logAgeDays) + SurfaceHoles + sex - 1")    # smooth the age
 gamlssModel <- gamlss(formula = formula,
                       sigma.formula = formula,
                       nu.formula = as.formula("phenotype ~ 1"),
@@ -113,3 +113,32 @@ sampleCentileFan <- ggplot() +
   ylab("Phenotype Value")
 
 print(sampleCentileFan)
+
+# Part 4: Calculate the centile a phenotype value belongs to
+# Making up data - play with patAgeYears and patPheno in particular and visually compare to sampleCentileFan
+patAgeYears <- 2                                   # age in years
+patPheno <- 26.5                                   # phenotype in phenotype units
+patLogAge <- log(patAgeYears*365.25+280, base=10)  # Convert from years to post-conception log(days)
+patSex <- as.factor("F")                           # Sex is a factor in the model
+patSurfaceHoles <- median(sampleData$SurfaceHoles) # Use the median SurfaceHoles value if not available
+
+# Create a data frame of the new data, predict using the existing model 
+patData <- data.frame(logAgeDays=c(patLogAge),
+                  SurfaceHoles=c(patSurfaceHoles),
+                  sex=c(patSex))
+predModel <- predictAll(gamlssModel, newdata=patData)
+
+# Since we don't know the centile the phenotype belongs to
+# create a densely populated range of centiles to estimate
+centileDistribution <- 1:9999/10000
+
+# Estimate the value of the phenotype at each of the small centiles
+expectedPhenotypeValue <- qGG(centileDistribution, 
+                              mu=predModel$mu, 
+                              sigma=predModel$sigma, 
+                              nu=predModel$nu)
+# Get the precise centile where the value of the patient's phenotype is closest
+# to the expected value for that centile
+patCentile <- centileDistribution[which.min(abs(patPheno - expectedPhenotypeValue))]
+
+print(patCentile)
