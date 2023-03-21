@@ -104,7 +104,7 @@ centile_predict.corrected <- function(gamlssModel, dataToPredictM, dataToPredict
   fanCentiles_F <- c()
   
   #try updating model prediction to also remove UKB site effects:
-  study_name <- Mode(dataToPredictM$study)
+  study_name <- names(which.max(table(dataToPredictM$study)))
   site_mu <- gamlssModel$mu.coefSmo[[1]]$coefficients$random$study[study_name,]
   site_sig <- gamlssModel$sigma.coefSmo[[1]]$coefficients$random$study[study_name,]
   

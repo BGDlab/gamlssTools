@@ -1,0 +1,153 @@
+---
+title: "Testing Plotting Functions"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+date: '2023-03-20'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+if(!require('pacman')) {
+  install.packages('pacman')
+}
+pacman::p_load(gamlss, gamlss.cens, gamlss.dist, gamlss.mx, gamlss.tr, ggplot2, tidyverse, ggpubr, skimr, gamlss.data, data.table, nlme, plyr, shinySIR, patchwork, ggstatsplot, qqplotr, arrangements, purrr, parallel, rlang)
+```
+
+
+**TO DO:**
+- add CI's
+
+## Prep
+
+Let's load a couple random-ish gamlss models and the dataframe they're built on
+
+```{r, echo=FALSE}
+set.seed(12345)
+cn_df <- fread("/Users/megardn/Desktop/BGD_Repos/puberty_braincharts/data/control_filt_og_data.csv", stringsAsFactors = TRUE, na.strings = "")
+
+
+GMV.int <- readRDS("/Users/megardn/Desktop/BGD_Repos/puberty_braincharts/test/GMV_int.rds")
+
+sGMV.re <- gamlss(formula = sGMV ~ bfp(log_age, powers = c(-2, -2, 3), shift = 0, scale = 1) + sex + fs_version + re(random = ~ 1|study) + sex:bfp(log_age, powers = c(1, 2, 2), shift = 0, scale = 1),
+                              sigma.formula = ~ bfp(log_age, powers = c(-2, -2), shift = 0, scale = 1) + sex + re(random = ~ 1|study),
+                              nu.formula = ~ 1, family = GG, data = na.omit(cn_df),
+                              control = gamlss.control(n.cyc = 200), trace = FALSE)
+```
+
+Call the script holding the plot functions we want to test:
+
+```{r}
+source("plotting_functions.R")
+```
+
+## Test
+
+### Set-up Functions
+
+These functions are called from the plotting functions.
+
+**`sim.data()`** - takes the dataframe you built your GAMLSS model on and creates a 2 new dfs with simulated data (male vs female participants) across the age-range, assigning fs_version and study values to whatever is most common in the original df. Expects input df to have `log_age`, `fs_version`, and `study`. Also preps x-axis labels and defines which centiles you'll be plotting.
+
+Returns object `sim`, which is a list of objects.
+
+```{r}
+sim <- sim.data(cn_df)
+names(sim)
+```
+
+**`centile_predict()`** - predicts centiles based on df simulated by `sim.data()` using the `predictAll()` and `qGG()` functions. Calculates centiles, 50th centile peak values, and age at peaks separately on male and female dfs and returns each, as well as an averaged effect across sexes. 
+
+Takes GAMLSS model obj and objects returned from `sim.data()`.
+Returns object `pred`, which is a list of objects.
+
+```{r}
+pred <- centile_predict(sGMV.re, sim$dataToPredictM, sim$dataToPredictF, sim$ageRange, sim$desiredCentiles)
+names(pred)
+```
+
+**`centile_predict.corrected()`** - same as `centile_predict` but corrects out the estimated effects of fs_version (from mu term) and study (from mu & sigma terms) parameters.
+
+**Expects `fs_version` to be a fixed effect and `study` to be a random effect fit using re() function!!!**
+
+```{r}
+pred.cor <- centile_predict.corrected(sGMV.re, sim$dataToPredictM, sim$dataToPredictF, sim$ageRange, sim$desiredCentiles)
+names(pred.cor)
+```
+
+`GGalt.variance` - copied from Simon's Nature paper [repo](https://github.com/BGDlab/brain-charts/blob/7032de9b58687a5cd2d5c6b38522fa645c6297dc/102.gamlss-recode.r)
+
+```{r}
+var <- GGalt.variance(pred$M_mu, pred$M_sigma, pred$M_nu)
+```
+
+### Plotting
+
+**`makeCentileFan()`** - basic centile fan plotting that averages across sex and predicts on Mode(fs_version) and Mode(study) of original data the gamlss was modeled on. Expects GAMLSS model, phenotype being modeled, and the name of the original df.
+
+age_transformed parameter set to TRUE or FALSE
+
+```{r}
+makeCentileFan(GMV.int, "GMV", cn_df, TRUE, "sex")
+makeCentileFan(GMV.int, "GMV", cn_df, FALSE, "sex")
+
+makeCentileFan(sGMV.re, "sGMV", cn_df, TRUE, "sex")
+makeCentileFan(sGMV.re, "sGMV", cn_df, FALSE, "sex")
+```
+
+**`makeCentileFan_sex_overlay()`** - same as `makeCentileFan` but with separate centile lines for males and females
+
+```{r}
+makeCentileFan_sex_overlay(GMV.int, "GMV", cn_df, FALSE, "sex")
+makeCentileFan_sex_overlay(GMV.int, "GMV", cn_df, TRUE, "sex")
+
+makeCentileFan_sex_overlay(sGMV.re, "sGMV", cn_df, FALSE, "sex")
+makeCentileFan_sex_overlay(sGMV.re, "sGMV", cn_df, TRUE, "sex")
+```
+
+**`makeCentileFan.corrected()`** - centile fan plot that averages across sexes, correcting for fs_version and study effects in both centiles and data points plotted. 
+
+**Expects `fs_version` to be a fixed effect and `study` to be a random effect fit using re() function!!!**
+
+age_transformed parameter set to TRUE or FALSE
+
+```{r}
+makeCentileFan.corrected(sGMV.re, "sGMV", cn_df, TRUE, "sex")
+#makeCentileFan(sGMV.re, "sGMV", cn_df, TRUE, "sex")
+makeCentileFan.corrected(sGMV.re, "sGMV", cn_df, FALSE, "sex")
+```
+
+**`makeCentileFan_sex_overlay.corrected()`** - same as `makeCentileFan.corrected` but with separate centile lines for males and females
+
+```{r}
+makeCentileFan_sex_overlay.corrected(sGMV.re, "sGMV", cn_df, TRUE, "sex")
+makeCentileFan_sex_overlay.corrected(sGMV.re, "sGMV", cn_df, FALSE, "sex")
+```
+
+**`plot.gamlss.var()`** - plots variance from predicted GAMLSS model separately for males and females.
+
+age_transformed parameter set to TRUE or FALSE
+
+```{r}
+plot.gamlss.var(sGMV.re, "sGMV", cn_df, TRUE)
+plot.gamlss.var(GMV.int, "GMV", cn_df, FALSE)
+```
+
+## Experimental
+
+### Log-Log(TBV) correction
+
+This function takes log(phenotype) ~ log(TBV) models and plots log(pheno) by age. It predicts on simulated data where for each age, log_TBV is the mean log_TBV (or roughly imputed mean) for that sex at that given age. Hence the "experimental" label, since, as you can see, it's pretty rough.
+
+```{r, echo=FALSE}
+log_wmv_refit <- gamlss(formula = log_WMV ~ sex + fs_version + random(study) + log_TBV + bfp(log_age, powers = c(-2, 3, 3), shift = 0, scale = 1),
+                      sigma.formula = ~ sex + random(study) + bfp(log_age, powers = c(0, 3), shift = 0, scale = 1),
+                      nu.formula = ~ 1,
+                      control = gamlss.control(n.cyc = 200), 
+                      family = GG, data=na.omit(cn_df), trace = FALSE)
+```
+
+```{r}
+makeCentileFan_sex_overlay.logTBV(log_wmv_refit, "log_WMV", cn_df, TRUE, "sex")
+```
