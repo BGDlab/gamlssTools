@@ -18,6 +18,10 @@
 # makeCentileFan_sex_overlay.corrected()
 # plot.gamlss.var()
 
+# experimental:
+# sim.data.logTBV()
+# makeCentileFan_sex_overlay.logTBV()
+
 ################################################
 
 library(gamlss)    # fit the model and predict centiles
@@ -51,39 +55,40 @@ sim.data <- function(df){
   minAge <- min(df$log_age)
   maxAge <- max(df$log_age)
   ageRange <- seq(minAge, maxAge, 0.005)  # generate an age range with increments of 0.005
-
+  
   #sim data
   dataToPredictM <- data.frame(log_age=ageRange,
                                sex=c(rep(as.factor("Male"), length(ageRange))),
                                fs_version=c(rep(Mode(df$fs_version), length(ageRange))),
-                               study=c(rep(Mode(df$study), length(ageRange))))
+                               study=c(as.factor(rep(Mode(df$study), length(ageRange)))))
   dataToPredictF <- data.frame(log_age=ageRange,
                                sex=c(rep(as.factor("Female"), length(ageRange))),
                                fs_version=c(rep(Mode(df$fs_version), length(ageRange))),
                                study=c(as.factor(rep(Mode(df$study), length(ageRange)))))
-
+  
   # List of centiles for the fan plot
   desiredCentiles <- c(0.004, 0.02, 0.1, 0.25, 0.5, 0.75, 0.9, 0.98, 0.996)
-
+  
   # Set up a list of tick marks to use on log(post-conception age) x-axes
   tickMarks_log <- c()
   for (year in c(0, 1, 2, 5, 10, 20, 50, 100)){ # years
     tickMarks_log <- append(tickMarks_log, log(year*365.25 + 280, base=10))
-    }
+  }
   tickLabels_log <- c("Birth", "1", "2", "5", "10", "20", "50", "100")
-
+  
   # Set up a list of tick marks to use on non-log-scaled post-conception age x-axes
   tickMarks_unscaled <- c()
   for (year in seq(0, 100, by=10)){ # years
     tickMarks_unscaled <- append(tickMarks_unscaled, year*365.25 + 280)
-    }
+  }
   tickLabels_unscaled <- c("Birth", "", "", "", "", "50", "", "", "", "", "100")
-
+  
   # return
   sim <- list(ageRange, dataToPredictM, dataToPredictF, tickMarks_log, tickLabels_log, tickMarks_unscaled, tickLabels_unscaled, desiredCentiles)
   names(sim) <- c("ageRange", "dataToPredictM", "dataToPredictF", "tickMarks_log", "tickLabels_log", "tickMarks_unscaled", "tickLabels_unscaled", "desiredCentiles")
   return(sim)
 }
+
 
 ### RUN PREDICTIONS - FS & SITE CORRECTED
 # predict centiles for simulated data with  FS Version and Study Site corrected. Note! Expects `fs_version` as a fixed effect and `study` as a random effect fit using re() function!!!
@@ -99,7 +104,7 @@ centile_predict.corrected <- function(gamlssModel, dataToPredictM, dataToPredict
   fanCentiles_F <- c()
   
   #try updating model prediction to also remove UKB site effects:
-  study_name <- max(dataToPredictM$study)
+  study_name <- Mode(dataToPredictM$study)
   site_mu <- gamlssModel$mu.coefSmo[[1]]$coefficients$random$study[study_name,]
   site_sig <- gamlssModel$sigma.coefSmo[[1]]$coefficients$random$study[study_name,]
   
@@ -118,7 +123,7 @@ centile_predict.corrected <- function(gamlssModel, dataToPredictM, dataToPredict
                               nu=predictedModelF$nu)
     
     fanCentiles[[i]] <- (fanCentiles_M[[i]] + fanCentiles_F[[i]])/2
-    }
+  }
   # to get peaks, match median point with age ranges
   medians_M <- data.frame("ages"=ageRange,
                           "median"=fanCentiles_M[[5]])
@@ -189,16 +194,16 @@ centile_predict <- function(gamlssModel, dataToPredictM, dataToPredictF, ageRang
 ### EXTRACT VARIANCE
 # copied from Simon's nature paper repo
 GGalt.variance <- function(mu, sigma, nu){
-##AA <- log(mu^2) - log( (1/(sigma^2 * nu^2))^(2/nu) ) - 2*lgamma(1/(sigma^2 * nu^2)) [fixed in v10]
-AA <- 2*log(mu) - ((2/nu)*(-1)*log( (sigma^2 * nu^2) )) - 2*lgamma(1/(sigma^2 * nu^2))
-ww <- lgamma(1/(sigma^2 * nu^2) + 2/nu) + lgamma(1/(sigma^2 * nu^2))
-uu <- 2*lgamma(1/(sigma^2 * nu^2) + 1/nu)
-BB <- ww + log( (1 - exp( uu - ww )) )
-YES <- AA + BB
-
-ifelse(nu > 0 | (nu < 0 & sigma^2 * abs(nu) < 0.5),
-       ifelse(is.nan(BB),NA,exp( YES )),
-       Inf)
+  ##AA <- log(mu^2) - log( (1/(sigma^2 * nu^2))^(2/nu) ) - 2*lgamma(1/(sigma^2 * nu^2)) [fixed in v10]
+  AA <- 2*log(mu) - ((2/nu)*(-1)*log( (sigma^2 * nu^2) )) - 2*lgamma(1/(sigma^2 * nu^2))
+  ww <- lgamma(1/(sigma^2 * nu^2) + 2/nu) + lgamma(1/(sigma^2 * nu^2))
+  uu <- 2*lgamma(1/(sigma^2 * nu^2) + 1/nu)
+  BB <- ww + log( (1 - exp( uu - ww )) )
+  YES <- AA + BB
+  
+  ifelse(nu > 0 | (nu < 0 & sigma^2 * abs(nu) < 0.5),
+         ifelse(is.nan(BB),NA,exp( YES )),
+         Inf)
 }
 
 ################ MAKE CENTILE FAN ################ 
@@ -230,8 +235,8 @@ makeCentileFan <- function(gamlssModel, phenotype, df, age_transformed, color_va
   }
   
   #plot!
-  yvar <- df[,get(phenotype)]
-  color_col <- df[,get(color_var)]
+  yvar <- df[[phenotype]]
+  color_col <- df[[color_var]]
   
   sampleCentileFan <- ggplot() +
     geom_point(aes(x=age_col, y=yvar, color=color_col), alpha=0.5) +
@@ -252,7 +257,7 @@ makeCentileFan <- function(gamlssModel, phenotype, df, age_transformed, color_va
     theme(legend.title= element_blank())+
     xlab(paste("Age at Scan", unit_text)) +
     ylab(deparse(substitute(phenotype)))
-    annotate("text", x = max(age_col)-0.5, y = max(yvar)-10000, label = paste0("BIC=",gamlssModel$sbc))
+  annotate("text", x = max(age_col)-0.5, y = max(yvar)-10000, label = paste0("BIC=",gamlssModel$sbc))
   print(sampleCentileFan)
   
 }
@@ -285,8 +290,9 @@ makeCentileFan_sex_overlay<- function(gamlssModel, phenotype, df, age_transforme
     unit_text <- "(years)"
   }
   #plot!
-  yvar <- df[,get(phenotype)]
-  color_col <- df[,get(color_var)]
+  #sometimes df[,get()] works, sometimes not found...????
+  yvar <- df[[phenotype]]
+  color_col <- df[[color_var]]
   
   sampleCentileFan <- ggplot() +
     geom_point(aes(x=age_col, y=yvar, color=color_col), alpha=0.3) +
@@ -335,7 +341,7 @@ makeCentileFan.corrected <- function(gamlssModel, phenotype, df, age_transformed
   plot_df <- left_join(df, site_effects.df, by="study")
   plot_df <- plot_df %>%
     mutate_at(.vars = vars(sGMV),  .funs = funs(pheno_adjust = exp(log(.) - site_int)))
-
+  
   #DEAL WITH FS VERSION EFFECTS
   #get values
   fs.terms <- paste0("fs_version", as.list(levels(df$fs_version))) #list all levels of fs_version and add "fs_version" to model match estimate outputs
@@ -347,11 +353,11 @@ makeCentileFan.corrected <- function(gamlssModel, phenotype, df, age_transformed
     rename_at(2, ~"fs_effect")
   #recode levels to drop "fs_version" prefix
   levels(fs_effects$fs_version) <- gsub("fs_version", "", levels(fs_effects$fs_version))
-
+  
   #join back into df
   plot_df <- left_join(plot_df, fs_effects, by="fs_version") %>%
     mutate_at(.vars = vars(pheno_adjust),  .funs = funs(pheno_adjust = exp(log(.) - fs_effect)))
-
+  
   #un-log-transform age if necessary
   if(age_transformed == TRUE) {
     ages <- sim$ageRange
@@ -369,10 +375,10 @@ makeCentileFan.corrected <- function(gamlssModel, phenotype, df, age_transformed
     peak_age <- un_log(pred.corrected$peak_age)
     unit_text <- "(years)"
   }
-
+  
   #plot!
-  color_col <- plot_df[,get(color_var)]
-
+  color_col <- plot_df[[color_var]]
+  
   sampleCentileFan <- ggplot() +
     geom_point(aes(x=age_col, y=plot_df$pheno_adjust, color=color_col), alpha=0.5) +
     scale_colour_manual(values=c("#5AAE61FF", "#9970ABFF")) +
@@ -455,7 +461,7 @@ makeCentileFan_sex_overlay.corrected <- function(gamlssModel, phenotype, df, age
   }
   
   #plot!
-  color_col <- plot_df[,get(color_var)]
+  color_col <- plot_df[[color_var]]
   
   sampleCentileFan <- ggplot() +
     geom_point(aes(x=age_col, y=plot_df$pheno_adjust, color=color_col), alpha=0.5) +
@@ -526,3 +532,143 @@ plot.gamlss.var <- function(gamlssModel, pheno, df, age_transformed){
     xlab(paste("Age at Scan", unit_text)) +
     ylab("Variance")
 }
+
+#### Experimental - log-log corrected modeling plots
+
+### SIMULATE Log_TBV CORR DATA - expects df with `log_pheno`, log_age`, `fs_version`, `study`, and `log_TBV`
+#setup to simulate data based on the most common fs_version & study in the original dataset
+#also preps centile values and x-axis labels
+sim.data.logTBV <- function(df){
+  minAge <- min(df$log_age)
+  maxAge <- max(df$log_age)
+  ageRange <- seq(minAge, maxAge, 0.005)  # generate an age range with increments of 0.005
+  shift_ageRange <-seq((minAge-0.0025), (maxAge+0.0025), 0.005)
+  
+  #sim data
+  dataToPredictM <- data.frame(log_age=ageRange,
+                               sex=c(rep(as.factor("Male"), length(ageRange))),
+                               fs_version=c(rep(Mode(df$fs_version), length(ageRange))),
+                               study=c(as.factor(rep(Mode(df$study), length(ageRange)))))
+  #test simulating log_TBV as mean for given age
+  df_M <- df %>%
+    filter(sex=="Male") %>%
+    arrange(log_age) %>%
+    dplyr::select(log_age, log_TBV)
+  #bin male data by age and get average log_TBV at each age
+  df_M_agg <- aggregate(df_M, #the data frame
+                        by=list(cut(df_M$log_age,shift_ageRange)),
+                        mean, drop=FALSE) %>% #the aggregating function
+    mutate_if(is.numeric,
+              ~ case_when(is.na(.) & is.na(lead(.)) & is.na(lag(.)) & is.na(lead(., n=2)) ~ mean(c(lead(., n=3), lead(., n=4), lag(., n=3), lag(.,n=4)), na.rm=TRUE),
+                          is.na(.) & is.na(lead(.)) & is.na(lag(.)) & is.na(lag(., n=2)) ~ mean(c(lead(., n=3), lead(., n=4), lag(., n=3), lag(.,n=4)), na.rm=TRUE),
+                          is.na(.) & is.na(lead(.)) & is.na(lag(.)) ~ (dplyr::lead(., n=2) + dplyr::lag(., n=2)) / 2,
+                          is.na(.) & is.na(lead(.)) ~ lag(.),
+                          is.na(.) & is.na(lag(.)) ~ lead(.),
+                          is.na(.) ~ (dplyr::lead(.) + dplyr::lag(.)) / 2,
+                          TRUE ~ .)) #attempting to impute NA's as average of row(s) before and after 
+  #add into predicting dataframe
+  dataToPredictM$log_TBV <- df_M_agg$log_TBV
+  
+  dataToPredictF <- data.frame(log_age=ageRange,
+                               sex=c(rep(as.factor("Female"), length(ageRange))),
+                               fs_version=c(rep(Mode(df$fs_version), length(ageRange))),
+                               study=c(as.factor(rep(Mode(df$study), length(ageRange)))))
+  #test simulating log_TBV as mean for given age
+  df_F <- df %>%
+    filter(sex=="Female") %>%
+    arrange(log_age) %>%
+    dplyr::select(log_age, log_TBV)
+  #bin female data by age and get average log_TBV at each age
+  df_F_agg <- aggregate(df_F, #the data frame
+                        by=list(cut(df_F$log_age,shift_ageRange)),
+                        mean, drop=FALSE) %>% #the aggregating function
+    mutate_if(is.numeric,
+              ~ case_when(is.na(.) & is.na(lead(.)) & is.na(lag(.)) & is.na(lead(., n=2)) ~ mean(c(lead(., n=3), lead(., n=4), lag(., n=3), lag(.,n=4)), na.rm=TRUE),
+                          is.na(.) & is.na(lead(.)) & is.na(lag(.)) & is.na(lag(., n=2)) ~ mean(c(lead(., n=3), lead(., n=4), lag(., n=3), lag(.,n=4)), na.rm=TRUE),
+                          is.na(.) & is.na(lead(.)) & is.na(lag(.)) ~ (dplyr::lead(., n=2) + dplyr::lag(., n=2)) / 2,
+                          is.na(.) & is.na(lead(.)) ~ lag(.),
+                          is.na(.) & is.na(lag(.)) ~ lead(.),
+                          is.na(.) ~ (dplyr::lead(.) + dplyr::lag(.)) / 2,
+                          TRUE ~ .)) #attempting to impute NA's as average of row(s) before and after 
+  #add into predicting dataframe
+  dataToPredictF$log_TBV <- df_F_agg$log_TBV
+  
+  # List of centiles for the fan plot
+  desiredCentiles <- c(0.004, 0.02, 0.1, 0.25, 0.5, 0.75, 0.9, 0.98, 0.996)
+  
+  # Set up a list of tick marks to use on log(post-conception age) x-axes
+  tickMarks_log <- c()
+  for (year in c(0, 1, 2, 5, 10, 20, 50, 100)){ # years
+    tickMarks_log <- append(tickMarks_log, log(year*365.25 + 280, base=10))
+  }
+  tickLabels_log <- c("Birth", "1", "2", "5", "10", "20", "50", "100")
+  
+  # Set up a list of tick marks to use on non-log-scaled post-conception age x-axes
+  tickMarks_unscaled <- c()
+  for (year in seq(0, 100, by=10)){ # years
+    tickMarks_unscaled <- append(tickMarks_unscaled, year*365.25 + 280)
+  }
+  tickLabels_unscaled <- c("Birth", "", "", "", "", "50", "", "", "", "", "100")
+  
+  # return
+  sim <- list(ageRange, dataToPredictM, dataToPredictF, tickMarks_log, tickLabels_log, tickMarks_unscaled, tickLabels_unscaled, desiredCentiles)
+  names(sim) <- c("ageRange", "dataToPredictM", "dataToPredictF", "tickMarks_log", "tickLabels_log", "tickMarks_unscaled", "tickLabels_unscaled", "desiredCentiles")
+  return(sim)
+}
+
+################ MAKE CENTILE FAN - SEX-SPECIFIC for a LOG-LOG TBV-corrected model ################
+# plot centile fans calculated separately for males and females. Predicts on Mode(fs_version) and Mode(study) of original data
+
+makeCentileFan_sex_overlay.logTBV<- function(gamlssModel, phenotype, df, age_transformed, color_var)
+{
+  sim <- sim.data.logTBV(df) #simulate data
+  pred <- centile_predict(gamlssModel, sim$dataToPredictM, sim$dataToPredictF, sim$ageRange, sim$desiredCentiles) #predict centiles
+
+  #un-log-transform age if necessary
+  if(age_transformed == TRUE) {
+    ages <- sim$ageRange
+    age_col <- df$log_age
+    tickMarks <- sim$tickMarks_log
+    tickLabels <- sim$tickLabels_log
+    male_peak_age <- pred$peak_age_M
+    female_peak_age <- pred$peak_age_F
+    unit_text <- "(log(years))"
+  }
+  if(age_transformed == FALSE) {
+    ages <- sapply(sim$ageRange, un_log)
+    age_col <- df$age_days
+    tickMarks <- sim$tickMarks_unscaled
+    tickLabels <- sim$tickLabels_unscaled
+    male_peak_age <- un_log(pred$peak_age_M)
+    female_peak_age <- un_log(pred$peak_age_F)
+    unit_text <- "(years)"
+  }
+  #plot!
+  yvar <- df[[phenotype]]
+  color_col <- df[[color_var]]
+
+  sampleCentileFan <- ggplot() +
+    geom_point(aes(x=age_col, y=yvar, color=color_col), alpha=0.3) +
+    scale_colour_manual(values=c("#5AAE61FF", "#9970ABFF")) +
+    geom_line(aes(x=ages, y=pred$fanCentiles_M[[1]]), alpha=0.1, linetype="dashed") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_M[[3]]), alpha=0.3, linetype="dashed") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_M[[5]]), linetype="dashed", color="#40004BFF") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_M[[7]]), alpha=0.3, linetype="dashed") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_M[[9]]), alpha=0.1, linetype="dashed") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_F[[1]]), alpha=0.1, linetype="longdash") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_F[[3]]), alpha=0.3, linetype="longdash") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_F[[5]]), linetype="longdash", color="#00441BFF") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_F[[7]]), alpha=0.3, linetype="longdash") +
+    geom_line(aes(x=ages, y=pred$fanCentiles_F[[9]]), alpha=0.1, linetype="longdash") +
+    geom_point(aes(x=male_peak_age, y=pred$peak_M), color="#40004BFF", size=3) +
+    geom_point(aes(x=female_peak_age, y=pred$peak_F), color="#00441BFF", size=3) +
+    scale_x_continuous(breaks=tickMarks, labels=tickLabels,
+                       limits=c(tickMarks[[1]], max(age_col))) +
+    labs(title=deparse(substitute(gamlssModel))) +
+    theme(legend.title = element_blank())+
+    xlab(paste("Age at Scan", unit_text)) +
+    ylab(deparse(substitute(phenotype)))
+
+  print(sampleCentileFan)
+}
+
