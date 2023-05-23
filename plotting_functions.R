@@ -17,6 +17,7 @@
 # makeCentileFan.corrected()
 # makeCentileFan_sex_overlay.corrected()
 # plot.gamlss.var()
+# correct.points()
 
 # experimental:
 # sim.data.logTBV()
@@ -330,34 +331,9 @@ makeCentileFan.corrected <- function(gamlssModel, phenotype, df, age_transformed
 {
   sim <- sim.data(df) #simulate data
   pred.corrected <- centile_predict.corrected(gamlssModel, sim$dataToPredictM, sim$dataToPredictF, sim$ageRange, sim$desiredCentiles) #predict sex-averaged centiles
-  
-  #DEAL WITH SITE EFFECTS in individual data points
-  site_effects <- gamlssModel$mu.coefSmo[[1]]$coefficients$random$study
-  #Ok, so i think this means y (the IDP) corrected for site will be y + log(beta_study)
-  site_effects.df <- as.data.frame(site_effects) %>%
-    rownames_to_column(var="study") %>%
-    rename_at(2, ~"site_int" )
-  #join this back with the study data to plot
-  plot_df <- left_join(df, site_effects.df, by="study")
-  plot_df <- plot_df %>%
-    mutate_at(.vars = vars(sGMV),  .funs = funs(pheno_adjust = exp(log(.) - site_int)))
-  
-  #DEAL WITH FS VERSION EFFECTS
-  #get values
-  fs.terms <- paste0("fs_version", as.list(levels(df$fs_version))) #list all levels of fs_version and add "fs_version" to model match estimate outputs
-  fs_effects <- sapply(fs.terms, get.mu.coeff, gamlssModel=gamlssModel) %>%
-    as.data.frame() %>%
-    mutate_all(~replace_na(.,0)) %>%
-    rownames_to_column(var="fs_version") %>%
-    mutate(fs_version=as.factor(fs_version)) %>%
-    rename_at(2, ~"fs_effect")
-  #recode levels to drop "fs_version" prefix
-  levels(fs_effects$fs_version) <- gsub("fs_version", "", levels(fs_effects$fs_version))
-  
-  #join back into df
-  plot_df <- left_join(plot_df, fs_effects, by="fs_version") %>%
-    mutate_at(.vars = vars(pheno_adjust),  .funs = funs(pheno_adjust = exp(log(.) - fs_effect)))
-  
+  v <- as.character(substitute(phenotype))
+  plot_df <- correct.points(gamlssModel=gamlssModel, pt=v, df=df) #correct points
+
   #un-log-transform age if necessary
   if(age_transformed == TRUE) {
     ages <- sim$ageRange
@@ -397,7 +373,7 @@ makeCentileFan.corrected <- function(gamlssModel, phenotype, df, age_transformed
     labs(title=deparse(substitute(gamlssModel))) +
     theme(legend.title= element_blank())+
     xlab(paste("Age at Scan", unit_text)) +
-    ylab(deparse(substitute(phenotype)))
+    #ylab(deparse(substitute(phenotype)))
   annotate("text", x = max(age_col)-0.5, y = max(plot_df$pheno_adjust)-10000, label = paste0("BIC=",gamlssModel$sbc))
   print(sampleCentileFan)
 }
@@ -413,32 +389,8 @@ makeCentileFan_sex_overlay.corrected <- function(gamlssModel, phenotype, df, age
   sim <- sim.data(df) #simulate data
   pred.corrected <- centile_predict.corrected(gamlssModel, sim$dataToPredictM, sim$dataToPredictF, sim$ageRange, sim$desiredCentiles) #predict sex-averaged centiles
   
-  #DEAL WITH SITE EFFECTS in individual data points
-  site_effects <- gamlssModel$mu.coefSmo[[1]]$coefficients$random$study
-  #Ok, so i think this means y (the IDP) corrected for site will be y + log(beta_study)
-  site_effects.df <- as.data.frame(site_effects) %>%
-    rownames_to_column(var="study") %>%
-    rename_at(2, ~"site_int" )
-  #join this back with the study data to plot
-  plot_df <- left_join(df, site_effects.df, by="study")
-  plot_df <- plot_df %>%
-    mutate_at(.vars = vars(sGMV),  .funs = funs(pheno_adjust = exp(log(.) - site_int)))
-  
-  #DEAL WITH FS VERSION EFFECTS
-  #get values
-  fs.terms <- paste0("fs_version", as.list(levels(df$fs_version))) #list all levels of fs_version and add "fs_version" to model match estimate outputs
-  fs_effects <- sapply(fs.terms, get.mu.coeff, gamlssModel=gamlssModel) %>%
-    as.data.frame() %>%
-    mutate_all(~replace_na(.,0)) %>%
-    rownames_to_column(var="fs_version") %>%
-    mutate(fs_version=as.factor(fs_version)) %>%
-    rename_at(2, ~"fs_effect")
-  #recode levels to drop "fs_version" prefix
-  levels(fs_effects$fs_version) <- gsub("fs_version", "", levels(fs_effects$fs_version))
-  
-  #join back into df
-  plot_df <- left_join(plot_df, fs_effects, by="fs_version") %>%
-    mutate_at(.vars = vars(pheno_adjust),  .funs = funs(pheno_adjust = exp(log(.) - fs_effect)))
+  v <- as.character(substitute(phenotype))
+  plot_df <- correct.points(gamlssModel=gamlssModel, pt=v, df=df) #correct points
   
   #un-log-transform age if necessary
   if(age_transformed == TRUE) {
@@ -533,6 +485,40 @@ plot.gamlss.var <- function(gamlssModel, pheno, df, age_transformed){
     ylab("Variance")
 }
 
+################ CORRECT POINTS ################
+# use re() fit model to remove site & fs effects for cleaner plotting of each datapoint
+correct.points <- function(gamlssModel, pt, df){
+  
+  #DEAL WITH SITE EFFECTS in individual data points
+  site_effects <- gamlssModel$mu.coefSmo[[1]]$coefficients$random$study
+  #Ok, so i think this means y (the IDP) corrected for site will be y + log(beta_study)
+  site_effects.df <- as.data.frame(site_effects) %>%
+    rownames_to_column(var="study") %>%
+    rename_at(2, ~"site_int" )
+  #join this back with the study data to plot
+  plot_df <- left_join(df, site_effects.df, by="study")
+  # v.col <- as.character(substitute(pt))
+  v.col <- pt
+  plot_df <- plot_df %>%
+    mutate_at(.vars = vars(v.col),  .funs = funs(pheno_adjust = exp(log(.) - site_int)))
+  
+  #DEAL WITH FS VERSION EFFECTS
+  #get values
+  fs.terms <- paste0("fs_version", as.list(levels(df$fs_version))) #list all levels of fs_version and add "fs_version" to model match estimate outputs
+  fs_effects <- sapply(fs.terms, get.mu.coeff, gamlssModel=gamlssModel) %>%
+    as.data.frame() %>%
+    mutate_all(~replace_na(.,0)) %>%
+    rownames_to_column(var="fs_version") %>%
+    mutate(fs_version=as.factor(fs_version)) %>%
+    rename_at(2, ~"fs_effect")
+  #recode levels to drop "fs_version" prefix
+  levels(fs_effects$fs_version) <- gsub("fs_version", "", levels(fs_effects$fs_version))
+  
+  #join back into df
+  plot_df <- left_join(plot_df, fs_effects, by="fs_version") %>%
+    mutate_at(.vars = vars(pheno_adjust),  .funs = funs(pheno_adjust = exp(log(.) - fs_effect)))
+  return(plot_df)
+}
 #### Experimental - log-log corrected modeling plots
 
 ### SIMULATE Log_TBV CORR DATA - expects df with `log_pheno`, log_age`, `fs_version`, `study`, and `log_TBV`

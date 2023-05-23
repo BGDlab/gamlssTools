@@ -1,9 +1,9 @@
 ---
 title: "Testing Plotting Functions"
 output:
-  pdf_document: default
   html_document:
     df_print: paged
+  pdf_document: default
 date: '2023-03-20'
 ---
 
@@ -132,6 +132,14 @@ age_transformed parameter set to TRUE or FALSE
 ```{r}
 plot.gamlss.var(sGMV.re, "sGMV", cn_df, TRUE)
 plot.gamlss.var(GMV.int, "GMV", cn_df, FALSE)
+```
+
+
+**`correct.points()`** - function used within site/fs_version corrected plotting to account for these parameter's estimate's effects on each data point. Expects `re()` to be used when fitting random effect of site. Can also be called on it's own. Returns new df with each subject's phenotype corrected.
+
+```{r}
+plot_df <- correct.points(sGMV.re, "GMV", cn_df)
+summary(plot_df)
 ```
 
 ## Experimental
