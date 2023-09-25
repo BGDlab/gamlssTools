@@ -172,18 +172,20 @@ centile_predict <- function(gamlssModel, dataToPredictM, dataToPredictF, ageRang
     fanCentiles[[i]] <- (fanCentiles_M[[i]] + fanCentiles_F[[i]])/2
   }
   # to get peaks, match median point with age ranges
+  med.idx <- ceiling(length(desiredCentiles) / 2) #find median centile
+  
   medians_M <- data.frame("ages"=ageRange,
-                          "median"=fanCentiles_M[[5]])
+                          "median"=fanCentiles_M[[med.idx]])
   peak_M <- medians_M[which.max(medians_M$median),]$median
   peak_age_M <- medians_M[which.max(medians_M$median),]$ages 
   
   medians_F <- data.frame("ages"=ageRange,
-                          "median"=fanCentiles_F[[5]])
+                          "median"=fanCentiles_F[[med.idx]])
   peak_F <- medians_F[which.max(medians_F$median),]$median
   peak_age_F <- medians_F[which.max(medians_F$median),]$ages
   
   medians <- data.frame("ages"=ageRange,
-                        "median"=fanCentiles[[5]])
+                        "median"=fanCentiles[[med.idx]])
   peak <- medians[which.max(medians$median),]$median
   peak_age <- medians[which.max(medians$median),]$ages
   
@@ -658,3 +660,51 @@ makeCentileFan_sex_overlay.logTBV<- function(gamlssModel, phenotype, df, age_tra
   print(sampleCentileFan)
 }
 
+### SIMULATE DATA 2 - attempting a more flexible version of data simulation
+sim.data2 <- function(df, gamlss_mod){
+  var_list <- all.vars(formula(gamlss_mod))
+  var_classes <- sapply(df[var_list], class)
+  
+  age.var <- var_list[grep("age", var_list)]
+  sex.var <- var_list[grep("sex", var_list)]
+  
+  minAge <- min(df$age.var)
+  maxAge <- max(df$age.var)
+  ageRange <- seq(minAge, maxAge, 0.005)  # generate an age range with increments of 0.005
+  
+  #sim data
+  dataToPredictM <- data.frame()
+  for (i in 1:length(selected_vars)) {
+    var_name <- selected_vars[i]
+    var_class <- selected_classes[i]
+    
+    # Simulate data based on variable class
+    if (var_class == "numeric") {
+      simulated_data <- rnorm(n_rows)
+    } else if (var_class == "integer") {
+      simulated_data <- sample(-100:100, n_rows, replace = TRUE)
+    } else if (var_class == "factor") {
+      levels <- unique(original_df[[var_name]])
+      simulated_data <- sample(levels, n_rows, replace = TRUE)
+      simulated_data <- as.factor(simulated_data)
+    } else if (var_class == "character") {
+      simulated_data <- replicate(n_rows, paste(sample(letters, 5, replace = TRUE), collapse = ""))
+    } else {
+      # Handle other variable types here
+      simulated_data <- rep(NA, n_rows)
+    }
+    
+    
+  dataToPredictF <- data.frame(log_age=ageRange,
+                               sex=c(rep(as.factor("Female"), length(ageRange))),
+                               fs_version=c(rep(Mode(df$fs_version), length(ageRange))),
+                               study=c(as.factor(rep(Mode(df$study), length(ageRange)))))
+  
+  # List of centiles for the fan plot
+  desiredCentiles <- c(0.004, 0.02, 0.1, 0.25, 0.5, 0.75, 0.9, 0.98, 0.996)
+  
+  # return
+  sim <- list(ageRange, dataToPredictM, dataToPredictF, desiredCentiles)
+  names(sim) <- c("ageRange", "dataToPredictM", "dataToPredictF", "desiredCentiles")
+  return(sim)
+}
