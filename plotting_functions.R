@@ -357,6 +357,20 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
     gather(id.vars, values, !any_of(c(color_var, x_var)))
   #return(long_centile_df) #testing
   
+  # subfunction to define thickness of each centile line, with the 50th being thickest
+  map_thickness <- function(x){
+    if (x == 0.5){
+      return(1.75)
+    } else if (x < 0.1 || x > 0.9){
+      return (0.25)
+    } else if (x < 0.25 || x > 0.75){
+      return (0.5)
+    } else {
+      return(1)
+    }
+  }
+  
+  centile_linewidth <- sapply(desiredCentiles, map_thickness)
   
   #plot base gg object
   
@@ -365,7 +379,9 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
       geom_point(aes(y = df[[pheno]], x = df[[x_var]], color=df[[color_var]], fill=df[[color_var]])) +
       geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
                     group = interaction(long_centile_df$id.vars, long_centile_df[[color_var]]),
-                    color = long_centile_df[[color_var]]))
+                    color = long_centile_df[[color_var]],
+                    linewidth = long_centile_df$id.vars)) + 
+      scale_linewidth_manual(values = centile_linewidth)
   } else if (average_over == TRUE){
     base_plot_obj <- ggplot() +
       geom_point(data=df, aes(y = pheno, x = x_var)) + 
