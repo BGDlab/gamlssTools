@@ -35,13 +35,19 @@ library(tidyverse)
 mode = function(x){
   ta = table(x)
   tam = max(ta)
-  if (all(ta == tam))
+  if (all(ta == tam)){
     mod = NA
-  else
-    if(is.numeric(x))
-      mod = as.numeric(names(ta)[ta == tam])
-  else
+  } else if(is.numeric(x)){
+    mod = as.numeric(names(ta)[ta == tam])
+  } else{
     mod = names(ta)[ta == tam]
+  }
+  
+  #if more than 1 mode, return first/smallest value
+  if (length(mod) > 1 ) {
+    mod <- mod[1]
+  }
+  
   return(mod)
 }
 ### UN-LOG-SCALE - used to un-transform log_age values
@@ -71,7 +77,6 @@ sim_data <- function(df, x_var, color_var){
   sim_df_list <- list()
   # make new dfs iteratively over color variable's values
   for (color_level in unique(df[[color_var]])){
-    print(paste("simulating for", color_var, "=", color_level))
     
     # initialize right size df
     new_df <- data.frame(matrix(ncol = ncol(df), nrow = n_rows))
@@ -85,6 +90,9 @@ sim_data <- function(df, x_var, color_var){
         new_df[[col]] <- rep(color_level, n_rows)
       } else if (col == x_var) {
         new_df[[col]] <- x_range
+      } else if (is.numeric(df[[col]])){
+        mean_value <- mean(df[[col]])
+        new_df[[col]] <- rep(mean_value, n_rows)
       } else {
         mode_value <- mode(df[[col]])
         new_df[[col]] <- rep(mode_value, n_rows)
@@ -99,20 +107,51 @@ sim_data <- function(df, x_var, color_var){
 }
 
 ### RUN PREDICTIONS
+
+# subfunction to predict centiles based on distribution type and number of params
+pred_centile <- function(centile_returned, df, q_func, n_param) {
+  #mu and sigma only
+  if (n_param == 1) {
+    x <- eval(call(q_func,
+                   centile_returned,
+                   mu=df$mu))
+  } else if (n_param == 2) {
+    x <- eval(call(q_func,
+                   centile_returned,
+                   mu=df$mu,
+                   sigma=df$sigma))
+  } else if (n_param == 3) {
+    x <- eval(call(q_func,
+                   centile_returned,
+                   mu=df$mu,
+                   sigma=df$sigma,
+                   nu=df$nu))
+  } else if (n_param == 4){
+    x <- eval(call(q_func,
+                   centile_returned,
+                   mu=df$mu,
+                   sigma=df$sigma,
+                   nu=df$nu,
+                   tau=df$tau))
+  } else {
+    stop("Error: GAMLSS model should contain 1 to 4 moments")
+  }
+}
+
 #predict centiles for simulated data
 centile_predict <- function(gamlssModel, 
                             sim_df_list, 
                             x_var, 
                             desiredCentiles = c(0.004, 0.02, 0.1, 0.25, 0.5, 0.75, 0.9, 0.98, 0.996), 
                             average_over = FALSE,
-                            get_peaks=TRUE){
-  
-  #make sure variable names are correct
-  stopifnot(x_var %in% names(df))
+                            get_peaks = TRUE){
   
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
   qfun <- paste0("q", fname)
+  
+  print("Returning the following centiles:")
+  print(desiredCentiles)
   
   #count number of parameters to model
   n_param <- length(gamlssModel$parameters)
@@ -120,42 +159,17 @@ centile_predict <- function(gamlssModel,
   #initialize empty list(s)
   centile_result_list <- list()
   
-  # subfunction to predict centiles based on distribution type and number of params
-  pred_centile <- function(centile_returned, df, q_func, n_params){
-    #mu and sigma only
-    if (n_param = 1){
-      x <- eval(call(q_func,
-                     centile_returned,
-                     mu=df$mu))
-    } else if (n_param = 2){
-      x <- eval(call(q_func,
-                     centile_returned,
-                     mu=df$mu,
-                     sigma=df$sigma))
-    } else if (n_param = 3){
-      x <- eval(call(q_func,
-                     centile_returned,
-                     mu=df$mu,
-                     sigma=df$sigma,
-                     nu=df$nu))
-    } else if (n_param = 4){
-      x <- eval(call(q_func,
-                     centile_returned,
-                     mu=df$mu,
-                     sigma=df$sigma,
-                     nu=df$nu,
-                     tau=df$tau))
-    } else {
-      stop("Error: GAMLSS model should contain 1 to 4 moments")
-    }
-  }
-  
   # Predict phenotype values for each simulated level of color_var
   for (color_level in names(sim_df_list)) {
-    pred_df <- predictAll(gamlssModel, newdata=sim_df_list[[color_level]])
+    
+    #make sure variable names are correct
+    stopifnot(x_var %in% names(sim_df_list[[color_level]]))
+    sub_df <- sim_df_list[[color_level]]
     
     # Predict centiles
-    fanCentiles <- lapply(seq(1:length(desiredCentiles)), pred_centile, df=pred_df, q_func=qfun, n_params=n_param)
+    pred_df <- predictAll(gamlssModel, newdata=sub_df)
+    
+    fanCentiles <- lapply(desiredCentiles, pred_centile, df = pred_df, q_func = qfun, n_param = n_param)
     names(fanCentiles) <- paste0("cent_", desiredCentiles)
     centiles_df <- as.data.frame(fanCentiles)
     
@@ -164,18 +178,19 @@ centile_predict <- function(gamlssModel,
     stopifnot(nrow(centiles_df) == nrow(pred_df))
     
     #add x_vals, name centiles for color_var level and append to results list
-    centiles_df[[x_var]] <- pred_df[[x_var]]
+    centiles_df[[x_var]] <- sub_df[[x_var]]
     cent_name <- paste0("fanCentiles_", color_level)
-    centile_result_list[[cent_name]] <- list(centiles_df)
+    centile_result_list[[cent_name]] <- centiles_df
     
     #get peak y value & corresponding x value
     if (get_peaks==TRUE) {
       
       #index median centile
       med.idx <- ceiling(length(desiredCentiles) / 2)
-      stopifnot(length(pred_df[[x_var]]) == length(fanCentiles[[med.idx]]))
       
-      median_df <- data.frame("x" = pred_df[[x_var]],
+      stopifnot(length(sub_df[[x_var]]) == length(fanCentiles[[med.idx]]))
+      
+      median_df <- data.frame("x" = sub_df[[x_var]],
                               "y" = fanCentiles[[med.idx]])
       peak_df <- median_df[which.max(median_df$y), ] #find peak
       names(peak_df)[names(peak_df) == "x"] <- x_var #rename x_var
@@ -203,14 +218,16 @@ centile_predict <- function(gamlssModel,
     stopifnot(df_is_numeric == TRUE)
     
     avg_centile_df <- Reduce("+", centile_dfs)/length(centile_dfs)
-    average_result_list[["fanCentiles_average"]] <- list(avg_centile_df)
+    average_result_list[["fanCentiles_average"]] <- avg_centile_df
     
     if (get_peaks==TRUE) {
       #index median centile
       med.idx <- ceiling(length(desiredCentiles) / 2)
-      stopifnot(length(pred_df[[x_var]]) == length(fanCentiles[[med.idx]]))
+      sub_df <- sim_df_list[[1]]
       
-      median_df <- data.frame("x" = pred_df[[x_var]],
+      stopifnot(length(sub_df[[x_var]]) == length(fanCentiles[[med.idx]]))
+      
+      median_df <- data.frame("x" = sub_df[[x_var]],
                               "y" = avg_centile_df[[med.idx]])
       peak_df <- median_df[which.max(median_df$y), ] #find peak
       names(peak_df)[names(peak_df) == "x"] <- x_var #rename x_var
@@ -227,7 +244,7 @@ centile_predict <- function(gamlssModel,
     stop("Do you want results to be averaged across variable levels?")
   }
   
-}  
+}
 
 ### RUN PREDICTIONS - FS & SITE CORRECTED
 # predict centiles for simulated data with  FS Version and Study Site corrected. Note! Expects `fs_version` as a fixed effect and `study` as a random effect fit using re() function!!!
@@ -310,8 +327,13 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
                              x_axis = c("lifespan", "log_lifespan", 
                                         "lifespan_fetal", "log_lifespan_fetal",
                                         "custom"),
+                             desiredCentiles = c(0.004, 0.02, 0.1, 0.25, 0.5, 0.75, 0.9, 0.98, 0.996),
+                             average_over = FALSE,
                              ...){
   pheno <- as.character(gamlssModel$mu.terms[[2]])
+  
+  stopifnot(is.character(x_var))
+  stopifnot(is.character(color_var))
   
   #simulate dataset(s)
   sim_list <- sim_data(df, x_var, color_var)
@@ -321,29 +343,33 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
                                sim_df_list = sim_list, 
                                x_var = x_var, 
                                desiredCentiles = desiredCentiles,
-                               average_over = average_over,
-                               get_peaks=get_peaks)
+                               average_over = FALSE)
   
   # extract centiles and concatenate into single dataframe
   select_centile_dfs <- grep("^fanCentiles_", names(pred_list), value = TRUE)
   centile_dfs <- pred_list[select_centile_dfs]
+  #return(centile_dfs) #testing
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
   merged_centile_df <- bind_rows(centile_dfs, .id = color_var)
   
   #now make long so centile lines connect
   long_centile_df <- merged_centile_df %>%
     gather(id.vars, values, !any_of(c(color_var, x_var)))
+  #return(long_centile_df) #testing
+  
   
   #plot base gg object
   
   if (average_over == FALSE){
     base_plot_obj <- ggplot() +
-      geom_point(data=df, aes(y = pheno, x = x_var, color=color_var, fill=color_var)) + 
-      geom_line(data=df_long, aes(x = x_var, y = values, group = id.vars, color = color_var))
+      geom_point(aes(y = df[[pheno]], x = df[[x_var]], color=df[[color_var]], fill=df[[color_var]])) +
+      geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
+                    group = interaction(long_centile_df$id.vars, long_centile_df[[color_var]]),
+                    color = long_centile_df[[color_var]]))
   } else if (average_over == TRUE){
     base_plot_obj <- ggplot() +
       geom_point(data=df, aes(y = pheno, x = x_var)) + 
-      geom_line(data=df_long, aes(x = x_var, y = values, group = id.vars))
+      geom_line(data=long_centile_df, aes(x = x_var, y = values, group = id.vars))
   } else {
     stop(paste0("Do you want to average over values of ", color_var, "?"))
   }
@@ -356,12 +382,12 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
     merged_peak_df <- bind_rows(peak_dfs, .id = color_var)
     
     base_plot_obj <- base_plot_obj +
-      geom_point(data = merged_peak_df, aes(x=x_var, y=y), size=3)
+      geom_point(aes(x=merged_peak_df[[x_var]], y=merged_peak_df$y), size=3)
       
   }
 
   #format x-axis
-  x_axis <- match(x_axis)
+  x_axis <- match.arg(x_axis)
   
   if(x_axis != "custom") {
     
@@ -404,64 +430,6 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
   return(final_plot_obj)
   
 }
-
-################ MAKE CENTILE FAN - SEX-SPECIFIC ################
-# plot centile fans calculated separately for males and females. Predicts on Mode(fs_version) and Mode(study) of original data
-
-makeCentileFan_sex_overlay<- function(gamlssModel, phenotype, df, age_transformed, color_var)
-{
-  sim <- sim.data(df) #simulate data
-  pred <- centile_predict(gamlssModel, sim$dataToPredictM, sim$dataToPredictF, sim$ageRange, sim$desiredCentiles) #predict centiles
-  
-  #un-log-transform age if necessary
-  if(age_transformed == TRUE) {
-    ages <- sim$ageRange
-    age_col <- df$log_age
-    tickMarks <- sim$tickMarks_log
-    tickLabels <- sim$tickLabels_log
-    male_peak_age <- pred$peak_age_M
-    female_peak_age <- pred$peak_age_F
-    unit_text <- "(log(years))"
-  }
-  if(age_transformed == FALSE) {
-    ages <- sapply(sim$ageRange, un_log)
-    age_col <- df$age_days
-    tickMarks <- sim$tickMarks_unscaled
-    tickLabels <- sim$tickLabels_unscaled
-    male_peak_age <- un_log(pred$peak_age_M)
-    female_peak_age <- un_log(pred$peak_age_F)
-    unit_text <- "(years)"
-  }
-  #plot!
-  #sometimes df[,get()] works, sometimes not found...????
-  yvar <- df[[phenotype]]
-  color_col <- df[[color_var]]
-  
-  sampleCentileFan <- ggplot() +
-    geom_point(aes(x=age_col, y=yvar, color=color_col), alpha=0.3) +
-    scale_colour_manual(values=c("#5AAE61FF", "#9970ABFF")) + 
-    geom_line(aes(x=ages, y=pred$fanCentiles_M[[1]]), alpha=0.1, linetype="dashed") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_M[[3]]), alpha=0.3, linetype="dashed") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_M[[5]]), linetype="dashed", color="#40004BFF") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_M[[7]]), alpha=0.3, linetype="dashed") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_M[[9]]), alpha=0.1, linetype="dashed") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_F[[1]]), alpha=0.1, linetype="longdash") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_F[[3]]), alpha=0.3, linetype="longdash") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_F[[5]]), linetype="longdash", color="#00441BFF") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_F[[7]]), alpha=0.3, linetype="longdash") +
-    geom_line(aes(x=ages, y=pred$fanCentiles_F[[9]]), alpha=0.1, linetype="longdash") +
-    geom_point(aes(x=male_peak_age, y=pred$peak_M), color="#40004BFF", size=3) +
-    geom_point(aes(x=female_peak_age, y=pred$peak_F), color="#00441BFF", size=3) +
-    scale_x_continuous(breaks=tickMarks, labels=tickLabels,
-                       limits=c(tickMarks[[1]], max(age_col))) +
-    labs(title=deparse(substitute(gamlssModel))) +
-    theme(legend.title = element_blank())+
-    xlab(paste("Age at Scan", unit_text)) +
-    ylab(deparse(substitute(phenotype)))
-  
-  print(sampleCentileFan)
-}
-
 
 ################ MAKE CENTILE FAN - CORRECTED ################
 # basic centile fan plotting that averages across sex, correcting for fs_version and study effects in both centiles and data points plotted. 
