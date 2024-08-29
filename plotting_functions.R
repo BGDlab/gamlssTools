@@ -47,6 +47,9 @@ sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
   # generate 500 datapoints across the range of the x axis
   x_min <- min(df[[x_var]])
   x_max <- max(df[[x_var]])
+  
+  print(paste("simulating", x_var, "from", x_min, "to", x_max))
+  
   x_range <- seq(x_min, x_max, length.out=500)
   
   # get number of rows needed
@@ -55,6 +58,8 @@ sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
   sim_df_list <- list()
   # make new dfs iteratively over color variable's values
   for (color_level in unique(df[[color_var]])){
+    
+    print(paste("simulating", color_var, "at", color_level))
     
     # initialize right size df
     new_df <- data.frame(matrix(ncol = ncol(df), nrow = n_rows))
@@ -71,9 +76,11 @@ sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
       } else if (is.numeric(df[[col]])){
         mean_value <- mean(df[[col]])
         new_df[[col]] <- rep(mean_value, n_rows)
+        print(paste("simulating", col, "at", mean_value))
       } else {
         mode_value <- mode(df[[col]])
         new_df[[col]] <- rep(mode_value, n_rows)
+        print(paste("simulating", col, "at", mode_value))
       }
     }
     

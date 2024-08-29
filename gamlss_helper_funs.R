@@ -107,14 +107,14 @@ list_predictors <- function(gamlssModel){
   contains_tilde <- grepl("~", call_string)
   moment_formulas <- call_string[contains_tilde]
   # Use sub to remove everything up to and including the first ~
-  moment_formulas <- sub(".*~", "", moment_formulas)
+  moment_formulas <- sub(".*?~", "", moment_formulas)
   
   # check you have expected number of moments
   terms_lists <- eval(gamlssModel[[2]])
   stopifnot(length(moment_formulas) <= length(terms_lists))
   
   # Use gsub to replace all occurrences of +, -, *, /, ,, and = with spaces
-  drop_operations <- gsub("[-+*/=,]", " ", moment_formulas)
+  drop_operations <- gsub("[-+*/=,\\|~]", " ", moment_formulas)
   
   # Use strsplit to split each string into 'words'
   split_strings <- strsplit(drop_operations, "\\s+")
@@ -128,11 +128,13 @@ list_predictors <- function(gamlssModel){
   term_vector <- sub("\\)", "", term_vector)
   
   #remove any non-predictor arguments from smooths, etc:
-  # number strings, 'by'
-  term_vector_full <- term_vector[!grepl("^by$|^\\d+$|^\\s*$", term_vector)]
+  # number strings, 'by', 'random'
+  term_vector_full <- term_vector[!grepl("^random$|^by$|^\\d+$|^\\s*$", term_vector)]
   
   #finally drop duplicates
   term_vector_clean <- unique(term_vector_full)
+  
+  return(term_vector_clean)
 }
 
 # predict centile score of original data - dont think this will separate out m and f distributions though
