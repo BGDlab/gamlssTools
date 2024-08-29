@@ -27,42 +27,22 @@ library(gamlss)    # fit the model and predict centiles
 library(ggplot2)   # plotting
 library(tidyverse)
 
-################ SETUP FUNCTIONS ################
-
-### MODE - used to chose which fs_version and study to predict on
-mode = function(x){
-  ta = table(x)
-  tam = max(ta)
-  if (all(ta == tam)){
-    mod = NA
-  } else if(is.numeric(x)){
-    mod = as.numeric(names(ta)[ta == tam])
-  } else{
-    mod = names(ta)[ta == tam]
-  }
-  
-  #if more than 1 mode, return first/smallest value
-  if (length(mod) > 1 ) {
-    mod <- mod[1]
-  }
-  
-  return(mod)
-}
-### UN-LOG-SCALE - used to un-transform log_age values
-un_log <- function(x){return(10^(x))}
-
-### GET MU COEFFICIENT - get beta weight of a fixed effect on the mu parameter
-get.mu.coeff <- function(gamlssModel, term){return(unname(gamlssModel$mu.coefficients[term]))}
-
 ### SIMULATE DATA
 # takes input df and simulates new dataset with values that increase across x axis (typically age or log_age)
 # setup to simulate categorical vars based on the most common level in the original dataset
 # also preps centile values and x-axis labels
-sim_data <- function(df, x_var, color_var){
+sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
   
   #make sure variable names are correct
   stopifnot(x_var %in% names(df))
   stopifnot(color_var %in% names(df))
+  
+  #subset df cols just to predictors from model
+  if (!is.null(gamlssModel)){
+    predictor_list <- list_predictors(gamlssModel)
+    stopifnot(predictor_list %in% names(df))
+    df <- subset(df, select = names(df) %in% predictor_list)
+  }
   
   # generate 500 datapoints across the range of the x axis
   x_min <- min(df[[x_var]])
@@ -165,7 +145,7 @@ centile_predict <- function(gamlssModel,
     sub_df <- sim_df_list[[color_level]]
     
     # Predict centiles
-    pred_df <- predictAll(gamlssModel, newdata=sub_df)
+    pred_df <- predictAll(gamlssModel, newdata=sub_df, type="response")
     
     fanCentiles <- lapply(desiredCentiles, pred_centile, df = pred_df, q_func = qfun, n_param = n_param)
     names(fanCentiles) <- paste0("cent_", desiredCentiles)
@@ -244,24 +224,6 @@ centile_predict <- function(gamlssModel,
   
 }
 
-
-### EXTRACT VARIANCE
-# copied from Simon's nature paper repo 
-# [https://github.com/brainchart/Lifespan/blob/bca92bfaad13cada8aad60cd14bc0bdaeb194ad7/102.gamlss-recode.r#L90]
-
-GGalt.variance <- function(mu, sigma, nu){
-  ##AA <- log(mu^2) - log( (1/(sigma^2 * nu^2))^(2/nu) ) - 2*lgamma(1/(sigma^2 * nu^2)) [fixed in v10]
-  AA <- 2*log(mu) - ((2/nu)*(-1)*log( (sigma^2 * nu^2) )) - 2*lgamma(1/(sigma^2 * nu^2))
-  ww <- lgamma(1/(sigma^2 * nu^2) + 2/nu) + lgamma(1/(sigma^2 * nu^2))
-  uu <- 2*lgamma(1/(sigma^2 * nu^2) + 1/nu)
-  BB <- ww + log( (1 - exp( uu - ww )) )
-  YES <- AA + BB
-  
-  ifelse(nu > 0 | (nu < 0 & sigma^2 * abs(nu) < 0.5),
-         ifelse(is.nan(BB),NA,exp( YES )),
-         Inf)
-}
-
 ################ MAKE CENTILE FAN ################ 
 # basic centile fan plotting that averages across sex and predicts on Mode(fs_version) and Mode(study) of original data
 # NOTE: pre-formatted x-axis options "lifespan" and "log_lifespan" assume that age is formatted in days from birth.
@@ -286,7 +248,7 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
   
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
-    sim_list <- sim_data(df, x_var, color_var)
+    sim_list <- sim_data(df, x_var, color_var, gamlssModel)
   } else if (!is.null(sim_data_list)) {
     sim_list <- sim_data_list
   }
