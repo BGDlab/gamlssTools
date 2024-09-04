@@ -2,17 +2,6 @@
 ################################################
 
 # functions to plot centile scores and variance
-# see examples and more info in `testing_plotting_functions`, available as .Rmd and knitted html
-
-# # contents:
-# mode()
-# un_log()
-# get.mu.coeff()
-# sim_data()
-# pred_centile()
-# centile_predict()
-# GGalt.variance()
-# make_centile_fan()
 
 # TO DO:
 # residualize selected covariates' effects in centile lines/data points
@@ -20,17 +9,40 @@
 # pretty model diagnostics
 # derive & plot confidence intervals around smooth/notable points
 # label centile lines
+# sim_data without color_var
 
 ################################################
 
 library(gamlss)    # fit the model and predict centiles
 library(ggplot2)   # plotting
-library(tidyverse)
+library(tidyverse) #maybe not necessary?
 
-### SIMULATE DATA
-# takes input df and simulates new dataset with values that increase across x axis (typically age or log_age)
-# setup to simulate categorical vars based on the most common level in the original dataset
-# also preps centile values and x-axis labels
+#' Simulate data for plotting GAMLSS
+#' 
+#' `sim_data` creates a dataset from which you can cleanly plot centiles.
+#' 
+#' This function takes a dataset and transforms it such that covariates of interest are
+#' allowed to vary across their full range of values, while all other covariates are held
+#' constant at their reference (mode or mean) value. This enables clean visualization of
+#' centiles across, for example, age, while holding freesurfer version constant. Can be
+#' used on its own or as a subfunction of `make_centile_fan()`.
+#' 
+#' @param df original dataframe from which new data will be simulated
+#' @param x_var continuous variable whose value will be simulated across it's full range,
+#' as determined from the df parameter
+#' @param color_var categorical variable that will be simulated at every level
+#' @param gamlssModel gamlss model object that will be used to subset the columns of df such that
+#' only the model's covariates are simulated (optional)
+#' 
+#' @returns list of dataframes of simulated data, one for each level of `color_var`
+#' 
+#' @examples
+#' sim_data(iris, "Sepal.Length", "Species")
+#' 
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+#' sim_data(iris, "Sepal.Length", "Species", iris_model)
+#' 
+#' @export
 sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
   
   #make sure variable names are correct
@@ -91,10 +103,41 @@ sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
   return(sim_df_list)
 }
 
-### RUN PREDICTIONS
-
-# subfunction to predict centiles based on distribution type and number of params
+#' Predict single centile
+#' 
+#' `pred_centile` calculates the values of one centile from output of `predictAll()` 
+#' 
+#' This function predicted response values from the `gamlss` package's `predictAll()`
+#' and returns the values of y across a specified centile. Used as subfunction within
+#' `centile_predict()`.
+#' 
+#' @param centile_returned numeric value indicating percentile to calculate (range 0-1)
+#' @param df dataframe containing predicted values returned from `predictAll()`
+#' @param q_func quantile function for the model's distribution family
+#' @param n_param number of parameters contained in the model's distribution family
+#' 
+#' @returns list of values for y
+#' 
+#' @examples
+#' #predict a specific centile value across simulated data
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
+#' pred_df <- predictAll(gamlssModel, newdata = sim_df$virginica, type="response")
+#' pred_centile(0.1, pred_df, qBCCG, 3)
+#' 
+#' #lapply to get many centiles
+#' #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
+#' pred_df <- predictAll(gamlssModel, newdata = sim_df$virginica, type="response")
+#' desiredCentiles <- c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99)
+#' apply(desiredCentiles, pred_centile, df = pred_df, q_func = qBCCG, n_param = 3)
+#' 
+#' @export
 pred_centile <- function(centile_returned, df, q_func, n_param) {
+  
+  stopifnot(centile_returned <= 1 & centile_returned >= 0)
+  stopifnot(n_param <= 4 & n_param >= 1)
+  
   #mu and sigma only
   if (n_param == 1) {
     x <- eval(call(q_func,
@@ -123,11 +166,48 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
   }
 }
 
-#predict centiles for simulated data
+#' Predict centiles
+#' 
+#' `centile_predict` calculates y values for a range of centiles across simulated data
+#' 
+#' This function takes a list of dataframes simulated wiht `sim_data()` and calculates
+#' the values of the response variable for each precentile in a list. Users can return
+#' predicted values for each level of a factor variable or choose to average across these
+#' values. Can also calculate and return the peak median (0.5) value of y across predictor
+#' `x_var`. Calls `pred_centile()` as a subfunction.
+#' 
+#' @param gamlssModel gamlss model object
+#' @param sim_df_list list of simulated dataframes returned by `sim_data()`
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_df_list` varies over
+#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
+#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
+#' @param df (optional) original dataframe from which new data will be simulated. Passing this can
+#' fix some bugs in `predictAll()`
+#' @param average_over logical indicating whether to return percentiles and 
+#' peaks averaged across multiple levels of a factor, with each level represented as 
+#' a dataframe in `sim_df_list`. Defaults to `FALSE`
+#' @param get_peaks logical to indicate whether to return median's max value over x.
+#' Defaults to `TRUE`.
+#' 
+#' @returns list of dataframes containing predicted centiles across range of predictors
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
+#' 
+#' #to average across levels of "Species"
+#' centile_predict(iris_model, sim_df, "Sepal.Length", average_over = TRUE)
+#' 
+#' # or say you just want the 25th, 50th (median), and 75th percentiles
+#' centile_predict(iris_model, sim_df, "Sepal.Length", desiredCentiles = c(0.25, 0.5, 0.))
+#' 
+#' @export
 centile_predict <- function(gamlssModel, 
                             sim_df_list, 
                             x_var, 
                             desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
+                            df = NULL,
                             average_over = FALSE,
                             get_peaks = TRUE){
   
@@ -152,7 +232,7 @@ centile_predict <- function(gamlssModel,
     sub_df <- sim_df_list[[color_level]]
     
     # Predict centiles
-    pred_df <- predictAll(gamlssModel, newdata=sub_df, type="response")
+    pred_df <- predictAll(gamlssModel, newdata=sub_df, type="response", data=df)
     
     fanCentiles <- lapply(desiredCentiles, pred_centile, df = pred_df, q_func = qfun, n_param = n_param)
     names(fanCentiles) <- paste0("cent_", desiredCentiles)
@@ -231,15 +311,67 @@ centile_predict <- function(gamlssModel,
   
 }
 
-################ MAKE CENTILE FAN ################ 
-# basic centile fan plotting that averages across sex and predicts on Mode(fs_version) and Mode(study) of original data
-# NOTE: pre-formatted x-axis options "lifespan" and "log_lifespan" assume that age is formatted in days from birth.
-# if age is formatted in days post-conception (i.e. age from birth + 280 days), use options ending in "_fetal"
-
-# you can save time when plotting multiple models fit on the same data/predictors by first running sim_data()
-# and then supplying the output to the sim_data_list arg 
-
-make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
+#' Plot centile fan using ggplot
+#' 
+#' `make_centile_fan` takes a gamlss model and creates a basic centile fan for it in ggplot
+#' 
+#' The resulting ggplot object can be further modified as needed (see example). There are several built-in formatting
+#' options for the x-axis that can be accessed using the `x_axis` argument. Alternatively, the default value of 'custom'
+#' will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. You can save 
+#' time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
+#' by first running `sim_data()` and supplying the output to arg `sim_data_list`.
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe used to fit the gamlss model
+#' @param x_var continuous predictor (e.g. 'age') that will be plotted on the x axis
+#' @param color_var categorical predictor (e.g. 'sex') that will be used to determine the color of
+#' points/centile lines. Alternatively, you can average over each level of this variable
+#' to return a single set of centile lines (see `average_over`)
+#' @param get_peaks logical to indicate whether to add a point at the median centile's peak value
+#' @param x_axis optional pre-formatted options for x-axis tick marks, labels, etc. Defaults to 'custom',
+#' which is, actually, no specific formatting. NOTE: options "lifespan" and "log_lifespan" assume that 
+#' age is formatted in days post-birth. if age is formatted in days post-conception 
+#' (i.e. age post-birth + 280 days), use options ending in "_fetal".
+#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
+#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
+#' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
+#' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
+#' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're plotting
+#' many models fit on the same dataframe 
+#' 
+#' @returns ggplot object
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' iris_fan_plot <- make_centile_fan(iris_model, iris, "Sepal.Length", "Species")
+#' 
+#' #print as-is
+#' print(iris_fan_plot)
+#' 
+#' #or make the axes and legends prettier
+#' iris_fan_plot + 
+#'  labs(title="Normative Sepal Width by Length",
+#'  x ="Sepal Length", y = "Sepal Width",
+#'  color = "Species", fill="Species")
+#' 
+#' #simulate a dataframe to use x_axis options
+#' df <- data.frame(
+#'  Age = sample(0:36525, 10000, replace = TRUE),
+#'  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
+#'  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
+#'
+#' df$log_Age <- log(df$Age, base=10)
+#' df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
+#' df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
+#' 
+#' #fit gamlss model
+#' pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
+#' 
+#' make_centile_fan(pheno_model, df, "Age", "Sex", x_axis="lifespan")
+#' 
+#' @export
+make_centile_fan <- function(gamlssModel, df, x_var, color_var,
                              get_peaks=TRUE,
                              x_axis = c("custom",
                                         "lifespan", "log_lifespan", 
@@ -265,6 +397,7 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
                                sim_df_list = sim_list, 
                                x_var = x_var, 
                                desiredCentiles = desiredCentiles,
+                               df = df,
                                average_over = average_over)
   
   # extract centiles and concatenate into single dataframe
@@ -303,7 +436,7 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
                     group = interaction(long_centile_df$id.vars, long_centile_df[[color_var]]),
                     color = long_centile_df[[color_var]],
                     linewidth = long_centile_df$id.vars)) + 
-      scale_linewidth_manual(values = centile_linewidth)
+      scale_linewidth_manual(values = centile_linewidth, guide = "none")
     
   } else if (average_over == TRUE){
     base_plot_obj <- ggplot() +
@@ -311,7 +444,7 @@ make_centile_fan <- function(gamlssModel, df, x_var="log_age", color_var="sex",
       geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
                     group = long_centile_df$id.vars,
                     linewidth = long_centile_df$id.vars)) + 
-      scale_linewidth_manual(values = centile_linewidth)
+      scale_linewidth_manual(values = centile_linewidth, guide = "none")
     
   } else {
     stop(paste0("Do you want to average over values of ", color_var, "?"))
