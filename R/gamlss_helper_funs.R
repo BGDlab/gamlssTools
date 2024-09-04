@@ -58,23 +58,27 @@ mode = function(x){
 #' @export
 un_log <- function(x){return(10^(x))}
 
-#' Get Mu Beta
+#' Get Beta
 #' 
-#' Extract beta weight of a term in a gamlss model's mu parameter
+#' Extract beta weight of a term in a gamlss model
 #' 
 #' Only works for fixed effects (not random effects)
 #' 
 #' @param gamlssModel gamlss model object
+#' @param moment moment containing `term`
 #' @param term coefficient to return beta of
 #' 
-#' @returns beta weight for given `term` in mu (numeric)
+#' @returns beta weight for given `term` in `moment` (numeric)
 #' 
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 #' get.mu.coeff(iris_model, "Sepal.Length")
 #' 
 #' @export
-get.mu.coeff <- function(gamlssModel, term){return(unname(gamlssModel$mu.coefficients[term]))}
+get_coeff <- function(gamlssModel, moment, term){
+  moment_str <- paste0(moment, ".coefficients")
+  return(unname(gamlssModel[[moment_str]][term]))
+  }
 
 #' GG variance
 #' 
