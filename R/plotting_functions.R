@@ -367,6 +367,8 @@ centile_predict <- function(gamlssModel,
 #' 
 #' make_centile_fan(pheno_model, df, "Age", "Sex", x_axis="lifespan")
 #' 
+#' @importFrom tidyr gather
+#' 
 #' @export
 make_centile_fan <- function(gamlssModel, df, x_var, color_var,
                              get_peaks=TRUE,
@@ -406,7 +408,7 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
   
   #now make long so centile lines connect
   long_centile_df <- merged_centile_df %>%
-    gather(id.vars, values, !any_of(c(color_var, x_var)))
+    tidyr::gather(id.vars, values, !any_of(c(color_var, x_var)))
   #return(long_centile_df) #testing
   
   # subfunction to define thickness of each centile line, with the 50th being thickest

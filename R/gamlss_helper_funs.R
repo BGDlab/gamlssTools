@@ -127,6 +127,8 @@ GGalt.variance <- function(mu, sigma, nu){
 #' 
 #' drop1_all(iris_model, data=iris)
 #' 
+#' @importFrom tibble rownames_to_column
+#' 
 #' @export
 drop1_all <- function(gamlssModel, list = c("mu", "sigma"), name = NA, ...){
   if (is.na(name)){

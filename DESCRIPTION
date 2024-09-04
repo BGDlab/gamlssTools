@@ -22,6 +22,5 @@ Suggests:
     tidyr,
     knitr,
     rmarkdown,
-    covr,
     testthat (>= 2.1.0),
     devtools
