@@ -10,12 +10,13 @@
 # derive & plot confidence intervals around smooth/notable points
 # label centile lines
 # sim_data without color_var
+# correct.points
 
 ################################################
 
 library(gamlss)    # fit the model and predict centiles
 library(ggplot2)   # plotting
-library(tidyverse) #maybe not necessary?
+library(tidyverse) # maybe not necessary?
 
 #' Simulate data for plotting GAMLSS
 #' 
@@ -505,78 +506,4 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
   
   return(final_plot_obj)
   
-}
-
-
-
-################ PLOT VARIANCE - SEX-SPECIFIC ################
-plot.gamlss.var <- function(gamlssModel, pheno, df, age_transformed){
-  # Predict phenotype values in a set age range
-  sim <- sim.data(df) #simulate data
-  pred <- centile_predict(gamlssModel, sim$dataToPredictM, sim$dataToPredictF, sim$ageRange, sim$desiredCentiles) #predict sex-averaged centiles
-  
-  #un-log-transform age if necessary
-  if(age_transformed == TRUE) {
-    ages <- sim$ageRange
-    age_col <- df$log_age
-    tickMarks <- sim$tickMarks_log
-    tickLabels <- sim$tickLabels_log
-    unit_text <- "(log(years))"
-  }
-  if(age_transformed == FALSE) {
-    ages <- sapply(sim$ageRange, un_log)
-    age_col <- df$age_days
-    tickMarks <- sim$tickMarks_unscaled
-    tickLabels <- sim$tickLabels_unscaled
-    unit_text <- "(years)"
-  }
-  
-  # get variance using GGalt.variance 
-  M.var <- GGalt.variance(pred$M_mu, pred$M_sigma, pred$M_nu)
-  F.var <- GGalt.variance(pred$F_mu, pred$F_sigma, pred$F_nu)
-  
-  ggplot() + 
-    geom_line(aes(x=ages, y=M.var), color="#762A83FF") +
-    geom_line(aes(x=ages, y=F.var), color="#1B7837FF") +
-    scale_x_continuous(breaks=tickMarks, labels=tickLabels,
-                       limits=c(tickMarks[[1]], max(age_col))) +
-    labs(title=paste(pheno, "variance")) +
-    theme(legend.title = element_blank())+
-    xlab(paste("Age at Scan", unit_text)) +
-    ylab("Variance")
-}
-
-################ CORRECT POINTS ################
-# use re() fit model to remove site & fs effects for cleaner plotting of each datapoint
-correct.points <- function(gamlssModel, pt, df){
-  
-  #DEAL WITH SITE EFFECTS in individual data points
-  site_effects <- gamlssModel$mu.coefSmo[[1]]$coefficients$random$study
-  #Ok, so i think this means y (the IDP) corrected for site will be y + log(beta_study)
-  site_effects.df <- as.data.frame(site_effects) %>%
-    rownames_to_column(var="study") %>%
-    rename_at(2, ~"site_int" )
-  #join this back with the study data to plot
-  plot_df <- left_join(df, site_effects.df, by="study")
-  # v.col <- as.character(substitute(pt))
-  v.col <- pt
-  plot_df <- plot_df %>%
-    mutate_at(.vars = vars(v.col),  .funs = funs(pheno_adjust = exp(log(.) - site_int)))
-  
-  #DEAL WITH FS VERSION EFFECTS
-  #get values
-  fs.terms <- paste0("fs_version", as.list(levels(df$fs_version))) #list all levels of fs_version and add "fs_version" to model match estimate outputs
-  fs_effects <- sapply(fs.terms, get.mu.coeff, gamlssModel=gamlssModel) %>%
-    as.data.frame() %>%
-    mutate_all(~replace_na(.,0)) %>%
-    rownames_to_column(var="fs_version") %>%
-    mutate(fs_version=as.factor(fs_version)) %>%
-    rename_at(2, ~"fs_effect")
-  #recode levels to drop "fs_version" prefix
-  levels(fs_effects$fs_version) <- gsub("fs_version", "", levels(fs_effects$fs_version))
-  
-  #join back into df
-  plot_df <- left_join(plot_df, fs_effects, by="fs_version") %>%
-    mutate_at(.vars = vars(pheno_adjust),  .funs = funs(pheno_adjust = exp(log(.) - fs_effect)))
-  return(plot_df)
 }
