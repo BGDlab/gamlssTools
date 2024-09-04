@@ -15,12 +15,14 @@ Depends:
 	gamlss,
 	data.table,
 	dplyr
-LazyData: true
-LazyDataCompression: xz
 Suggests:
     broom.mixed,
     tidyr,
     knitr,
     rmarkdown,
-    testthat (>= 2.1.0),
+    testthat (>= 3.0.0),
     devtools
+Imports:
+	tibble,
+	tidyr
+Config/testthat/edition: 3
