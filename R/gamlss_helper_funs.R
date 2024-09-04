@@ -1,9 +1,3 @@
-#load libraries
-library(gamlss)
-library(dplyr)
-library(ggplot2)
-library(data.table)
-
 #' Mode
 #' 
 #' `mode()` returns the mode of a vector

@@ -14,10 +14,6 @@
 
 ################################################
 
-library(gamlss)    # fit the model and predict centiles
-library(ggplot2)   # plotting
-library(tidyverse) # maybe not necessary?
-
 #' Simulate data for plotting GAMLSS
 #' 
 #' `sim_data` creates a dataset from which you can cleanly plot centiles.

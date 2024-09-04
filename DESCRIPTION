@@ -1,12 +1,27 @@
 Package: gamlssTools
-Title: What the Package Does (One Line, Title Case)
+Title: Accessory and Plotting Functions for GAMLSS Models
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+    person("Margaret", "Gardner", , "megardn@gmail.com", role = c("aut", "cre"))
+Description: This is a support package for the gamlss package. It makes information more accessible
+from gamlss model objects and easily plots them using ggplot.
+License: CC BY 4.0
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2.9000
+Depends: 
+    R (>= 3.5.0),
+    ggplot
+	gamlss
+	data.table
+	dplyr
+LazyData: true
+LazyDataCompression: xz
+Suggests:
+    broom.mixed,
+    tidyr,
+    knitr,
+    rmarkdown,
+    covr,
+    testthat (>= 2.1.0),
+    devtools
