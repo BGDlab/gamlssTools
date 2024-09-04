@@ -18,7 +18,7 @@ of the \code{gamlssModel} object}
 dataframe with outputs of \code{drop1()} for each moment and term
 }
 \description{
-Performs \code{\link[gamlss:drop1]{gamlss::drop1()}}	function across all specified moments
+Performs \code{\link[stats:add1]{stats::drop1()}}	function across all specified moments
 }
 \details{
 Should be used with caution depending on the smooths included in the model. From "Flexible

@@ -4,7 +4,7 @@ Version: 0.0.0.9000
 Authors@R: 
     person("Margaret", "Gardner", , "megardn@gmail.com", role = c("aut", "cre"))
 Description: This is a support package for the gamlss package. It makes information more accessible
-from gamlss model objects and easily plots them using ggplot.
+	from gamlss model objects and easily plots them using ggplot.
 License: CC BY 4.0
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

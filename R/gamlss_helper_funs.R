@@ -105,7 +105,7 @@ GGalt.variance <- function(mu, sigma, nu){
 
 #' drop1 across all terms and moments
 #' 
-#' Performs [gamlss::drop1()]	function across all specified moments
+#' Performs [stats::drop1()]	function across all specified moments
 #' 
 #' Should be used with caution depending on the smooths included in the model. From "Flexible
 #' Regression and Smoothing using GAMLSS in R": " "in the presence of smoothing terms... 
@@ -293,7 +293,7 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE){
 #' 
 #' @returns numeric fsquared value
 #' 
-#' @example
+#' @examples
 #' iris_model_full <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 #' iris_model_null <- gamlss(formula = Sepal.Width ~ Sepal.Length, sigma.formula = ~ Sepal.Length, data=iris)
 #' 

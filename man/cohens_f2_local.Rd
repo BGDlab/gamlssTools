@@ -22,3 +22,10 @@ See Equation 2 in \href{https://www.frontiersin.org/journals/psychology/articles
 
 Written by Simon White and copied from \href{https://github.com/brainchart/Lifespan/blob/bca92bfaad13cada8aad60cd14bc0bdaeb194ad7/102.gamlss-recode.r#L90}{github}
 }
+\examples{
+iris_model_full <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+iris_model_null <- gamlss(formula = Sepal.Width ~ Sepal.Length, sigma.formula = ~ Sepal.Length, data=iris)
+
+cohens_f2_local(iris_model_full, iris_model_null)
+
+}
