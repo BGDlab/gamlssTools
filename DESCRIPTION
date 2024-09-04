@@ -11,9 +11,9 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2.9000
 Depends: 
     R (>= 3.5.0),
-    ggplot
-	gamlss
-	data.table
+    ggplot2,
+	gamlss,
+	data.table,
 	dplyr
 LazyData: true
 LazyDataCompression: xz
