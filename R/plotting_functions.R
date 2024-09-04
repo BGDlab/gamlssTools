@@ -26,7 +26,7 @@ library(tidyverse) # maybe not necessary?
 #' allowed to vary across their full range of values, while all other covariates are held
 #' constant at their reference (mode or mean) value. This enables clean visualization of
 #' centiles across, for example, age, while holding freesurfer version constant. Can be
-#' used on its own or as a subfunction of `make_centile_fan()`.
+#' used on its own or as a subfunction of [make_centile_fan()].
 #' 
 #' @param df original dataframe from which new data will be simulated
 #' @param x_var continuous variable whose value will be simulated across it's full range,
@@ -106,11 +106,11 @@ sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
 
 #' Predict single centile
 #' 
-#' `pred_centile` calculates the values of one centile from output of `predictAll()` 
+#' `pred_centile` calculates the values of one centile from output of [gamlss::predictAll()].
 #' 
-#' This function predicted response values from the `gamlss` package's `predictAll()`
+#' This function predicted response values from [gamlss::predictAll()]
 #' and returns the values of y across a specified centile. Used as subfunction within
-#' `centile_predict()`.
+#' [centile_predict()].
 #' 
 #' @param centile_returned numeric value indicating percentile to calculate (range 0-1)
 #' @param df dataframe containing predicted values returned from `predictAll()`
@@ -171,11 +171,11 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
 #' 
 #' `centile_predict` calculates y values for a range of centiles across simulated data
 #' 
-#' This function takes a list of dataframes simulated wiht `sim_data()` and calculates
+#' This function takes a list of dataframes simulated with [sim_data()] and calculates
 #' the values of the response variable for each precentile in a list. Users can return
 #' predicted values for each level of a factor variable or choose to average across these
 #' values. Can also calculate and return the peak median (0.5) value of y across predictor
-#' `x_var`. Calls `pred_centile()` as a subfunction.
+#' `x_var`. Calls [pred_centile()] as a subfunction.
 #' 
 #' @param gamlssModel gamlss model object
 #' @param sim_df_list list of simulated dataframes returned by `sim_data()`
@@ -184,7 +184,7 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
 #' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
 #' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
 #' @param df (optional) original dataframe from which new data will be simulated. Passing this can
-#' fix some bugs in `predictAll()`
+#' fix some bugs in [gamlss::predictAll()]
 #' @param average_over logical indicating whether to return percentiles and 
 #' peaks averaged across multiple levels of a factor, with each level represented as 
 #' a dataframe in `sim_df_list`. Defaults to `FALSE`
@@ -320,7 +320,7 @@ centile_predict <- function(gamlssModel,
 #' options for the x-axis that can be accessed using the `x_axis` argument. Alternatively, the default value of 'custom'
 #' will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. You can save 
 #' time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
-#' by first running `sim_data()` and supplying the output to arg `sim_data_list`.
+#' by first running [sim_data()] and supplying the output to arg `sim_data_list`.
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe used to fit the gamlss model
