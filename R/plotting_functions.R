@@ -3,15 +3,6 @@
 
 # functions to plot centile scores and variance
 
-# TO DO:
-# residualize selected covariates' effects in centile lines/data points
-# plot variance for any distribution fam
-# pretty model diagnostics
-# derive & plot confidence intervals around smooth/notable points
-# label centile lines
-# sim_data without color_var
-# correct.points
-
 ################################################
 
 #' Simulate data for plotting GAMLSS
