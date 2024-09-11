@@ -16,8 +16,7 @@ dataframe with outputs of \code{drop1()} for each moment and term
 Lists every covariate in any moment of a gamlss model.
 }
 \details{
-Does not distinguish smooth, fixed, or random effects. Won't work if your covariates
-have the same name as operators 'by' and 'random'
+Does not distinguish smooth, fixed, or random effects.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)

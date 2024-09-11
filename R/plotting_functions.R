@@ -110,15 +110,15 @@ sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
 #' #predict a specific centile value across simulated data
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
 #' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
-#' pred_df <- predictAll(gamlssModel, newdata = sim_df$virginica, type="response")
-#' pred_centile(0.1, pred_df, qBCCG, 3)
+#' pred_df <- predictAll(iris_model, newdata = sim_df$virginica, type="response")
+#' pred_centile(0.1, pred_df, "qBCCG", 3)
 #' 
 #' #lapply to get many centiles
-#' #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
 #' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
-#' pred_df <- predictAll(gamlssModel, newdata = sim_df$virginica, type="response")
+#' pred_df <- predictAll(iris_model, newdata = sim_df$virginica, type="response")
 #' desiredCentiles <- c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99)
-#' apply(desiredCentiles, pred_centile, df = pred_df, q_func = qBCCG, n_param = 3)
+#' lapply(desiredCentiles, pred_centile, df = pred_df, q_func = "qBCCG", n_param = 3)
 #' 
 #' @export
 pred_centile <- function(centile_returned, df, q_func, n_param) {

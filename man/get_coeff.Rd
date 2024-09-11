@@ -24,6 +24,6 @@ Only works for fixed effects (not random effects)
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
-get.mu.coeff(iris_model, "Sepal.Length")
+get_coeff(iris_model, "mu", "Sepal.Length")
 
 }

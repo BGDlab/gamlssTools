@@ -72,7 +72,7 @@ un_log <- function(x){return(10^(x))}
 #' 
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
-#' get.mu.coeff(iris_model, "Sepal.Length")
+#' get_coeff(iris_model, "mu", "Sepal.Length")
 #' 
 #' @export
 get_coeff <- function(gamlssModel, moment, term){
@@ -167,8 +167,7 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), name = NA, ...){
 #' 
 #' Lists every covariate in any moment of a gamlss model. 
 #' 
-#' Does not distinguish smooth, fixed, or random effects. Won't work if your covariates
-#' have the same name as operators 'by' and 'random'
+#' Does not distinguish smooth, fixed, or random effects.
 #' 
 #' @param gamlssModel gamlss model object
 #' 
@@ -181,37 +180,26 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), name = NA, ...){
 #' @export
 list_predictors <- function(gamlssModel){
   
-  # extract formulas for all moments specified
-  call_string <- as.character(gamlssModel$call)
-  contains_tilde <- grepl("~", call_string)
-  moment_formulas <- call_string[contains_tilde]
-  # Use sub to remove everything up to and including the first ~
-  moment_formulas <- sub(".*?~", "", moment_formulas)
+  #list moments 
+  terms_list <- eval(gamlssModel[[2]])
   
-  # check you have expected number of moments
-  terms_lists <- eval(gamlssModel[[2]])
-  stopifnot(length(moment_formulas) <= length(terms_lists))
+  cov_list <- c()
+  for (term in terms_list){
+    f_string <- paste0(term, ".formula")
+    vars <- all.vars(gamlssModel[[f_string]])
+    cov_list <- c(cov_list, vars)
+  }
   
-  # Use gsub to replace all occurrences of +, -, *, /, ,, and = with spaces
-  drop_operations <- gsub("[-+*/=,\\|~]", " ", moment_formulas)
+  #remove y
+  pheno <- gamlssModel$mu.terms[[2]]
+  cov_list <- cov_list[cov_list != pheno]
   
-  # Use strsplit to split each string into 'words'
-  split_strings <- strsplit(drop_operations, "\\s+")
-  
-  # Flatten the list of words into a single vector
-  messy_term_vector <- unlist(split_strings)
-  
-  # remove smooths, random effects, etc, by removing characters before and including (
-  term_vector <- sub(".*\\(", "", messy_term_vector)
-  # also remove any )
-  term_vector <- sub("\\)", "", term_vector)
-  
-  #remove any non-predictor arguments from smooths, etc:
-  # number strings, 'by', 'random'
-  term_vector_full <- term_vector[!grepl("^random$|^by$|^\\d+$|^\\s*$", term_vector)]
+  #remove dataset name
+  df_name <- gamlssModel$call$data
+  cov_list <- cov_list[cov_list != df_name]
   
   #finally drop duplicates
-  term_vector_clean <- unique(term_vector_full)
+  term_vector_clean <- unique(cov_list)
   
   return(term_vector_clean)
 }
