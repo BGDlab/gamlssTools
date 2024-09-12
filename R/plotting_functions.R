@@ -372,6 +372,7 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
                              ...){
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
+  #check that var names are input correctly
   stopifnot(is.character(x_var))
   stopifnot(is.character(color_var))
   
@@ -416,6 +417,11 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
   }
   
   centile_linewidth <- sapply(desiredCentiles, map_thickness)
+  
+  #convert color_var to factor as needed
+  if (is.numeric(df[[color_var]])){
+    df[[color_var]] <- as.factor(df[[color_var]])
+  }
   
   #plot base gg object
   
