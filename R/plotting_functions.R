@@ -21,6 +21,7 @@
 #' @param color_var categorical variable that will be simulated at every level
 #' @param gamlssModel gamlss model object that will be used to subset the columns of df such that
 #' only the model's covariates are simulated (optional)
+#' @param special_term formula defining any terms that should be calculated separately (e.g. interaction terms)
 #' 
 #' @returns list of dataframes of simulated data, one for each level of `color_var`
 #' 
@@ -30,12 +31,19 @@
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 #' sim_data(iris, "Sepal.Length", "Species", iris_model)
 #' 
+#' # add interaction term for dummy-coded species
+#' iris2 <- iris %>% 
+#'   mutate(Species=as.numeric(Species)) %>%
+#'   mutate(SL_int = Sepal.Length * Species)
+#'
+#' iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species + SL_int, sigma.formula = ~ Sepal.Length, data=iris2)
+#' sim_data(iris2, "Sepal.Length", "Species", iris_model2, special_term="SL_int = Sepal.Length * Species")
+#' 
 #' @export
-sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
+sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=NULL){
   
   #make sure variable names are correct
   stopifnot(x_var %in% names(df))
-  stopifnot(color_var %in% names(df))
   
   #subset df cols just to predictors from model
   if (!is.null(gamlssModel)){
@@ -56,22 +64,64 @@ sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
   n_rows <- length(x_range)
   
   sim_df_list <- list()
-  # make new dfs iteratively over color variable's values
-  for (color_level in unique(df[[color_var]])){
+  
+  #simulate over levels of a factor
+  if(!is.null(color_var)){
+    stopifnot(color_var %in% names(df))
+    # make new dfs iteratively over color variable's values
+    for (color_level in unique(df[[color_var]])){
+      
+      print(paste("simulating", color_var, "at", color_level))
+      
+      # initialize right size df
+      new_df <- data.frame(matrix(ncol = ncol(df), nrow = n_rows))
+      colnames(new_df) <- colnames(df)
+      
+      #iterate over variables
+      for (col in colnames(new_df)){
+        
+        #add right level for color var
+        if (col == color_var){
+          new_df[[col]] <- rep(color_level, n_rows)
+          } else if (col == x_var) {
+            new_df[[col]] <- x_range
+          } else if (is.numeric(df[[col]])){
+            mean_value <- mean(df[[col]])
+            new_df[[col]] <- rep(mean_value, n_rows)
+            print(paste("simulating", col, "at", mean_value))
+          } else {
+            mode_value <- mode(df[[col]])
+            new_df[[col]] <- rep(mode_value, n_rows)
+            print(paste("simulating", col, "at", mode_value))
+          }
+      }
+      
+      #deal with any special/interaction terms
+      if(!is.null(special_term)){
+        f_parts <- parse_expr(special_term)
+        special_col <- as_string(f_lhs(f_parts))  # extract column name
+        col_def <- f_rhs(f_parts) # extract col def
+        
+        new_df <- new_df %>%
+          mutate(!!sym(special_col) := !!col_def)
+      }
+      
+      #name new df for color_var level and append to list
+      df_name <- paste0(color_level)
+      sim_df_list[[df_name]] <- new_df
+    }
+  } else if (is.null(color_var)){
+  #or just simulate one df
     
-    print(paste("simulating", color_var, "at", color_level))
-    
+    print("simulating data")
     # initialize right size df
     new_df <- data.frame(matrix(ncol = ncol(df), nrow = n_rows))
     colnames(new_df) <- colnames(df)
     
+    #simulate each variable
     #iterate over variables
     for (col in colnames(new_df)){
-      
-      #add right level for color var
-      if (col == color_var){
-        new_df[[col]] <- rep(color_level, n_rows)
-      } else if (col == x_var) {
+      if (col == x_var) {
         new_df[[col]] <- x_range
       } else if (is.numeric(df[[col]])){
         mean_value <- mean(df[[col]])
@@ -84,9 +134,17 @@ sim_data <- function(df, x_var, color_var, gamlssModel=NULL){
       }
     }
     
-    #name new df for color_var level and append to list
-    df_name <- paste0(color_level)
-    sim_df_list[[df_name]] <- new_df
+    #deal with any special/interaction terms
+    if(!is.null(special_term)){
+      f_parts <- parse_expr(special_term)
+      special_col <- as_string(f_lhs(f_parts))  # extract column name
+      col_def <- f_rhs(f_parts) # extract col def
+      
+      new_df <- new_df %>%
+        mutate(!!sym(special_col) := !!col_def)
+    }
+    
+    sim_df_list[[1]] <- new_df #append
   }
   return(sim_df_list)
 }

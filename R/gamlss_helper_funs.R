@@ -2,7 +2,7 @@
 #' 
 #' `mode()` returns the mode of a vector
 #' 
-#' Returns mode of numeric vector or vector of characters. If there are two modes,
+#' Returns mode of numeric vector or vector of characters. If there are 2+ modes,
 #' will return the first. Based on code found on StackExchange.
 #' 
 #' @param x vector of objects
@@ -25,9 +25,7 @@
 mode = function(x){
   ta = table(x)
   tam = max(ta)
-  if (all(ta == tam)){
-    mod = NA
-  } else if(is.numeric(x)){
+ if(is.numeric(x)){
     mod = as.numeric(names(ta)[ta == tam])
   } else{
     mod = names(ta)[ta == tam]
