@@ -385,6 +385,7 @@ centile_predict <- function(gamlssModel,
 #' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
 #' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're plotting
 #' many models fit on the same dataframe 
+#' @param show_points logical indicating whether to plot datapoints below centile fans. Defaults to `TRUE`
 #' 
 #' @returns ggplot object
 #' 
@@ -427,6 +428,7 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
                              desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
                              average_over = FALSE,
                              sim_data_list = NULL,
+                             show_points = TRUE,
                              ...){
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
@@ -481,11 +483,17 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
     df[[color_var]] <- as.factor(df[[color_var]])
   }
   
-  #plot base gg object
-  
+  #def base gg object (w/ or w/o points)
   if (average_over == FALSE){
-    base_plot_obj <- ggplot() +
-      geom_point(aes(y = df[[pheno]], x = df[[x_var]], color=df[[color_var]], fill=df[[color_var]])) +
+    if (show_points == TRUE){
+      base_plot_obj <- ggplot() +
+        geom_point(aes(y = df[[pheno]], x = df[[x_var]], color=df[[color_var]], fill=df[[color_var]]), alpha=0.6)
+    } else if (show_points==FALSE){
+      base_plot_obj <- ggplot()
+    }
+    
+    #now add centile fans
+    base_plot_obj <- base_plot_obj +
       geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
                     group = interaction(long_centile_df$id.vars, long_centile_df[[color_var]]),
                     color = long_centile_df[[color_var]],
@@ -493,7 +501,15 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
       scale_linewidth_manual(values = centile_linewidth, guide = "none")
     
   } else if (average_over == TRUE){
-    base_plot_obj <- ggplot() +
+    if (show_points == TRUE){
+      base_plot_obj <- ggplot() +
+        geom_point(aes(y = df[[pheno]], x = df[[x_var]]), alpha=0.6)
+    } else if (show_points==FALSE){
+      base_plot_obj <- ggplot()
+    }
+  
+    #now add centile fans
+    base_plot_obj <- base_plot_obj +
       geom_point(aes(y = df[[pheno]], x = df[[x_var]])) +
       geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
                     group = long_centile_df$id.vars,
