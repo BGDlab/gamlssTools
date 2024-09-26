@@ -144,7 +144,7 @@ sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=N
         mutate(!!sym(special_col) := !!col_def)
     }
     
-    sim_df_list[[1]] <- new_df #append
+    sim_df_list[["df"]] <- new_df #append
   }
   return(sim_df_list)
 }
@@ -370,9 +370,9 @@ centile_predict <- function(gamlssModel,
 #' @param gamlssModel gamlss model object
 #' @param df dataframe used to fit the gamlss model
 #' @param x_var continuous predictor (e.g. 'age') that will be plotted on the x axis
-#' @param color_var categorical predictor (e.g. 'sex') that will be used to determine the color of
+#' @param color_var (optional) categorical predictor (e.g. 'sex') that will be used to determine the color of
 #' points/centile lines. Alternatively, you can average over each level of this variable
-#' to return a single set of centile lines (see `average_over`)
+#' to return a single set of centile lines (see `average_over`).
 #' @param get_peaks logical to indicate whether to add a point at the median centile's peak value
 #' @param x_axis optional pre-formatted options for x-axis tick marks, labels, etc. Defaults to 'custom',
 #' which is, actually, no specific formatting. NOTE: options "lifespan" and "log_lifespan" assume that 
@@ -385,7 +385,8 @@ centile_predict <- function(gamlssModel,
 #' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
 #' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're plotting
 #' many models fit on the same dataframe 
-#' @param show_points logical indicating whether to plot datapoints below centile fans. Defaults to `TRUE`
+#' @param show_points logical indicating whether to plot data points below centile fans. Defaults to `TRUE`
+#' @param label_centiles logical indicating whether to note the percentile corresponding to each centile line. Defaults to `TRUE`
 #' 
 #' @returns ggplot object
 #' 
@@ -420,7 +421,8 @@ centile_predict <- function(gamlssModel,
 #' @importFrom tidyr gather
 #' 
 #' @export
-make_centile_fan <- function(gamlssModel, df, x_var, color_var,
+make_centile_fan <- function(gamlssModel, df, x_var, 
+                             color_var=NULL,
                              get_peaks=TRUE,
                              x_axis = c("custom",
                                         "lifespan", "log_lifespan", 
@@ -429,12 +431,13 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
                              average_over = FALSE,
                              sim_data_list = NULL,
                              show_points = TRUE,
+                             label_centiles = TRUE,
                              ...){
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
   #check that var names are input correctly
   stopifnot(is.character(x_var))
-  stopifnot(is.character(color_var))
+  #stopifnot(is.character(color_var))
   
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
@@ -454,16 +457,22 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
   # extract centiles and concatenate into single dataframe
   select_centile_dfs <- grep("^fanCentiles_", names(pred_list), value = TRUE)
   centile_dfs <- pred_list[select_centile_dfs]
-  #return(centile_dfs) #testing
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
-  merged_centile_df <- bind_rows(centile_dfs, .id = color_var)
   
-  #now make long so centile lines connect
-  long_centile_df <- merged_centile_df %>%
-    tidyr::gather(id.vars, values, !any_of(c(color_var, x_var)))
-  #return(long_centile_df) #testing
-  
-  # subfunction to define thickness of each centile line, with the 50th being thickest
+  if (!is.null(color_var)){
+    #merge across levels of color_var
+    merged_centile_df <- bind_rows(centile_dfs, .id = color_var)
+  } else {
+    merged_centile_df <- centile_dfs[[1]]
+    
+    #change average_over to TRUE for to easily skip color selection
+    average_over <- TRUE
+  }
+    #now make long so centile lines connect
+    long_centile_df <- merged_centile_df %>%
+      tidyr::gather(id.vars, values, !any_of(c(color_var, x_var)))
+    
+  # ubfunction to define thickness of each centile line, with the 50th being thickest
   map_thickness <- function(x){
     if (x == 0.5){
       return(1.75)
@@ -479,7 +488,7 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
   centile_linewidth <- sapply(desiredCentiles, map_thickness)
   
   #convert color_var to factor as needed
-  if (is.numeric(df[[color_var]])){
+  if (!is.null(color_var) && is.numeric(df[[color_var]])){
     df[[color_var]] <- as.factor(df[[color_var]])
   }
   
@@ -487,7 +496,7 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
   if (average_over == FALSE){
     if (show_points == TRUE){
       base_plot_obj <- ggplot() +
-        geom_point(aes(y = df[[pheno]], x = df[[x_var]], color=df[[color_var]], fill=df[[color_var]]), alpha=0.6)
+        geom_point(aes(y = df[[pheno]], x = df[[x_var]], color=df[[color_var]], fill=df[[color_var]]), alpha=0.3)
     } else if (show_points==FALSE){
       base_plot_obj <- ggplot()
     }
@@ -501,6 +510,7 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
       scale_linewidth_manual(values = centile_linewidth, guide = "none")
     
   } else if (average_over == TRUE){
+    print("plotting one centile fan...")
     if (show_points == TRUE){
       base_plot_obj <- ggplot() +
         geom_point(aes(y = df[[pheno]], x = df[[x_var]]), alpha=0.6)
@@ -520,12 +530,39 @@ make_centile_fan <- function(gamlssModel, df, x_var, color_var,
     stop(paste0("Do you want to average over values of ", color_var, "?"))
   }
   
+  #label centile curves as needed
+  if (label_centiles == TRUE){
+    #find farthest point on x axis for each centile
+    x_var_s <- sym(x_var)
+    
+    if (!is.null(color_var)){
+      color_var_s <- sym(color_var)
+    } else {
+      color_var_s <- NULL
+    }
+    
+    data_end <- long_centile_df %>%
+      dplyr::group_by(!!color_var_s, id.vars) %>%
+      dplyr::filter(!!x_var_s == max(!!x_var_s, na.rm=TRUE)) %>%
+      ungroup() %>%
+      mutate(id.vars = as.numeric(gsub("cent_", "", id.vars))) #make centile labels prettier
+
+    base_plot_obj <- base_plot_obj +
+      ggrepel::geom_text_repel(aes(x=data_end[[x_var_s]], y=data_end$values, label=scales::percent(data_end$id.vars)),
+                               nudge_x=(data_end[[x_var_s]]*.03), box.padding=0.15, size=3)
+  }
+  
   #add peak points as needed
   if (get_peaks == TRUE){
     select_peak_dfs <- grep("^peak_", names(pred_list), value = TRUE)
     peak_dfs <- pred_list[select_peak_dfs]
     names(peak_dfs) <- sub("peak_", "", names(peak_dfs)) #drop prefix
-    merged_peak_df <- bind_rows(peak_dfs, .id = color_var)
+    
+    if (!is.null(color_var)){
+      merged_peak_df <- bind_rows(peak_dfs, .id = color_var)
+    } else {
+      merged_peak_df <- peak_dfs[[1]]
+    }
     
     base_plot_obj <- base_plot_obj +
       geom_point(aes(x=merged_peak_df[[x_var]], y=merged_peak_df$y), size=3)

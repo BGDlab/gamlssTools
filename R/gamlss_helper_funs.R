@@ -231,10 +231,10 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE){
     newData <- subset(og.data, select = names(og.data) %in% predictor_list)
   }
   
-  predModel <- predictAll(gamlss.obj, newdata=newData, data=og.data, type= "response")
+  predModel <- predictAll(gamlssModel, newdata=newData, data=og.data, type= "response")
   
   #get dist type (e.g. GG, BCCG) and write out function
-  fname <- gamlss.obj$family[1]
+  fname <- gamlssModel$family[1]
   pfun <- paste0("p", fname)
   
   centiles <- c()
