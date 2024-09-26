@@ -36,8 +36,7 @@ iris_model <- gamlss(formula = Sepal.Width ~ pb(Sepal.Length) + Species, sigma.f
 iris_fan_plot <- make_centile_fan(iris_model, iris, "Sepal.Length", "Species")
 print(iris_fan_plot)
 ```
-![clean_iris_plot](https://github.com/user-attachments/assets/f3b5b473-d302-4752-86ab-6f905baae35b)
-
+![basic_iris_plot](https://github.com/user-attachments/assets/9ae4e535-94b9-4c7d-a0d5-c13331808d81)
 
 You can use ggplot to clean up the axes a bit
 ```
@@ -46,7 +45,7 @@ iris_fan_plot +
   x ="Sepal Length", y = "Sepal Width",
   color = "Species", fill="Species")
 ```
-![basic_iris_plot](https://github.com/user-attachments/assets/9ae4e535-94b9-4c7d-a0d5-c13331808d81)
+![clean_iris_plot](https://github.com/user-attachments/assets/f3b5b473-d302-4752-86ab-6f905baae35b)
 
 
 There are also many built-in configuration options,  including averaging over categorical variables (like `Species`): 
