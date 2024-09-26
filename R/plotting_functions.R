@@ -98,9 +98,9 @@ sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=N
       
       #deal with any special/interaction terms
       if(!is.null(special_term)){
-        f_parts <- parse_expr(special_term)
-        special_col <- as_string(f_lhs(f_parts))  # extract column name
-        col_def <- f_rhs(f_parts) # extract col def
+        f_parts <- rlang::parse_expr(special_term)
+        special_col <- rlang::as_string(rlang::f_lhs(f_parts))  # extract column name
+        col_def <- rlang::f_rhs(f_parts) # extract col def
         
         new_df <- new_df %>%
           mutate(!!sym(special_col) := !!col_def)
@@ -136,9 +136,9 @@ sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=N
     
     #deal with any special/interaction terms
     if(!is.null(special_term)){
-      f_parts <- parse_expr(special_term)
-      special_col <- as_string(f_lhs(f_parts))  # extract column name
-      col_def <- f_rhs(f_parts) # extract col def
+      f_parts <- rlang::parse_expr(special_term)
+      special_col <- rlang::as_string(rlang::f_lhs(f_parts))  # extract column name
+      col_def <- rlang::f_rhs(f_parts) # extract col def
       
       new_df <- new_df %>%
         mutate(!!sym(special_col) := !!col_def)

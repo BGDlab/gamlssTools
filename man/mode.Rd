@@ -16,7 +16,7 @@ value of same class as input
 \code{mode()} returns the mode of a vector
 }
 \details{
-Returns mode of numeric vector or vector of characters. If there are two modes,
+Returns mode of numeric vector or vector of characters. If there are 2+ modes,
 will return the first. Based on code found on StackExchange.
 }
 \examples{

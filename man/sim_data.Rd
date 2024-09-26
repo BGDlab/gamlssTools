@@ -4,7 +4,7 @@
 \alias{sim_data}
 \title{Simulate data for plotting GAMLSS}
 \usage{
-sim_data(df, x_var, color_var, gamlssModel = NULL)
+sim_data(df, x_var, color_var = NULL, gamlssModel = NULL, special_term = NULL)
 }
 \arguments{
 \item{df}{original dataframe from which new data will be simulated}
@@ -16,6 +16,8 @@ as determined from the df parameter}
 
 \item{gamlssModel}{gamlss model object that will be used to subset the columns of df such that
 only the model's covariates are simulated (optional)}
+
+\item{special_term}{formula defining any terms that should be calculated separately (e.g. interaction terms)}
 }
 \value{
 list of dataframes of simulated data, one for each level of \code{color_var}
@@ -35,5 +37,13 @@ sim_data(iris, "Sepal.Length", "Species")
 
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 sim_data(iris, "Sepal.Length", "Species", iris_model)
+
+# add interaction term for dummy-coded species
+iris2 <- iris \%>\% 
+  mutate(Species=as.numeric(Species)) \%>\%
+  mutate(SL_int = Sepal.Length * Species)
+
+iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species + SL_int, sigma.formula = ~ Sepal.Length, data=iris2)
+sim_data(iris2, "Sepal.Length", "Species", iris_model2, special_term="SL_int = Sepal.Length * Species")
 
 }

@@ -8,13 +8,15 @@ make_centile_fan(
   gamlssModel,
   df,
   x_var,
-  color_var,
+  color_var = NULL,
   get_peaks = TRUE,
   x_axis = c("custom", "lifespan", "log_lifespan", "lifespan_fetal",
     "log_lifespan_fetal"),
   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
   average_over = FALSE,
   sim_data_list = NULL,
+  show_points = TRUE,
+  label_centiles = TRUE,
   ...
 )
 }
@@ -25,9 +27,9 @@ make_centile_fan(
 
 \item{x_var}{continuous predictor (e.g. 'age') that will be plotted on the x axis}
 
-\item{color_var}{categorical predictor (e.g. 'sex') that will be used to determine the color of
+\item{color_var}{(optional) categorical predictor (e.g. 'sex') that will be used to determine the color of
 points/centile lines. Alternatively, you can average over each level of this variable
-to return a single set of centile lines (see \code{average_over})}
+to return a single set of centile lines (see \code{average_over}).}
 
 \item{get_peaks}{logical to indicate whether to add a point at the median centile's peak value}
 
@@ -45,6 +47,10 @@ Defaults to \code{FALSE}, which will plot a different colored centile fan for ea
 
 \item{sim_data_list}{optional argument that takes the output of \code{sim_data()}. Can be useful when you're plotting
 many models fit on the same dataframe}
+
+\item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
+
+\item{label_centiles}{logical indicating whether to note the percentile corresponding to each centile line. Defaults to \code{TRUE}}
 }
 \value{
 ggplot object
