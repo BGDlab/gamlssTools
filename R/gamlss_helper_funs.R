@@ -204,15 +204,17 @@ list_predictors <- function(gamlssModel){
 
 #' Predict original centiles
 #' 
-#' Returns the centile and/or z-score values for the original datapoints used to fit a gamlss model
+#' Returns the centile and/or z-score values for the original data points used to fit a gamlss model
 #' 
 #' Based on Jenna's function [calculatePhenotypeCentile()](https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
-#' and [gamlss::z.scores()]. Currently only supports z-score calculations for BCCG and NO families of distributions, can add others
+#' and [gamlss::z.scores()]. Also works for new data that has the same covariates (and levels of those covariates) as the original data (e.g. new subjects
+#' from the same studies) using `new.data` argument. Currently only supports z-score calculations for BCCG and NO families of distributions, can add others
 #' as appropriate.
 #' 
 #' @param gamlssModel gamlss model object
 #' @param og.data dataframe used to fit `gamlssModel`
 #' @param get.zscores logical indicating whether to calculate and return z-scores from centiles
+#' @param new.data (optional) new dataframe to predict centiles for (rather than `og.data`)
 #' 
 #' @returns either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
 #' 
@@ -221,16 +223,24 @@ list_predictors <- function(gamlssModel){
 #' list_predictors(iris_model)
 #' 
 #' @export
-pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE){
+pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=NULL){
   pheno <- gamlssModel$mu.terms[[2]]
   
   #subset df cols just to predictors from model
-  if (!is.null(gamlssModel)){
-    predictor_list <- list_predictors(gamlssModel)
-    stopifnot(predictor_list %in% names(og.data))
+  predictor_list <- list_predictors(gamlssModel)
+  stopifnot("Dataframe columns and model covariates don't match" = 
+              predictor_list %in% names(og.data))
+  if (is.null(new.data)) {
     newData <- subset(og.data, select = names(og.data) %in% predictor_list)
+  } else {
+    stopifnot("Dataframe columns and model covariates don't match" = 
+                predictor_list %in% names(new.data))
+    newData <- subset(new.data, select = names(new.data) %in% predictor_list)
+    #make sure all vals are within range of those originally modeled
+    stopifnot(check_range(og.data, newData) == TRUE) 
   }
   
+  #predict
   predModel <- predictAll(gamlssModel, newdata=newData, data=og.data, type= "response")
   
   #get dist type (e.g. GG, BCCG) and write out function
@@ -278,8 +288,6 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE){
 #' 
 #' See Equation 2 in [Selya et al, 2012](https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2012.00111/full)
 #' 
-#' Written by Simon White and copied from [github](https://github.com/brainchart/Lifespan/blob/bca92bfaad13cada8aad60cd14bc0bdaeb194ad7/102.gamlss-recode.r#L90)
-#' 
 #' @param full_mod full gamlss model object
 #' @param null_mod null gamlss model object (refit without covariate of interest)
 #' 
@@ -298,4 +306,61 @@ cohens_f2_local <- function(full_mod, null_mod){
   
   fsq <- (full_rsq - null_rsq)/(1-full_rsq)
   return(fsq)
+}
+
+#' Check Range
+#' 
+#' See whether column names/value ranges are encompased by another dataframe
+#' 
+#' Check to make sure that the column names and values in a new dataframe are included in an original
+#' dataframe. Checks that numeric values are within expected range and that no new levels have been introduced
+#' for charater/factor variables. Written with help from ChatGPT.
+#' 
+#' @param old_df original dataframe (base of comparison)
+#' @param new_df new dataframe
+#' 
+#' @returns logical TRUE/FALSE with explanation
+#' 
+#' @examples
+#' iris_new_species <- iris %>% sample_n(10) %>% mutate(Species = "Undiscovered")
+#' iris_new_species <- rbind(iris_new_species, iris)
+#' 
+#' check_range(iris, iris_new_species)
+#' 
+#' @export
+check_range <- function(old_df, new_df) {
+  for (col in colnames(old_df)) {
+    # Check if the column exists in both dataframes
+    if (col %in% colnames(new_df)) {
+      # Check the data type of the column
+      if (is.numeric(old_df[[col]])) {
+        # For numeric columns, check if all values in new_df are within the range of old_df
+        old_range <- range(old_df[[col]], na.rm = TRUE)
+        new_range <- range(new_df[[col]], na.rm = TRUE)
+        
+        if (new_range[1] < old_range[1] || new_range[2] > old_range[2]) {
+          warning(paste("Mismatch in numeric range for column:", col))
+          return(FALSE)
+        }
+        
+      } else if (is.character(old_df[[col]]) || is.factor(old_df[[col]])) {
+        # For categorical columns, check if all levels in new_df are within the levels of old_df
+        old_levels <- unique(old_df[[col]])
+        new_levels <- unique(new_df[[col]])
+        
+        if (!all(new_levels %in% old_levels)) {
+          warning(paste("Mismatch in categorical values for column:", col))
+          return(FALSE)
+        }
+      } else {
+        warning(paste("Unsupported column type in column:", col))
+        return(FALSE)
+      }
+    } else {
+      warning(paste("Column", col, "not found in new dataframe."))
+      return(FALSE)
+    }
+  }
+  
+  return(TRUE)
 }

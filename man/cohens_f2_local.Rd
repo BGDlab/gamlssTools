@@ -19,8 +19,6 @@ Calculate effect size (cohen's fsq) of a covariate using the difference in Rsq o
 }
 \details{
 See Equation 2 in \href{https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2012.00111/full}{Selya et al, 2012}
-
-Written by Simon White and copied from \href{https://github.com/brainchart/Lifespan/blob/bca92bfaad13cada8aad60cd14bc0bdaeb194ad7/102.gamlss-recode.r#L90}{github}
 }
 \examples{
 iris_model_full <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)

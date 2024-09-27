@@ -4,7 +4,7 @@
 \alias{pred_og_centile}
 \title{Predict original centiles}
 \usage{
-pred_og_centile(gamlssModel, og.data, get.zscores = FALSE)
+pred_og_centile(gamlssModel, og.data, get.zscores = FALSE, new.data = NULL)
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}
@@ -12,16 +12,19 @@ pred_og_centile(gamlssModel, og.data, get.zscores = FALSE)
 \item{og.data}{dataframe used to fit \code{gamlssModel}}
 
 \item{get.zscores}{logical indicating whether to calculate and return z-scores from centiles}
+
+\item{new.data}{(optional) new dataframe to predict centiles for (rather than \code{og.data})}
 }
 \value{
 either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
 }
 \description{
-Returns the centile and/or z-score values for the original datapoints used to fit a gamlss model
+Returns the centile and/or z-score values for the original data points used to fit a gamlss model
 }
 \details{
 Based on Jenna's function \href{https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67}{calculatePhenotypeCentile()}
-and \code{\link[gamlss:z.scores]{gamlss::z.scores()}}. Currently only supports z-score calculations for BCCG and NO families of distributions, can add others
+and \code{\link[gamlss:z.scores]{gamlss::z.scores()}}. Also works for new data that has the same covariates (and levels of those covariates) as the original data (e.g. new subjects
+from the same studies) using \code{new.data} argument. Currently only supports z-score calculations for BCCG and NO families of distributions, can add others
 as appropriate.
 }
 \examples{
