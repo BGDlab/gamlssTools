@@ -1,8 +1,10 @@
 Package: gamlssTools
 Title: Accessory and Plotting Functions for GAMLSS Models
 Version: 0.0.0.9000
-Authors@R: 
-    person("Margaret", "Gardner", , "megardn@gmail.com", role = c("aut", "cre"))
+Authors@R: c(
+    person("Margaret", "Gardner", , "megardn@gmail.com", role = c("aut", "cre")),
+    person("Jenna", "Schabdach", role=c("aut")),
+    person("Russell", "Shinohara", role=c("aut")))
 Description: This is a support package for the gamlss package. It makes information more accessible
 	from gamlss model objects and easily plots them using ggplot.
 License: CC BY 4.0
