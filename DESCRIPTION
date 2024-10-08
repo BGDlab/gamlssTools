@@ -24,8 +24,10 @@ Suggests:
     rmarkdown,
     testthat (>= 3.0.0),
     devtools,
-    rlang
+    rlang,
+    foreach
 Imports:
 	tibble,
-	tidyr
+	tidyr,
+	foreach
 Config/testthat/edition: 3

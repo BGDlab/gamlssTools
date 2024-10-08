@@ -220,7 +220,7 @@ list_predictors <- function(gamlssModel){
 #' 
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
-#' list_predictors(iris_model)
+#' pred_og_centile(iris_model, iris)
 #' 
 #' @export
 pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=NULL){
@@ -247,10 +247,27 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=
   fname <- gamlssModel$family[1]
   pfun <- paste0("p", fname)
   
+  #look for moments
+  has_sigma <- "sigma" %in% gamlssModel[[2]]
+  has_nu <- "nu" %in% gamlssModel[[2]]
+  has_tau <- "tau" %in% gamlssModel[[2]]
+  
   centiles <- c()
   #iterate through participants
   for (i in 1:nrow(og.data)){
-    centiles[i] <- eval(call(pfun, og.data[[pheno]][[i]], mu=predModel$mu[[i]], sigma=predModel$sigma[[i]], nu=predModel$nu[[i]]))
+    cent_args <- list(og.data[[pheno]][[i]], predModel$mu[[i]])
+    
+    if (has_sigma){
+      cent_args$sigma <- predModel$sigma[[i]]
+    }
+    if (has_nu){
+      cent_args$nu <- predModel$nu[[i]]
+    } 
+    if (has_tau){
+      cent_args$tau <- predModel$tau[[i]]
+    } 
+    
+    centiles[i] <- do.call(pfun, cent_args)
     
     #don't let centile = 1 (for z-scores)!
     if (centiles[i] == 1) {
@@ -258,7 +275,7 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=
     }
     #don't let centile = 0 (for z-scores)!
     if (centiles[i] == 0) {
-      centiles[i] <- 0.0000000000000000000000001 #25 dec places, should be plenty based on min centile
+      centiles[i] <- 0.0000000000000000000000001 #25 dec places
     }
     
   }

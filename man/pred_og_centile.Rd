@@ -29,6 +29,6 @@ as appropriate.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
-list_predictors(iris_model)
+pred_og_centile(iris_model, iris)
 
 }

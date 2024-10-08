@@ -48,7 +48,10 @@ sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=N
   #subset df cols just to predictors from model
   if (!is.null(gamlssModel)){
     predictor_list <- list_predictors(gamlssModel)
-    stopifnot(predictor_list %in% names(df))
+    if( !all(predictor_list %in% names(df)) ){
+      missing_val <- setdiff(predictor_list, names(df))
+      warning(paste('predictor:', missing_val, 'not in dataframe'))
+    }
     df <- subset(df, select = names(df) %in% predictor_list)
   }
   
