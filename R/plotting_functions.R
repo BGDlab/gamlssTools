@@ -18,7 +18,7 @@
 #' @param df original dataframe from which new data will be simulated
 #' @param x_var continuous variable whose value will be simulated across it's full range,
 #' as determined from the df parameter
-#' @param color_var categorical variable that will be simulated at every level
+#' @param factor_var (optional) categorical variable that will be simulated at every level
 #' @param gamlssModel gamlss model object that will be used to subset the columns of df such that
 #' only the model's covariates are simulated (optional)
 #' @param special_term formula defining any terms that should be calculated separately (e.g. interaction terms)
@@ -40,7 +40,7 @@
 #' sim_data(iris2, "Sepal.Length", "Species", iris_model2, special_term="SL_int = Sepal.Length * Species")
 #' 
 #' @export
-sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=NULL){
+sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL){
   
   #make sure variable names are correct
   stopifnot(x_var %in% names(df))
@@ -69,12 +69,12 @@ sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=N
   sim_df_list <- list()
   
   #simulate over levels of a factor
-  if(!is.null(color_var)){
-    stopifnot(color_var %in% names(df))
-    # make new dfs iteratively over color variable's values
-    for (color_level in unique(df[[color_var]])){
+  if(!is.null(factor_var)){
+    stopifnot(factor_var %in% names(df))
+    # make new dfs iteratively over factor variable's values
+    for (factor_level in unique(df[[factor_var]])){
       
-      print(paste("simulating", color_var, "at", color_level))
+      print(paste("simulating", factor_var, "at", factor_level))
       
       # initialize right size df
       new_df <- data.frame(matrix(ncol = ncol(df), nrow = n_rows))
@@ -83,9 +83,9 @@ sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=N
       #iterate over variables
       for (col in colnames(new_df)){
         
-        #add right level for color var
-        if (col == color_var){
-          new_df[[col]] <- rep(color_level, n_rows)
+        #add right level for factor var
+        if (col == factor_var){
+          new_df[[col]] <- rep(factor_level, n_rows)
           } else if (col == x_var) {
             new_df[[col]] <- x_range
           } else if (is.numeric(df[[col]])){
@@ -109,11 +109,11 @@ sim_data <- function(df, x_var, color_var=NULL, gamlssModel=NULL, special_term=N
           mutate(!!sym(special_col) := !!col_def)
       }
       
-      #name new df for color_var level and append to list
-      df_name <- paste0(color_level)
+      #name new df for factor_var level and append to list
+      df_name <- paste0(factor_level)
       sim_df_list[[df_name]] <- new_df
     }
-  } else if (is.null(color_var)){
+  } else if (is.null(factor_var)){
   #or just simulate one df
     
     print("simulating data")
@@ -215,6 +215,95 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
   }
 }
 
+#' Predict residualized response
+#' 
+#' Correct predicted response to remove the effects of certain unwanted covariates
+#'
+#' Works by running `predict.gamlss()` with type="terms" to calculate the value of each moment WITHOUT the
+#' specified terms/covariates, then applying the inverse of the link function to convert into response scale.
+#' The effects of covariates listed in `rm_terms` are removed from all moments.
+#' Resulting responses can be fed into [pred_centile()] to calculate centiles from moments calculated
+#' WITHOUT unwanted effects (such as site or study effects). Terms must be listed as they appear in 
+#' the model coefficients, i.e., include "random()", "fp()", or "pb()", etc, as needed.
+#' 
+#' @param gamlssModel gamlss model object
+#' @param new_data dataframe to predict from. may be simulated data created with [sim_data()]
+#' @param og_data original dataframe used to fit the model (optional)
+#' @param rm_terms list of term(s) whose effects will be residualized (removed). Note: MUST be input
+#' as a character matching the value of the model coefficient (see examples below).
+#'
+#' @returns list of predicted values, corrected for effects listed in `rm_terms`.
+#' 
+#' @examples
+#' #predict a specific centile value across simulated data
+#' iris_model <- gamlss(formula = Sepal.Width ~ fp(Sepal.Length) + Petal.Width + re(random=~1|Species), 
+#'   sigma.formula = ~ Sepal.Length + random(Species), data=iris, family=BCCG)
+#' sim_df <- sim_data(iris, "Sepal.Length", gamlssModel=iris_model)
+#' pred_df <- pred_residualized(iris_model, new_data = sim_df[[1]], og_data=iris, 
+#'   rm_terms=c("random(Species)", "Petal.Width"))
+#' pred_centile(0.1, pred_df, "qBCCG", 3)
+#' 
+#' 
+#' @export
+#' @importFrom boot inv.logit
+pred_residualized <- function(gamlssModel, new_data, og_data=NULL,
+                              rm_terms){
+  #define inverse link functions
+  inv_links <- list("log" = "exp",
+                    "logit" = "inv.logit")
+  
+  #init lists to hold results
+  pred <- c()
+  
+  #NOTE: due to bug in gamlss.predict, need to predict all moments then select
+  link_pred_all <- predictAll(gamlssModel, newdata=new_data, data=og_data, type="link")
+  
+  #new_data must have multiple levels of rm_terms to be modeled - if fails, will model from original data
+  terms_pred_all <- tryCatch({
+    predictAll(gamlssModel, newdata=new_data, data=og_data, type="terms")
+    }, error = function(e) {
+      message("Error, deriving beta estimates from original data - should ONLY be used to remove constant effects!!!")
+      predictAll(gamlssModel, data=og_data, type="terms")
+      #now select values of "
+      })
+  
+  #replace () with . since that's what data.frame does for some reason
+  rm_terms_dot <- gsub("\\(|\\)", ".", rm_terms)
+
+  #list moments 
+  moment_list <- eval(gamlssModel[[2]])
+  
+  for (moment in moment_list) {
+    print(moment)
+    #get link value for each moment (includes all terms)
+    link_pred <- link_pred_all[[moment]]
+
+    #get rm_term effects in this moment
+    term_df <- data.frame(terms_pred_all[[moment]])
+    effect_to_rm <- term_df %>%
+      dplyr::select(any_of(rm_terms_dot)) %>%
+      rowSums()
+    
+    #remove effects - will remove 0 if no rm_terms are included in the moment
+    corrected_pred <- link_pred - effect_to_rm
+
+    #inverse link function to get to response scale
+    search_str <- paste0(moment, ".link")
+    link_fun <- gamlssModel[[search_str]]
+    
+    if (link_fun != "identity"){
+      stopifnot("don't know how to handle link function" = 
+                  link_fun %in% names(inv_links))
+      
+      inv_fun <- inv_links[[link_fun]]
+      corrected_pred <- eval(call(inv_fun, corrected_pred))
+    }
+    #save results
+    pred[[moment]] <- corrected_pred
+  }
+  return(pred)
+}
+
 #' Predict centiles
 #' 
 #' `centile_predict` calculates y values for a range of centiles across simulated data
@@ -273,12 +362,12 @@ centile_predict <- function(gamlssModel,
   #initialize empty list(s)
   centile_result_list <- list()
   
-  # Predict phenotype values for each simulated level of color_var
-  for (color_level in names(sim_df_list)) {
+  # Predict phenotype values for each simulated level of factor_var
+  for (factor_level in names(sim_df_list)) {
     
     #make sure variable names are correct
-    stopifnot(x_var %in% names(sim_df_list[[color_level]]))
-    sub_df <- sim_df_list[[color_level]]
+    stopifnot(x_var %in% names(sim_df_list[[factor_level]]))
+    sub_df <- sim_df_list[[factor_level]]
     
     # Predict centiles
     pred_df <- predictAll(gamlssModel, newdata=sub_df, type="response", data=df)
@@ -291,9 +380,9 @@ centile_predict <- function(gamlssModel,
     stopifnot(ncol(centiles_df) == length(desiredCentiles))
     stopifnot(nrow(centiles_df) == nrow(pred_df))
     
-    #add x_vals, name centiles for color_var level and append to results list
+    #add x_vals, name centiles for factor_var level and append to results list
     centiles_df[[x_var]] <- sub_df[[x_var]]
-    cent_name <- paste0("fanCentiles_", color_level)
+    cent_name <- paste0("fanCentiles_", factor_level)
     centile_result_list[[cent_name]] <- centiles_df
     
     #get peak y value & corresponding x value
@@ -309,8 +398,8 @@ centile_predict <- function(gamlssModel,
       peak_df <- median_df[which.max(median_df$y), ] #find peak
       names(peak_df)[names(peak_df) == "x"] <- x_var #rename x_var
       
-      #name peak value for color_var level and append to results list
-      peak_df_name <- paste0("peak_", color_level)
+      #name peak value for factor_var level and append to results list
+      peak_df_name <- paste0("peak_", factor_level)
       centile_result_list[[peak_df_name]] <- peak_df
     }
 
@@ -390,6 +479,8 @@ centile_predict <- function(gamlssModel,
 #' many models fit on the same dataframe 
 #' @param show_points logical indicating whether to plot data points below centile fans. Defaults to `TRUE`
 #' @param label_centiles logical indicating whether to note the percentile corresponding to each centile line. Defaults to `TRUE`
+#' @param remove_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Removes from 
+#' both the centile fan and points if `show_points=TRUE`. Defaults to `TRUE`.
 #' 
 #' @returns ggplot object
 #' 
@@ -435,12 +526,12 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              sim_data_list = NULL,
                              show_points = TRUE,
                              label_centiles = TRUE,
+                             remove_effect = TRUE,
                              ...){
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
   #check that var names are input correctly
   stopifnot(is.character(x_var))
-  #stopifnot(is.character(color_var))
   
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
@@ -596,7 +687,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
       for (year in seq(0, 100, by=10)){
         tickMarks <- append(tickMarks, year*365.25 + add_val)
       }
-      tickLabels <- c("Birth", "", "", "", "", "50", "", "", "", "", "100")
+      tickLabels <- c("Birth", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100")
       unit_lab <- "(years)"
     }
     

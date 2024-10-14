@@ -168,18 +168,24 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), name = NA, ...){
 #' Does not distinguish smooth, fixed, or random effects.
 #' 
 #' @param gamlssModel gamlss model object
+#' @param moment moment to return predictors from. Defaults to "all"
 #' 
-#' @returns dataframe with outputs of `drop1()` for each moment and term
+#' @returns a list of character strings
 #' 
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 #' list_predictors(iris_model)
 #' 
 #' @export
-list_predictors <- function(gamlssModel){
+list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "tau")){
   
-  #list moments 
-  terms_list <- eval(gamlssModel[[2]])
+  #list moments
+  moment <- match.arg(moment)
+  if (moment == "all"){
+    terms_list <- eval(gamlssModel[[2]])
+  } else {
+    terms_list <- moment
+  }
   
   cov_list <- c()
   for (term in terms_list){
