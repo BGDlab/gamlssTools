@@ -368,7 +368,8 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
   if (is.null(og_data)){
     og_data <- df
   }
-  rm_effects_link <- predict(gamlssModel, newdata=df, data=og_data, type="terms", terms=rm_terms) %>% 
+  rm_effects_link <- predict(gamlssModel, newdata=df, data=og_data, type="terms") %>%
+    subset(TRUE, rm_terms) %>%
     rowSums()
   
   #inverse link function to get to response scale
@@ -380,6 +381,8 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
     
     inv_fun <- inv_links[[link_fun]]
     rm_effects <- eval(call(inv_fun, rm_effects_link))
+  } else {
+    rm_effects <- rm_effects_link
   }
   
   #subtract from y

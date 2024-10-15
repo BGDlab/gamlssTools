@@ -29,5 +29,6 @@ Suggests:
 Imports:
 	tibble,
 	tidyr,
-	foreach
+	foreach,
+	boot
 Config/testthat/edition: 3

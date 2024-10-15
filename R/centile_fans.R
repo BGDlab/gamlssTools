@@ -106,7 +106,9 @@ centile_fan_minimal <- function(gamlssModel, df, x_var,
   return(plot)
 }
 
-#' Plot centile fan in the style of Bethlehem & Seidletz et al
+#' Plot lifespan centile fan
+#' 
+#' Plot centiles in the style of Bethlehem, Seidletz & White et al, Nature 2020.
 #' 
 #' Wrapper function for [make_centile_fan()] with different defaults.
 #' 
@@ -277,12 +279,12 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   }
   
   #remove effects from points if necessary
-  if (show_points == TRUE && !is.null(remove_point_effects)) {
+  if (show_points == TRUE && !is.null(remove_point_effect)) {
     message(paste("Residualizing", remove_point_effect, "from data points"))
     point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect)
-  } else if (show_points == TRUE && is.null(remove_point_effects)) {
+  } else if (show_points == TRUE && is.null(remove_point_effect)) {
     point_df <- df
-  } else if (show_points == FALSE && !is.null(remove_point_effects)){
+  } else if (show_points == FALSE && !is.null(remove_point_effect)){
     warning("Points not shown so no residual effects removed")
   }
   

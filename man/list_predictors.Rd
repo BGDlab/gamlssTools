@@ -4,13 +4,15 @@
 \alias{list_predictors}
 \title{List all predictors}
 \usage{
-list_predictors(gamlssModel)
+list_predictors(gamlssModel, moment = c("all", "mu", "sigma", "nu", "tau"))
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}
+
+\item{moment}{moment to return predictors from. Defaults to "all"}
 }
 \value{
-dataframe with outputs of \code{drop1()} for each moment and term
+a list of character strings
 }
 \description{
 Lists every covariate in any moment of a gamlss model.
