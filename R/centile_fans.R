@@ -39,25 +39,31 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
   #if point effects not provided, recreate from `remove_cent_effect`
   if (show_points == TRUE && is.null(remove_point_effect)){
     
-    #list coefficients in mu, look for random effects/smooths
-    mu_coef <- coefficients(gamlssModel) %>% names()
-    mu_coef_filt <- mu_coef[mu_coef != "(Intercept)"] #just in case
-    
-    #subfunction with help from ChatGPT to match coeff in `remove_cent_effect` with mu coeff
-    filter_strings <- function(strings, substrings) {
-      # Create a logical matrix where each row corresponds to a string,
-      # and each column corresponds to whether a substring is found in the string.
-      match_matrix <- sapply(substrings, function(sub) grepl(sub, strings, ignore.case = TRUE))
+    #list smooth coefficients in mu, look for random effects/smooths
+    mu_coef_sm <- gamlssModel[["mu.s"]] %>% colnames()
+
+    #subfunction with help from ChatGPT to match & rename coeff in `remove_cent_effect` 
+    #with smooth mu coeff as needed
+    update_strings <- function(strings, substrings) {
+      # Initialize a vector to store the results (same length as substrings)
+      results <- substrings
       
-      # Reduce the matrix by rows to find strings that match at least one substring.
-      matches <- apply(match_matrix, 1, any)
-      
-      # Return only the strings that match any substring.
-      return(strings[matches])
+      # Loop over each substring
+      for (i in seq_along(substrings)) {
+        # Check if the substring is found in any of the strings
+        matched_strings <- strings[grepl(substrings[i], strings, ignore.case = TRUE)]
+        
+        # If there's at least one match, replace the substring with the first match
+        if (length(matched_strings) > 0) {
+          results[i] <- matched_strings[1]  # or concatenate matched_strings if needed
+        }
+      }
+      return(results)
     }
-    pt_effects <- filter_strings(mu_coef_filt, remove_cent_effect)
     
-    if(length(pt_effects) < 1){
+    remove_point_effect <- update_strings(mu_coef_sm, remove_cent_effect)
+    
+    if(length(remove_point_effect) < 1){
       warning("No effects found in mu, not residualizing data points")
     }
   }
@@ -72,7 +78,7 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
                            show_points = show_points,
                            label_centiles = label_centiles,
                            remove_cent_effect = remove_cent_effect,
-                           remove_point_effect = pt_effects,
+                           remove_point_effect = remove_point_effect,
                            ...)
   return(plot)
 }
