@@ -2,6 +2,7 @@
 
 export(GGalt.variance)
 export(bootstrap_gamlss)
+export(cent_cdf)
 export(centile_fan_lifespan)
 export(centile_fan_minimal)
 export(centile_fan_resid)

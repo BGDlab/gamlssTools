@@ -9,7 +9,7 @@ with all gamlss models, regardless of the number of covariates, smooths, random 
 
 ### Extracting Information
 
-The other auxilliary functions in this package are mostly intended to interact with gamlss model objects. Some hilights include:
+The other auxiliary functions in this package are mostly intended to interact with gamlss model objects. Some hilights include:
 
 - `get_coeff()`: returns beta coefficient for a specific covariate in a gamlss model
 - `list_predictors()`: lists all covariates in any moment of a gamlss model

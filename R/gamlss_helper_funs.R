@@ -387,3 +387,47 @@ check_range <- function(old_df, new_df) {
   
   return(TRUE)
 }
+#' Centile CDF
+#' 
+#' Return the probability of observations with predicted centiles that are < or = centile lines
+#' estimated from a gamlss model. 
+#' 
+#' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()]. 
+#' Calls [pred_og_centile()].
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe to assess
+#' @param group (optional) name of grouping column
+#' 
+#' @returns dataframe with one row for every value of `group` 
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+#' cent_cdf(iris_model, iris)
+#' cent_cdf(iris_model, iris, "Species")
+#' 
+#' @export
+cent_cdf <- function(gamlssModel, df, group=NULL){
+  #predict centiles for original data
+  df$centile <- pred_og_centile(gamlssModel, df)
+  
+  #convert group var to factor as needed
+  if (!is.null(group) && is.numeric(df[[group]])){
+    df[[group]] <- as.factor(df[[group]])
+  }
+  
+  #group and summarize
+  df %>%
+    summarise("1%" = round(sum(centile <= 0.01)/n(), digits=3),
+                "5%" = round(sum(centile <= 0.05)/n(),digits=3),
+                "10%" = round(sum(centile <= 0.1)/n(), digits=3),
+                "25%" = round(sum(centile <= 0.25)/n(), digits=3),
+                "50%" = round(sum(centile <= 0.5)/n(), digits=3),
+                "75%" = round(sum(centile <= 0.75)/n(), digits=3),
+                "90%" = round(sum(centile <= 0.90)/n(), digits=3),
+                "95%" = round(sum(centile <= 0.95)/n(), digits=3),
+                "99%" = round(sum(centile <= 0.99)/n(), digits=3),
+                .by=!!group)
+}
+
+
