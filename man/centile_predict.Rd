@@ -57,6 +57,6 @@ sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
 centile_predict(iris_model, sim_df, "Sepal.Length", average_over = TRUE)
 
 # or say you just want the 25th, 50th (median), and 75th percentiles
-centile_predict(iris_model, sim_df, "Sepal.Length", desiredCentiles = c(0.25, 0.5, 0.))
+centile_predict(iris_model, sim_df, "Sepal.Length", desiredCentiles = c(0.25, 0.5, 0.75))
 
 }

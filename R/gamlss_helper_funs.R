@@ -442,4 +442,89 @@ cent_cdf <- function(gamlssModel, df, group=NULL, interval_var=NULL, ...){
                 .by=!!group)
 }
 
+#' Get phenotype at centile(s)
+#' 
+#' Predict the values of a phenotype (y) at each desired centile, given specified covariates
+#' 
+#' Simulates data across the range of `range_var` and at each level of `factor_var`, then uses this
+#' simulated dataset to determine what y (phenotype) is for each centile/at each combo of `range_var`
+#' `factor_var`. Holds all other covariates in the gamlss model at their mean or mode. You can save 
+#' time when predicting multiple models/phenos fit on the same data/predictors
+#' by first running [sim_data()] and supplying the output to arg `sim_data_list`.
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe used to fit the gamlss model
+#' @param range_var continuous predictor (e.g. 'age') that y will be predicted across the range of
+#' @param factor_var (optional) categorical predictor (e.g. 'sex') that y will be predicted at each level of.
+#' Alternatively, you can average over each level of this variable (see `average_over`).
+#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
+#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
+#' @param average_over logical indicating whether to average predicted centiles across each level of `factor_var`.
+#' Defaults to `FALSE`, which will return a centile value for each level of `factor_var`.
+#' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're using
+#' many models fit on the same dataframe 
+#' @param remove_cent_effect logical indicating whether to correct for the effect of a variable (such as study). Defaults to `FALSE`.
+#' 
+#' @returns dataframe
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' 
+#' #for each level of 'Species', find 'Sepal.Width' values corresponding to 25th percentile across the range of 'Sepal.Length'
+#' #holding all other covariates constant at mean/mode
+#' pheno_at_centiles(iris_model, iris, "Sepal.Length", "Species", desiredCentiles=0.25)
+#' 
+#' #get 'Sepal.Width' at each centile, averaging across levels of Species
+#' pheno_at_centiles(iris_model, iris, "Sepal.Length", "Species", average_over=TRUE)
+#' 
+#' @export
+pheno_at_centiles <- function(gamlssModel, df, 
+                             range_var, 
+                             factor_var=NULL,
+                             desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+                             average_over = FALSE,
+                             sim_data_list = NULL,
+                             remove_cent_effect = NULL,
+                             ...){
+  pheno <- as.character(gamlssModel$mu.terms[[2]])
+  
+  #check that var names are input correctly
+  stopifnot(is.character(range_var))
+  
+  #simulate dataset(s) if not already supplied
+  if (is.null(sim_data_list)) {
+    sim_list <- sim_data(df, range_var, factor_var, gamlssModel)
+  } else if (!is.null(sim_data_list)) {
+    sim_list <- sim_data_list
+  }
+  
+  #predict centiles
+  pred_list <- centile_predict(gamlssModel = gamlssModel, 
+                               sim_df_list = sim_list, 
+                               x_var = range_var, 
+                               desiredCentiles = desiredCentiles,
+                               df = df,
+                               average_over = average_over,
+                               get_peaks=FALSE,
+                               resid_terms = remove_cent_effect)
+  
+  # extract centiles and concatenate into single dataframe
+  select_centile_dfs <- grep("^fanCentiles_", names(pred_list), value = TRUE)
+  centile_dfs <- pred_list[select_centile_dfs]
+  names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
+  
+  if (!is.null(factor_var)){
+    #merge across levels of factor_var
+    merged_centile_df <- bind_rows(centile_dfs, .id = factor_var)
+  } else {
+    merged_centile_df <- centile_dfs[[1]]
+  }
+  
+  #reorder so centiles are last
+  other_names <- names(merged_centile_df)[!grepl("^cent_", names(merged_centile_df))]
+  df_sorted <- merged_centile_df %>% dplyr::select(all_of(other_names), starts_with("cent_"))
 
+  return(df_sorted)
+  
+}
