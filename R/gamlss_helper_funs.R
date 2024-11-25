@@ -238,12 +238,17 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=
               predictor_list %in% names(og.data))
   if (is.null(new.data)) {
     newData <- subset(og.data, select = names(og.data) %in% predictor_list)
+    predict_me <- og.data
   } else {
     stopifnot("Dataframe columns and model covariates don't match" = 
                 predictor_list %in% names(new.data))
-    newData <- subset(new.data, select = names(new.data) %in% predictor_list)
+    #make sure new.data has pheno values you can predict centiles for
+    stopifnot("No pheno values in new dataframe" =
+                pheno %in% names(new.data))
+    newData <- subset(new.data, select = names(new.data) %in% c(predictor_list, pheno))
+    predict_me <- newData
     #make sure all vals are within range of those originally modeled
-    stopifnot(check_range(og.data, newData) == TRUE) 
+    stopifnot(check_range(og.data[,predictor_list], newData) == TRUE)
   }
   
   #predict
@@ -260,8 +265,8 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=
   
   centiles <- c()
   #iterate through participants
-  for (i in 1:nrow(og.data)){
-    cent_args <- list(og.data[[pheno]][[i]], predModel$mu[[i]])
+  for (i in 1:nrow(predict_me)){
+    cent_args <- list(predict_me[[pheno]][[i]], predModel$mu[[i]])
     
     if (has_sigma){
       cent_args$sigma <- predModel$sigma[[i]]
@@ -398,6 +403,8 @@ check_range <- function(old_df, new_df) {
 #' @param gamlssModel gamlss model object
 #' @param df dataframe to assess
 #' @param group (optional) name of grouping column
+#' @param interval_var (optional) numeric variable along which to group outputs. Uses [ggplot2::cut_interval], which
+#' requires additional args.
 #' 
 #' @returns dataframe with one row for every value of `group` 
 #' 
@@ -407,13 +414,18 @@ check_range <- function(old_df, new_df) {
 #' cent_cdf(iris_model, iris, "Species")
 #' 
 #' @export
-cent_cdf <- function(gamlssModel, df, group=NULL){
+cent_cdf <- function(gamlssModel, df, group=NULL, interval_var=NULL, ...){
   #predict centiles for original data
   df$centile <- pred_og_centile(gamlssModel, df)
   
   #convert group var to factor as needed
   if (!is.null(group) && is.numeric(df[[group]])){
     df[[group]] <- as.factor(df[[group]])
+  }
+  
+  if (!is.null(interval_var)){
+    df$Interval <- cut_interval(df[[interval_var]], ...)
+    df <- df %>% group_by(Interval)
   }
   
   #group and summarize

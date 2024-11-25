@@ -4,7 +4,7 @@
 \alias{cent_cdf}
 \title{Centile CDF}
 \usage{
-cent_cdf(gamlssModel, df, group = NULL)
+cent_cdf(gamlssModel, df, group = NULL, interval_var = NULL, ...)
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}
@@ -12,6 +12,9 @@ cent_cdf(gamlssModel, df, group = NULL)
 \item{df}{dataframe to assess}
 
 \item{group}{(optional) name of grouping column}
+
+\item{interval_var}{(optional) numeric variable along which to group outputs. Uses \link[ggplot2:cut_interval]{ggplot2::cut_interval}, which
+requires additional args.}
 }
 \value{
 dataframe with one row for every value of \code{group}
