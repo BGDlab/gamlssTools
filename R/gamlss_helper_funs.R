@@ -237,18 +237,15 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=
   stopifnot("Dataframe columns and model covariates don't match" = 
               predictor_list %in% names(og.data))
   if (is.null(new.data)) {
-    newData <- subset(og.data, select = names(og.data) %in% predictor_list)
+    newData <- subset(og.data, select = predictor_list)
     predict_me <- og.data
   } else {
     stopifnot("Dataframe columns and model covariates don't match" = 
                 predictor_list %in% names(new.data))
-    #make sure new.data has pheno values you can predict centiles for
-    stopifnot("No pheno values in new dataframe" =
-                pheno %in% names(new.data))
-    newData <- subset(new.data, select = names(new.data) %in% c(predictor_list, pheno))
-    predict_me <- newData
+    newData <- subset(new.data, select = predictor_list)
+    predict_me <- new.data
     #make sure all vals are within range of those originally modeled
-    stopifnot(check_range(og.data[,predictor_list], newData) == TRUE)
+    check_range(subset(og.data, select = predictor_list), newData)
   }
   
   #predict
@@ -257,7 +254,7 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
   pfun <- paste0("p", fname)
-  
+
   #look for moments
   has_sigma <- "sigma" %in% gamlssModel[[2]]
   has_nu <- "nu" %in% gamlssModel[[2]]
