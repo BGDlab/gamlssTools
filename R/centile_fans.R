@@ -176,6 +176,7 @@ centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge",
 #' both the centile fan and points if `show_points=TRUE`. Defaults to `FALSE`.
 #' @param remove_point_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Removes from 
 #' both the centile fan and points if `show_points=TRUE`. Defaults to `FALSE`.
+#' @param color_manual optional arg to specify color for points and centile fans. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' 
 #' @returns ggplot object
 #' 
@@ -223,6 +224,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              label_centiles = TRUE,
                              remove_cent_effect = NULL,
                              remove_point_effect = NULL,
+                             color_manual = NULL,
                              ...){
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
@@ -296,27 +298,43 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   
   #def base gg object (w/ or w/o points)
   if (average_over == FALSE){
-    if (show_points == TRUE){
+    if (show_points == TRUE & is.null(color_manual)){
       base_plot_obj <- ggplot() +
-        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], color=point_df[[color_var]], fill=point_df[[color_var]]), alpha=0.3)
+        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], 
+                       color=point_df[[color_var]], 
+                       fill=point_df[[color_var]]), alpha=0.3)
       
+    } else if (show_points == TRUE & !is.null(color_manual)){
+      base_plot_obj <- ggplot() +
+        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]]), 
+                       color=color_manual, 
+                       fill=color_manual, alpha=0.3)
     } else if (show_points==FALSE){
       base_plot_obj <- ggplot()
     }
     
     #now add centile fans
+    if (is.null(color_manual)){
     base_plot_obj <- base_plot_obj +
       geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
                     group = interaction(long_centile_df$id.vars, long_centile_df[[color_var]]),
                     color = long_centile_df[[color_var]],
                     linewidth = long_centile_df$id.vars)) + 
       scale_linewidth_manual(values = centile_linewidth, guide = "none")
+    } else {
+      base_plot_obj <- base_plot_obj +
+        geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
+                      group = interaction(long_centile_df$id.vars, long_centile_df[[color_var]]),
+                      linewidth = long_centile_df$id.vars),
+                  color=color_manual) + 
+        scale_linewidth_manual(values = centile_linewidth, guide = "none")
+    }
     
   } else if (average_over == TRUE){
     print("plotting one centile fan...")
     if (show_points == TRUE){
       base_plot_obj <- ggplot() +
-        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]]), alpha=0.6)
+        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], color=color_manual), alpha=0.6)
     } else if (show_points==FALSE){
       base_plot_obj <- ggplot()
     }
@@ -325,8 +343,10 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     base_plot_obj <- base_plot_obj +
       geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
                     group = long_centile_df$id.vars,
-                    linewidth = long_centile_df$id.vars)) + 
-      scale_linewidth_manual(values = centile_linewidth, guide = "none")
+                    linewidth = long_centile_df$id.vars,
+                    color=color_manual)) + 
+      scale_linewidth_manual(values = centile_linewidth, guide = "none") +
+      scale_color_identity()
     
   } else {
     stop(paste0("Do you want to average over values of ", color_var, "?"))
