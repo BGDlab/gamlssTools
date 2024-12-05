@@ -208,6 +208,9 @@ centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge",
 #' 
 #' make_centile_fan(pheno_model, df, "Age", "Sex", x_axis="lifespan")
 #' 
+#' #average over each sex and choose color
+#' make_centile_fan(pheno_model, df, "Age", "Sex", average_over=TRUE, x_axis="lifespan", color_manual="#4B644BFF")
+#' 
 #' @importFrom tidyr gather
 #' 
 #' @export

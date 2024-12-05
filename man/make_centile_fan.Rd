@@ -104,4 +104,7 @@ pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.for
 
 make_centile_fan(pheno_model, df, "Age", "Sex", x_axis="lifespan")
 
+#average over each sex and choose color
+make_centile_fan(pheno_model, df, "Age", "Sex", average_over=TRUE, x_axis="lifespan", color_manual="#4B644BFF")
+
 }

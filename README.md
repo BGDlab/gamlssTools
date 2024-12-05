@@ -38,18 +38,21 @@ print(iris_fan_plot)
 ```
 ![basic_iris_plot](https://github.com/user-attachments/assets/9ae4e535-94b9-4c7d-a0d5-c13331808d81)
 
-You can use ggplot to clean up the axes a bit
+You can use all the standard ggplot layers to make your plot prettier.
 ```
 iris_fan_plot +
   labs(title="Normative Sepal Width by Length",
   x ="Sepal Length", y = "Sepal Width",
-  color = "Species", fill="Species")
+  color = "Species", fill="Species") +
+  theme_bw() +
+  paletteer::scale_color_paletteer_d("MoMAColors::Smith")
+  
 ```
 ![clean_iris_plot](https://github.com/user-attachments/assets/f3b5b473-d302-4752-86ab-6f905baae35b)
 
 
 There are also many built-in configuration options,  including averaging over categorical variables (like `Species`): 
 ```
-make_centile_fan(iris_model, iris, "Sepal.Length", "Species", average_over=TRUE)
+make_centile_fan(iris_model, iris, "Sepal.Length", "Species", average_over=TRUE, color_manual="#467326FF")
 ```
 ![average_iris_plot](https://github.com/user-attachments/assets/cea86418-3da5-4e63-a64c-f35f2f3e9f3a)
