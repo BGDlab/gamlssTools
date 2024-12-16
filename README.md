@@ -56,3 +56,35 @@ There are also many built-in configuration options,  including averaging over ca
 make_centile_fan(iris_model, iris, "Sepal.Length", "Species", average_over=TRUE, color_manual="#467326FF")
 ```
 ![average_iris_plot](https://github.com/user-attachments/assets/cea86418-3da5-4e63-a64c-f35f2f3e9f3a)
+
+You can also extract and manipulate the layers created by `make_centile_fan()`. For instance, if you're fitting separate models for each sex but still want to plot them on the same plot:
+
+```
+#simulate data to plot
+df <- data.frame(
+  Age = sample(0:36525, 10000, replace = TRUE),
+  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
+  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
+
+ df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
+ df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
+
+#fit separate models for each sex
+df_m <- df %>% filter(Sex=="Male")
+df_f <- df %>% filter(Sex=="Female")
+
+m_model <- gamlss(formula = Pheno ~ pb(Age) + random(Study), sigma.formula= ~ pb(Age), data = df_m, family=BCCG)
+f_model <- gamlss(formula = Pheno ~ pb(Age) + random(Study), sigma.formula= ~ pb(Age), data = df_f, family=BCCG)
+
+#plot by sex
+plot_m <- make_centile_fan(m_model, df_m, "Age", show_points=FALSE, x_axis="lifespan", color_manual="orange")
+plot_f <- make_centile_fan(f_model, df_f, "Age", show_points=FALSE, x_axis="lifespan", color_manual="green")
+
+plot_combined <- plot_m
+plot_combined$layers <- c(plot_m$layers, plot_f$layers)
+
+plot_combined +
+ theme_bw() +
+ ggtitle("Male and Female Growth Charts")
+```
+
