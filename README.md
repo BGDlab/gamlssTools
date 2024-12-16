@@ -48,8 +48,7 @@ iris_fan_plot +
   paletteer::scale_color_paletteer_d("MoMAColors::Smith")
   
 ```
-![clean_iris_plot](https://github.com/user-attachments/assets/f3b5b473-d302-4752-86ab-6f905baae35b)
-
+![707785a4-43fa-4358-8527-480a5a7f2608](https://github.com/user-attachments/assets/704806df-bd43-4fb5-963b-e9338a94c855)
 
 There are also many built-in configuration options,  including averaging over categorical variables (like `Species`): 
 ```
@@ -87,4 +86,7 @@ plot_combined +
  theme_bw() +
  ggtitle("Male and Female Growth Charts")
 ```
+
+![39e44a98-e8cb-4990-9632-79134e5c7f0b](https://github.com/user-attachments/assets/6f048350-c750-49f7-b062-002b34578779)
+
 
