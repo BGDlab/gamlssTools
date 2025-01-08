@@ -401,7 +401,7 @@ check_range <- function(old_df, new_df) {
 #' @param df dataframe to assess
 #' @param group (optional) name of grouping column
 #' @param interval_var (optional) numeric variable along which to group outputs. Uses [ggplot2::cut_interval], which
-#' requires additional args.
+#' requires additional args (`n` or `length`).
 #' 
 #' @returns dataframe with one row for every value of `group` 
 #' 
@@ -410,34 +410,57 @@ check_range <- function(old_df, new_df) {
 #' cent_cdf(iris_model, iris)
 #' cent_cdf(iris_model, iris, "Species")
 #' 
+#' #simulate a dataframe with better group-level coverage
+#' df <- data.frame(
+#'  Age = sample(0:36525, 10000, replace = TRUE),
+#'  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
+#'  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
+#'
+#' df$log_Age <- log(df$Age, base=10)
+#' df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
+#' df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
+#' 
+#' #fit gamlss model
+#' pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
+#' cent_cdf(pheno_model, df, group="Sex", interval_var="Age", n=4)
+#' 
 #' @export
-cent_cdf <- function(gamlssModel, df, group=NULL, interval_var=NULL, ...){
-  #predict centiles for original data
+cent_cdf <- function(gamlssModel, df, group = NULL, interval_var = NULL, ...) {
+  # Predict centiles for original data
   df$centile <- pred_og_centile(gamlssModel, df)
   
-  #convert group var to factor as needed
-  if (!is.null(group) && is.numeric(df[[group]])){
+  # Convert group variable to factor if needed
+  if (!is.null(group) && is.numeric(df[[group]])) {
     df[[group]] <- as.factor(df[[group]])
   }
   
-  if (!is.null(interval_var)){
+  # Add Interval column if interval_var is provided
+  if (!is.null(interval_var)) {
     df$Interval <- cut_interval(df[[interval_var]], ...)
-    df <- df %>% group_by(Interval)
   }
   
-  #group and summarize
+  # Determine grouping variables (updated with help from GPT)
+  group_vars <- c()
+  if (!is.null(group)) group_vars <- c(group_vars, group)
+  if (!is.null(interval_var)) group_vars <- c(group_vars, "Interval")
+  
+  # Group and summarize
   df %>%
-    summarise("1%" = round(sum(centile <= 0.01)/n(), digits=3),
-                "5%" = round(sum(centile <= 0.05)/n(),digits=3),
-                "10%" = round(sum(centile <= 0.1)/n(), digits=3),
-                "25%" = round(sum(centile <= 0.25)/n(), digits=3),
-                "50%" = round(sum(centile <= 0.5)/n(), digits=3),
-                "75%" = round(sum(centile <= 0.75)/n(), digits=3),
-                "90%" = round(sum(centile <= 0.90)/n(), digits=3),
-                "95%" = round(sum(centile <= 0.95)/n(), digits=3),
-                "99%" = round(sum(centile <= 0.99)/n(), digits=3),
-                .by=!!group)
+    group_by(across(all_of(group_vars))) %>%
+    summarise(
+      "1%" = round(sum(centile <= 0.01) / n(), digits = 3),
+      "5%" = round(sum(centile <= 0.05) / n(), digits = 3),
+      "10%" = round(sum(centile <= 0.1) / n(), digits = 3),
+      "25%" = round(sum(centile <= 0.25) / n(), digits = 3),
+      "50%" = round(sum(centile <= 0.5) / n(), digits = 3),
+      "75%" = round(sum(centile <= 0.75) / n(), digits = 3),
+      "90%" = round(sum(centile <= 0.90) / n(), digits = 3),
+      "95%" = round(sum(centile <= 0.95) / n(), digits = 3),
+      "99%" = round(sum(centile <= 0.99) / n(), digits = 3),
+      .groups = "drop" # To avoid grouped output
+    )
 }
+
 
 #' Get phenotype at centile(s)
 #' 

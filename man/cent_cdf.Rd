@@ -14,7 +14,7 @@ cent_cdf(gamlssModel, df, group = NULL, interval_var = NULL, ...)
 \item{group}{(optional) name of grouping column}
 
 \item{interval_var}{(optional) numeric variable along which to group outputs. Uses \link[ggplot2:cut_interval]{ggplot2::cut_interval}, which
-requires additional args.}
+requires additional args (\code{n} or \code{length}).}
 }
 \value{
 dataframe with one row for every value of \code{group}
@@ -31,5 +31,19 @@ Calls \code{\link[=pred_og_centile]{pred_og_centile()}}.
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 cent_cdf(iris_model, iris)
 cent_cdf(iris_model, iris, "Species")
+
+#simulate a dataframe with better group-level coverage
+df <- data.frame(
+ Age = sample(0:36525, 10000, replace = TRUE),
+ Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
+ Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
+
+df$log_Age <- log(df$Age, base=10)
+df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
+df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
+
+#fit gamlss model
+pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
+cent_cdf(pheno_model, df, group="Sex", interval_var="Age", n=4)
 
 }
