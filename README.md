@@ -54,7 +54,7 @@ There are also many built-in configuration options,  including averaging over ca
 ```
 make_centile_fan(iris_model, iris, "Sepal.Length", "Species", average_over=TRUE, color_manual="#467326FF")
 ```
-![average_iris_plot](https://github.com/user-attachments/assets/cea86418-3da5-4e63-a64c-f35f2f3e9f3a)
+![39e44a98-e8cb-4990-9632-79134e5c7f0b](https://github.com/user-attachments/assets/6f048350-c750-49f7-b062-002b34578779)
 
 You can also extract and manipulate the layers created by `make_centile_fan()`. For instance, if you're fitting separate models for each sex but still want to plot them on the same plot:
 
@@ -86,7 +86,5 @@ plot_combined +
  theme_bw() +
  ggtitle("Male and Female Growth Charts")
 ```
-
-![39e44a98-e8cb-4990-9632-79134e5c7f0b](https://github.com/user-attachments/assets/6f048350-c750-49f7-b062-002b34578779)
-
+![2b953588-7b75-4106-a683-f4946d2d9021](https://github.com/user-attachments/assets/cd38b611-e15f-4b23-b49e-4fa0c85f0abd)
 
