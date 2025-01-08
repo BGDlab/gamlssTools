@@ -4,12 +4,14 @@
 \alias{cent_cdf}
 \title{Centile CDF}
 \usage{
-cent_cdf(gamlssModel, df, group = NULL, interval_var = NULL, ...)
+cent_cdf(gamlssModel, df, plot = TRUE, group = NULL, interval_var = NULL, ...)
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}
 
 \item{df}{dataframe to assess}
+
+\item{plot}{whether to plot results (\code{TRUE}, default) or output as a tibble (\code{FALSE})}
 
 \item{group}{(optional) name of grouping column}
 
@@ -17,7 +19,7 @@ cent_cdf(gamlssModel, df, group = NULL, interval_var = NULL, ...)
 requires additional args (\code{n} or \code{length}).}
 }
 \value{
-dataframe with one row for every value of \code{group}
+ggplot object or tibble (if \code{plot==FALSE})
 }
 \description{
 Return the probability of observations with predicted centiles that are < or = centile lines
@@ -30,7 +32,7 @@ Calls \code{\link[=pred_og_centile]{pred_og_centile()}}.
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 cent_cdf(iris_model, iris)
-cent_cdf(iris_model, iris, "Species")
+cent_cdf(iris_model, iris, group="Species")
 
 #simulate a dataframe with better group-level coverage
 df <- data.frame(
@@ -44,6 +46,11 @@ df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
 
 #fit gamlss model
 pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
+
+#plot
 cent_cdf(pheno_model, df, group="Sex", interval_var="Age", n=4)
+
+#output table only
+cent_cdf(pheno_model, df, plot=FALSE, group="Sex", interval_var="Age", n=4)
 
 }

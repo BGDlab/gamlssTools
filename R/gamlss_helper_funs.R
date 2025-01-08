@@ -399,16 +399,17 @@ check_range <- function(old_df, new_df) {
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe to assess
+#' @param plot whether to plot results (`TRUE`, default) or output as a tibble (`FALSE`)
 #' @param group (optional) name of grouping column
 #' @param interval_var (optional) numeric variable along which to group outputs. Uses [ggplot2::cut_interval], which
 #' requires additional args (`n` or `length`).
 #' 
-#' @returns dataframe with one row for every value of `group` 
+#' @returns ggplot object or tibble (if `plot==FALSE`)
 #' 
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 #' cent_cdf(iris_model, iris)
-#' cent_cdf(iris_model, iris, "Species")
+#' cent_cdf(iris_model, iris, group="Species")
 #' 
 #' #simulate a dataframe with better group-level coverage
 #' df <- data.frame(
@@ -422,10 +423,15 @@ check_range <- function(old_df, new_df) {
 #' 
 #' #fit gamlss model
 #' pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
+#' 
+#' #plot
 #' cent_cdf(pheno_model, df, group="Sex", interval_var="Age", n=4)
 #' 
+#' #output table only
+#' cent_cdf(pheno_model, df, plot=FALSE, group="Sex", interval_var="Age", n=4)
+#' 
 #' @export
-cent_cdf <- function(gamlssModel, df, group = NULL, interval_var = NULL, ...) {
+cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NULL, ...) {
   # Predict centiles for original data
   df$centile <- pred_og_centile(gamlssModel, df)
   
@@ -445,7 +451,7 @@ cent_cdf <- function(gamlssModel, df, group = NULL, interval_var = NULL, ...) {
   if (!is.null(interval_var)) group_vars <- c(group_vars, "Interval")
   
   # Group and summarize
-  df %>%
+  sum_df <- df %>%
     group_by(across(all_of(group_vars))) %>%
     summarise(
       "1%" = round(sum(centile <= 0.01) / n(), digits = 3),
@@ -459,6 +465,29 @@ cent_cdf <- function(gamlssModel, df, group = NULL, interval_var = NULL, ...) {
       "99%" = round(sum(centile <= 0.99) / n(), digits = 3),
       .groups = "drop" # To avoid grouped output
     )
+  
+  if(plot == TRUE){
+    df_plt <- tidyr::pivot_longer(sum_df, cols=ends_with("%"), names_to= "empirical", values_to="fitted") %>%
+      mutate(empirical=as.numeric(sub("%", "",empirical,fixed=TRUE))/100)
+    
+    plt <- ggplot(df_plt) +
+      geom_abline(slope=1, intercept=0, color="gray") +
+      theme_bw()
+    
+    if (!is.null(interval_var)) {
+      plt <- plt + geom_point(aes(x=empirical, y=fitted, color=Interval), alpha=.8)
+    } else {
+      plt <- plt + geom_point(aes(x=empirical, y=fitted))
+    }
+    
+    if (!is.null(group)) {
+      plt <- plt + facet_wrap(as.formula(paste("~", group)))
+    }
+      print(plt)
+      
+  } else {
+    return(sum_df)
+  }
 }
 
 
