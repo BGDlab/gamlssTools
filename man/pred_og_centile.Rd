@@ -24,7 +24,7 @@ Returns the centile and/or z-score values for the original data points used to f
 \details{
 Based on Jenna's function \href{https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67}{calculatePhenotypeCentile()}
 and \code{\link[gamlss:z.scores]{gamlss::z.scores()}}. Also works for new data that has the same covariates (and levels of those covariates) as the original data (e.g. new subjects
-from the same studies) using \code{new.data} argument. Currently only supports z-score calculations for BCCG and NO families of distributions, can add others
+from the same studies) using \code{new.data} argument. Currently only supports z-score calculations for BCCG, BCT and NO families of distributions, can add others
 as appropriate.
 }
 \examples{
