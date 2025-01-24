@@ -214,12 +214,12 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
 #' 
 #' Based on Jenna's function [calculatePhenotypeCentile()](https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
 #' and [gamlss::z.scores()]. Also works for new data that has the same covariates (and levels of those covariates) as the original data (e.g. new subjects
-#' from the same studies) using `new.data` argument. Currently only supports z-score calculations for BCCG, BCT and NO families of distributions, can add others
-#' as appropriate.
+#' from the same studies) using `new.data` argument. Returns pseudo zscores (standardized scores) calculated by running `qnorm()` on centiles - may be 
+#' more or less appropriately called "z scores" depending on distribution family of the model.
 #' 
 #' @param gamlssModel gamlss model object
 #' @param og.data dataframe used to fit `gamlssModel`
-#' @param get.zscores logical indicating whether to calculate and return z-scores from centiles
+#' @param get.std.scores logical indicating whether to calculate and return standardized (pseudo z-scores) from centiles
 #' @param new.data (optional) new dataframe to predict centiles for (rather than `og.data`)
 #' 
 #' @returns either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
@@ -229,7 +229,7 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
 #' pred_og_centile(iris_model, iris)
 #' 
 #' @export
-pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=NULL){
+pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.data=NULL){
   pheno <- gamlssModel$mu.terms[[2]]
   
   #subset df cols just to predictors from model
@@ -287,24 +287,18 @@ pred_og_centile <- function(gamlssModel, og.data, get.zscores = FALSE, new.data=
     }
     
   }
-  if (get.zscores == FALSE){
+  if (get.std.scores == FALSE){
     return(centiles)
   } else {
-    #check to make sure distribution family is LMS
-    if (fname %in% c("BCCG", "NO", "BCT")){
-    
-    #get z scores from normed centiles - how z.score() does it
+    #get 'z scores' from normed centiles - how z.score() does it
     rqres <- qnorm(centiles)
     
     #return dataframe
     df <- data.frame("centile" = centiles,
-                     "z_score" = rqres)
+                     "std_score" = rqres)
     return(df)
-    } else {
-      stop(paste("This distribution family is not supported for calculating z scores.", 
-                 "\n If you think this message was returned in error, update code to include appropriate dist. families.", ""))
-    }
-  }
+  } 
+
 }
 
 #' Cohen's Fsquared Local
