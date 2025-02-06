@@ -549,7 +549,6 @@ pheno_at_centiles <- function(gamlssModel, df,
                                desiredCentiles = desiredCentiles,
                                df = df,
                                average_over = average_over,
-                               get_peaks=FALSE,
                                resid_terms = remove_cent_effect)
   
   # extract centiles and concatenate into single dataframe

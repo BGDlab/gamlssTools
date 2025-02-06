@@ -11,8 +11,8 @@ centile_predict(
   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
   df = NULL,
   average_over = FALSE,
-  get_peaks = TRUE,
-  resid_terms = NULL
+  resid_terms = NULL,
+  get_deriv = FALSE
 )
 }
 \arguments{
@@ -32,9 +32,6 @@ fix some bugs in \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}}
 \item{average_over}{logical indicating whether to return percentiles and
 peaks averaged across multiple levels of a factor, with each level represented as
 a dataframe in \code{sim_df_list}. Defaults to \code{FALSE}}
-
-\item{get_peaks}{logical to indicate whether to return median's max value over x.
-Defaults to \code{TRUE}.}
 }
 \value{
 list of dataframes containing predicted centiles across range of predictors

@@ -20,6 +20,7 @@ make_centile_fan(
   remove_cent_effect = NULL,
   remove_point_effect = NULL,
   color_manual = NULL,
+  get_derivs = FALSE,
   ...
 )
 }
@@ -62,6 +63,8 @@ both the centile fan and points if \code{show_points=TRUE}. Defaults to \code{FA
 both the centile fan and points if \code{show_points=TRUE}. Defaults to \code{FALSE}.}
 
 \item{color_manual}{optional arg to specify color for points and centile fans. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
+
+\item{get_derivs}{plot 1st derivative of centile lines instead of the centile lines themselves}
 }
 \value{
 ggplot object
@@ -72,7 +75,8 @@ ggplot object
 \details{
 The resulting ggplot object can be further modified as needed (see example). There are several built-in formatting
 options for the x-axis that can be accessed using the \code{x_axis} argument. Alternatively, the default value of 'custom'
-will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. You can save
+will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. Can also be used
+to plot 1st derivative of centile lines using \code{plot_deriv} argument. You can save
 time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
 by first running \code{\link[=sim_data]{sim_data()}} and supplying the output to arg \code{sim_data_list}.
 }

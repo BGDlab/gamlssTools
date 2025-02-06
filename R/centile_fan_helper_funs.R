@@ -415,8 +415,6 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
 #' @param average_over logical indicating whether to return percentiles and 
 #' peaks averaged across multiple levels of a factor, with each level represented as 
 #' a dataframe in `sim_df_list`. Defaults to `FALSE`
-#' @param get_peaks logical to indicate whether to return median's max value over x.
-#' Defaults to `TRUE`.
 #' 
 #' @returns list of dataframes containing predicted centiles across range of predictors
 #' 
@@ -437,8 +435,8 @@ centile_predict <- function(gamlssModel,
                             desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
                             df = NULL,
                             average_over = FALSE,
-                            get_peaks = TRUE,
-                            resid_terms = NULL){
+                            resid_terms = NULL,
+                            get_deriv = FALSE){
   
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
@@ -480,24 +478,6 @@ centile_predict <- function(gamlssModel,
     centiles_df[[x_var]] <- sub_df[[x_var]]
     cent_name <- paste0("fanCentiles_", factor_level)
     centile_result_list[[cent_name]] <- centiles_df
-    
-    #get peak y value & corresponding x value
-    if (get_peaks==TRUE) {
-      
-      #index median centile
-      med.idx <- ceiling(length(desiredCentiles) / 2)
-      
-      stopifnot(length(sub_df[[x_var]]) == length(fanCentiles[[med.idx]]))
-      
-      median_df <- data.frame("x" = sub_df[[x_var]],
-                              "y" = fanCentiles[[med.idx]])
-      peak_df <- median_df[which.max(median_df$y), ] #find peak
-      names(peak_df)[names(peak_df) == "x"] <- x_var #rename x_var
-      
-      #name peak value for factor_var level and append to results list
-      peak_df_name <- paste0("peak_", factor_level)
-      centile_result_list[[peak_df_name]] <- peak_df
-    }
 
   }
   
@@ -505,35 +485,15 @@ centile_predict <- function(gamlssModel,
   if (average_over == TRUE){
     average_result_list <- list()
     
-    #select dataframes of centile estimates
-    select_centile_dfs <- grep("^fanCentiles_", names(centile_result_list), value = TRUE)
-    centile_dfs <- centile_result_list[select_centile_dfs]
-    
     #confirm correct number
-    stopifnot(length(centile_dfs) == length(sim_df_list))
+    stopifnot(length(centile_result_list) == length(sim_df_list))
     
     #stop if not all output numeric
-    df_is_numeric <- all(sapply(centile_dfs, function(df) {all(sapply(df, is.numeric))}))
+    df_is_numeric <- all(sapply(centile_result_list, function(df) {all(sapply(df, is.numeric))}))
     stopifnot(df_is_numeric == TRUE)
     
-    avg_centile_df <- Reduce("+", centile_dfs)/length(centile_dfs)
+    avg_centile_df <- Reduce("+", centile_result_list)/length(centile_result_list)
     average_result_list[["fanCentiles_average"]] <- avg_centile_df
-    
-    if (get_peaks==TRUE) {
-      #index median centile
-      med.idx <- ceiling(length(desiredCentiles) / 2)
-      sub_df <- sim_df_list[[1]]
-      
-      stopifnot(length(sub_df[[x_var]]) == length(fanCentiles[[med.idx]]))
-      
-      median_df <- data.frame("x" = sub_df[[x_var]],
-                              "y" = avg_centile_df[[med.idx]])
-      peak_df <- median_df[which.max(median_df$y), ] #find peak
-      names(peak_df)[names(peak_df) == "x"] <- x_var #rename x_var
-      
-      #append to results list
-      average_result_list[["peak_average"]] <- peak_df
-    }
     
     return(average_result_list)
     
@@ -542,5 +502,75 @@ centile_predict <- function(gamlssModel,
   } else{
     stop("Do you want results to be averaged across variable levels?")
   }
+  
+}
+
+
+#' Get Age of Peak
+#' 
+#' Find age of peak of median or other specified centile estimates. 
+#' 
+#' Takes output of `centile_predict()` or `get_derivatives()` and finds age of peak centile 
+#' value (or peak change) for each factor level (using lapply). Defaults to finding the 
+#' age of the median centile's peak, but can find other specified centiles as well.
+#' 
+#' @param cent_df dataframe output by `centile_predict()`
+#' @param peak_from optional name of colum in `df` that's maximum will define the peak. Otherwise,
+#' defaults to median centile ("cent_0.5")
+#' 
+#' @returns dataframe
+#' 
+#' @export
+age_at_peak <- function(cent_df, peak_from=NULL){
+  
+  y_name <- ifelse(is.null(peak_from), 
+                   grep("*_0.5", colnames(cent_df), value=TRUE),
+                   peak_from)
+  y_data <- cent_df[[y_name]]
+  x_data <- cent_df[,ncol(cent_df)]
+  x_name <- colnames(cent_df)[ncol(cent_df)]
+  
+  df <- data.frame("x" = x_data, "y" = y_data)
+  peak_df <- df[which.max(df$y), ]
+  
+  names(peak_df)[names(peak_df) == "x"] <- x_name
+  
+  return(peak_df)
+
+}
+
+#' Get Centile Derivative
+#' 
+#' Find first-order derivative of any centile lines in dataframe
+#' 
+#' Takes output of `centile_predict()` and finds derivatives of centile fans at each
+#' factor level (using lapply).
+#' 
+#' @param cent_df dataframe output by `centile_predict()`
+#' 
+#' @returns dataframe
+#' 
+#' @importFrom pracma gradient
+#' @export
+get_derivatives <- function(cent_df){
+  
+  #separate centile columns from x-var column
+  cnt <- ncol(cent_df)
+  cent_data <- cent_df[,-cnt, drop=FALSE]
+  x_data <- cent_df[,cnt]
+  
+  #apply deriv fun across dataframe
+  df <- sapply(cent_data, pracma::gradient, x_data)
+  
+  #rename cols
+  colnames(df) <- gsub("cent", "deriv", colnames(df))
+  df <- as.data.frame(df)
+
+
+  #add x data
+  x_name <- colnames(cent_df)[ncol(cent_df)]
+  df[[x_name]] <- x_data
+  
+  return(df)
   
 }

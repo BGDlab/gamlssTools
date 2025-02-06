@@ -142,13 +142,50 @@ centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge",
   return(plot)
 }
 
+#' Plot Derivatives
+#' 
+#' Plot 1st derivative of centile line
+#' 
+#' Wrapper function for [make_centile_fan()] with different defaults. Defaults
+#' to plotting only derivative of median line, but can be updated
+#' 
+#' @returns ggplot object
+#'
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' plot_centile_deriv(iris_model, iris, "Sepal.Length", "Species")
+#' 
+#' @export
+plot_centile_deriv <- function(gamlssModel, df, x_var, 
+                                 color_var,
+                                 desiredCentiles = c(0.5),
+                                 sim_data_list = NULL,
+                                 ...){
+  
+  plot <- make_centile_fan(gamlssModel, df, x_var, 
+                           color_var = color_var,
+                           get_peaks = TRUE,
+                           desiredCentiles = desiredCentiles,
+                           average_over = FALSE,
+                           sim_data_list = sim_data_list,
+                           show_points = FALSE,
+                           label_centiles = FALSE,
+                           remove_cent_effect = NULL,
+                           remove_point_effect = NULL,
+                           color_manual = NULL,
+                           get_derivs = TRUE,
+                           ...)
+  return(plot)
+}
+
 #' Plot centile fan using ggplot
 #' 
 #' `make_centile_fan` takes a gamlss model and creates a basic centile fan for it in ggplot
 #' 
 #' The resulting ggplot object can be further modified as needed (see example). There are several built-in formatting
 #' options for the x-axis that can be accessed using the `x_axis` argument. Alternatively, the default value of 'custom'
-#' will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. You can save 
+#' will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. Can also be used
+#' to plot 1st derivative of centile lines using `plot_deriv` argument. You can save 
 #' time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
 #' by first running [sim_data()] and supplying the output to arg `sim_data_list`.
 #' 
@@ -177,6 +214,7 @@ centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge",
 #' @param remove_point_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Removes from 
 #' both the centile fan and points if `show_points=TRUE`. Defaults to `FALSE`.
 #' @param color_manual optional arg to specify color for points and centile fans. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
+#' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
 #' 
 #' @returns ggplot object
 #' 
@@ -228,6 +266,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              remove_cent_effect = NULL,
                              remove_point_effect = NULL,
                              color_manual = NULL,
+                             get_derivs = FALSE,
                              ...){
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
@@ -242,27 +281,31 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   }
   
   #predict centiles - CHECK IF THIS WORKS FOR SPECIFYING OPTIONAL ARGS
-  pred_list <- centile_predict(gamlssModel = gamlssModel, 
+  centile_dfs <- centile_predict(gamlssModel = gamlssModel, 
                                sim_df_list = sim_list, 
                                x_var = x_var, 
                                desiredCentiles = desiredCentiles,
                                df = df,
                                average_over = average_over,
-                               get_peaks=get_peaks,
                                resid_terms = remove_cent_effect)
   
-  # extract centiles and concatenate into single dataframe
-  select_centile_dfs <- grep("^fanCentiles_", names(pred_list), value = TRUE)
-  centile_dfs <- pred_list[select_centile_dfs]
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
+  
+  #get derivatives as needed
+  if (get_derivs == TRUE){
+    line_dfs <- lapply(centile_dfs, get_derivatives)
+  } else {
+    #rename centile dfs
+    line_dfs <- centile_dfs
+  }
   
   if (!is.null(color_var)){
     #merge across levels of color_var
-    merged_centile_df <- bind_rows(centile_dfs, .id = color_var)
+    merged_centile_df <- bind_rows(line_dfs, .id = color_var)
   } else {
-    merged_centile_df <- centile_dfs[[1]]
+    merged_centile_df <- line_dfs[[1]]
     
-    #change average_over to TRUE for to easily skip color selection
+    #change average_over to TRUE to easily skip color selection
     average_over <- TRUE
   }
     #now make long so centile lines connect
@@ -370,7 +413,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
       dplyr::group_by(!!color_var_s, id.vars) %>%
       dplyr::filter(!!x_var_s == max(!!x_var_s, na.rm=TRUE)) %>%
       ungroup() %>%
-      mutate(id.vars = as.numeric(gsub("cent_", "", id.vars))) #make centile labels prettier
+      mutate(id.vars = as.numeric(gsub("cent_|deriv_", "", id.vars))) #make centile labels prettier
 
     base_plot_obj <- base_plot_obj +
       ggrepel::geom_text_repel(aes(x=data_end[[x_var_s]], y=data_end$values, label=scales::percent(data_end$id.vars)),
@@ -379,9 +422,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   
   #add peak points as needed
   if (get_peaks == TRUE){
-    select_peak_dfs <- grep("^peak_", names(pred_list), value = TRUE)
-    peak_dfs <- pred_list[select_peak_dfs]
-    names(peak_dfs) <- sub("peak_", "", names(peak_dfs)) #drop prefix
+    peak_dfs <- lapply(line_dfs, age_at_peak)
     
     if (!is.null(color_var)){
       merged_peak_df <- bind_rows(peak_dfs, .id = color_var)
