@@ -443,29 +443,35 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     #add days for fetal development?
     if (grepl("fetal", x_axis, fixed=TRUE)){
       add_val <- 280
+      tickLabels <- c("Conception")
+      tickMarks <- c(0)
     } else {
       add_val <- 0
+      tickLabels<-c()
+      tickMarks <- c()
     }
     
-    tickMarks <- c()
     #log scaled?
     if (grepl("log", x_axis, fixed=TRUE)){
       for (year in c(0, 1, 2, 5, 10, 20, 50, 100)){
         tickMarks <- append(tickMarks, log(year*365.25 + add_val, base=10))
+        tickMarks[is.infinite(tickMarks)] <- 0
       }
-      tickLabels <- c("Birth", "1", "2", "5", "10", "20", "50", "100")
+      tickLabels <- append(tickLabels, c("Birth", "1", "2", "5", "10", "20", "50", "100"))
       unit_lab <- "(log(years))"
+
     } else {
       for (year in seq(0, 100, by=10)){
         tickMarks <- append(tickMarks, year*365.25 + add_val)
       }
-      tickLabels <- c("Birth", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100")
+      tickLabels <- append(tickLabels, c("Birth", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"))
       unit_lab <- "(years)"
     }
     
     final_plot_obj <- base_plot_obj +
       scale_x_continuous(breaks=tickMarks, labels=tickLabels,
-                         limits=c(first(tickMarks), last(tickMarks))) +
+                         limits=c(first(tickMarks), last(tickMarks))
+                         ) +
       labs(title=deparse(substitute(gamlssModel))) +
       xlab(paste("Age at Scan", unit_lab)) +
       ylab(deparse(substitute(pheno)))
