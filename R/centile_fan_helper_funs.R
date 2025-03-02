@@ -84,14 +84,18 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
       for (col in colnames(new_df)){
         
         #add right level for factor var
-        if (col == factor_var){
+        if (col == factor_var) {
           new_df[[col]] <- rep(factor_level, n_rows)
           } else if (col == x_var) {
             new_df[[col]] <- x_range
-          } else if (is.numeric(df[[col]])){
+          } else if (is.numeric(df[[col]])) {
             mean_value <- mean(df[[col]])
             new_df[[col]] <- rep(mean_value, n_rows)
             print(paste("simulating", col, "at", mean_value))
+          } else if (is.factor(df[[col]])) {
+            mode_value <- mode(df[[col]])
+            new_df[[col]] <- as.factor(rep(mode_value, n_rows))
+            print(paste("simulating", col, "at", mode_value))
           } else {
             mode_value <- mode(df[[col]])
             new_df[[col]] <- rep(mode_value, n_rows)
