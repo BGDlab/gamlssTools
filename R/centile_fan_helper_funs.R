@@ -134,6 +134,10 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
         mean_value <- mean(df[[col]])
         new_df[[col]] <- rep(mean_value, n_rows)
         print(paste("simulating", col, "at", mean_value))
+      } else if (is.factor(df[[col]])) {
+        mode_value <- mode(df[[col]])
+        new_df[[col]] <- as.factor(rep(mode_value, n_rows))
+        print(paste("simulating", col, "at", mode_value))
       } else {
         mode_value <- mode(df[[col]])
         new_df[[col]] <- rep(mode_value, n_rows)
