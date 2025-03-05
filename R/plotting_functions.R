@@ -109,6 +109,9 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
    wp.dt <- wp.df %>% arrange(x) %>% as.data.table()
    lims.dt <- as.data.table(lims.df)
    combo.dt <- lims.dt[wp.dt, on = .(zval == x), roll=TRUE]
+   if (sum(is.na(combo.dt))>0){
+     warning("missing some CI values, try increasing xlim.worm")
+   }
    n_outer <- combo.dt %>%
      mutate(outer = ifelse((y < low | y > high), 1, 0)) %>%
      summarise(n = n(),
@@ -178,6 +181,9 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
     wp.dt <- wp.df %>% group_by(z) %>% arrange(x, .by_group = TRUE) %>% as.data.table()
     lims.dt <- as.data.table(lims.df)
     combo.dt <- lims.dt[wp.dt, on = .(z ==z, zval == x), roll=TRUE]
+    if (sum(is.na(combo.dt))>0){
+      warning("missing some CI values, try increasing xlim.worm")
+    }
     n_outer <- combo.dt %>%
       mutate(outer = ifelse((y < low | y > high), 1, 0)) %>%
       group_by(z) %>%
