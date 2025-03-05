@@ -37,7 +37,8 @@ Output more robust worm plots for assessing gamlss fit in ggplot
 This function fixes an inconsistency in the original package - that if do a worm plot with a formula
 it gives the wrong answer compared to if you provide a vector of values to plot against. This is
 rectified by adding a check that the partition of the covariate is actually providing a partition.
-Written and contributed by the illustrious Taki Shinohara :)
+The percentage of points that fall outside the pointwise confidence intervals are shown in blue
+(5\% indicates good fit). Written and contributed by the illustrious Taki Shinohara :)
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)

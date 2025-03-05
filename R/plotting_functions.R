@@ -12,7 +12,8 @@
 #' This function fixes an inconsistency in the original package - that if do a worm plot with a formula 
 #' it gives the wrong answer compared to if you provide a vector of values to plot against. This is 
 #' rectified by adding a check that the partition of the covariate is actually providing a partition.
-#' Written and contributed by the illustrious Taki Shinohara :)
+#' The percentage of points that fall outside the pointwise confidence intervals are shown in blue
+#' (5% indicates good fit). Written and contributed by the illustrious Taki Shinohara :)
 #' 
 #' @param object gamlss model object
 #' @param xvar vector containing values of predictor used for plotting model (requires `resid`)
@@ -128,7 +129,8 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
                               label = scales::percent(pcnt)),
                 hjust = 1.5,
                 vjust = 1.5,
-                label.size = 0.15)
+                label.size = 0.15,
+                color="blue")
     return(p)
     
   } else {
@@ -199,7 +201,8 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
                 label = scales::percent(pcnt)),
                 hjust = 1.5,
                 vjust = 1.5,
-                label.size = 0.15)
+                label.size = 0.15,
+                color="blue")
     
     return(p)
   }
