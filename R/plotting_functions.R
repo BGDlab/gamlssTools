@@ -60,7 +60,7 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
   
   # find the limits based on the normal distribution
   get.lims<-function(resid) {
-    lims.df <- data.frame(zval=seq(-xlim.worm, xlim.worm, 0.25))
+    lims.df <- data.frame(zval=seq(-xlim.worm, xlim.worm, 0.1))
     lims.df$p <- pnorm(lims.df$zval)
     lims.df$se <- (1/dnorm(lims.df$zval)) * (sqrt(lims.df$p * (1 - lims.df$p)/length(resid)))
     lims.df$low <- qnorm((1 - 0.95)/2) * lims.df$se; lims.df$high <- -lims.df$low
@@ -96,13 +96,23 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
   if (is.null(xvar)) {
     
     # find the limits based on the normal distribution
-    lims.df <- data.frame(zval=seq(-xlim.worm, xlim.worm, 0.25))
+    lims.df <- data.frame(zval=seq(-xlim.worm, xlim.worm, 0.1))
     lims.df$p <- pnorm(lims.df$zval)
     lims.df$se <- (1/dnorm(lims.df$zval)) * (sqrt(lims.df$p * (1 - lims.df$p)/length(resid)))
     lims.df$low <- qnorm((1 - 0.95)/2) * lims.df$se; lims.df$high <- -lims.df$low
     
     #Construct the worm plot dataframe
     wp.df <- data.frame(y = resid %>% get.wp.y, x = resid %>% get.wp.x)
+    
+    #Count outer points
+   wp.dt <- wp.df %>% arrange(x) %>% as.data.table()
+   lims.dt <- as.data.table(lims.df)
+   combo.dt <- lims.dt[wp.dt, on = .(zval == x), roll=TRUE]
+   n_outer <- combo.dt %>%
+     mutate(outer = ifelse((y < low | y > high), 1, 0)) %>%
+     summarise(n = n(),
+               n_outer = sum(outer)) %>%
+     mutate(pcnt = n_outer/n)
     
     #Return the plot
     p<-ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
@@ -112,7 +122,13 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
       {if (is.finite(ylim.worm)) { ylim(c(-ylim.worm, ylim.worm)) } else { ylim(c(-1,1))} } +
       geom_line(data = lims.df, aes(x=zval,y=low),linetype = "dashed") +
       geom_line(data = lims.df, aes(x=zval,y=high),linetype = "dashed")  + 
-      geom_hline(yintercept = 0, linetype = "dashed") 
+      geom_hline(yintercept = 0, linetype = "dashed") +
+      geom_text(data=n_outer, 
+                mapping = aes(x = Inf, y = Inf, 
+                              label = scales::percent(pcnt)),
+                hjust = 1.5,
+                vjust = 1.5,
+                label.size = 0.15)
     return(p)
     
   } else {
@@ -156,7 +172,20 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
     lims.df<-data.frame(z=wp.df$z,resid=wp.df$resid)
     lims.df<-lims.df %>% group_by(z) %>% reframe(lims.df=get.lims(resid)) %>% tidyr::unnest(cols=c(lims.df))
     
-    #Return the plot
+    #Count outer points
+    wp.dt <- wp.df %>% group_by(z) %>% arrange(x, .by_group = TRUE) %>% as.data.table()
+    lims.dt <- as.data.table(lims.df)
+    combo.dt <- lims.dt[wp.dt, on = .(z ==z, zval == x), roll=TRUE]
+    n_outer <- combo.dt %>%
+      mutate(outer = ifelse((y < low | y > high), 1, 0)) %>%
+      group_by(z) %>%
+      summarise(n = n(),
+                n_outer = sum(outer)) %>%
+      mutate(pcnt = n_outer/n)
+    
+    #print(n_outer)
+    
+   #Return the plot
     p<-ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
       geom_point() + facet_wrap(~z) + theme_classic() +
       xlab("Unit Normal Quantile") + ylab("Deviation") +
@@ -164,7 +193,13 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
       {if (is.finite(ylim.worm)) { ylim(c(-ylim.worm, ylim.worm)) } else { ylim(c(-1,1))} } +
       geom_line(data = lims.df, aes(x=zval,y=low),linetype = "dashed") +
       geom_line(data = lims.df, aes(x=zval,y=high),linetype = "dashed") +
-      geom_hline(yintercept = 0, linetype = "dashed")
+      geom_hline(yintercept = 0, linetype = "dashed") +
+      geom_text(data=n_outer, 
+                mapping = aes(x = Inf, y = Inf, 
+                label = scales::percent(pcnt)),
+                hjust = 1.5,
+                vjust = 1.5,
+                label.size = 0.15)
     
     return(p)
   }
