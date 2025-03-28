@@ -570,3 +570,96 @@ pheno_at_centiles <- function(gamlssModel, df,
   return(df_sorted)
   
 }
+
+#' Truncate by Coverage
+#' 
+#' Remove data points at either end of 1+ variable's range(s) that have sparse coverage
+#' 
+#' Iteratively breaks data into even groups along one or more variable's ranges, then
+#' removes the first and/or last group if the number of datapoints in that group fail to
+#' meet a certain threshold. Can be useful for dealing with boundary effects in gamlss:::pb(),
+#' for example, which places knots evenly along the x axis (rather than by quantiles)
+#' and might have issues if the high and/or low ends of x don't have adequate coverage.
+#' Made into function with help from GPT.
+#'
+#'@param df dataframe
+#'@param vars a variable name or list of variable names for which coverage will be tested
+#'@param breaks number of groups to split vars into. Defaults to 20 to match default gamlss:::pb.control(inter=20) 
+#'@param n_min minimum number of points required in the first/last groups. Default is 5.
+#'@param max_loops number of times to resplit and check coverage. Default is 10
+#'
+#'@returns updated dataframe df
+#'
+#'@examples
+#'outliers <- data.frame(
+#'Sepal.Length = sample(iris$Sepal.Length, 3),  # Randomly chosen normal values
+#'Sepal.Width = c(11, 8, 6),  
+#'Petal.Length = c(10, 12, 14),  # Extreme values
+#'Petal.Width = sample(iris$Petal.Width, 3),  
+#'Species = factor(c("setosa", "versicolor", "virginica"))  # Random species
+#')
+#'
+#'# Combine with the original dataset
+#'iris_outlier <- rbind(iris, outliers)
+#'
+#'iris_clean <- trunc_coverage(iris_outlier, vars=c("Sepal.Width", "Petal.Length"))
+#'
+#'@export
+trunc_coverage <- function(df, 
+                        vars, 
+                        breaks = 20, 
+                        n_min = 5,
+                        max_loops = 10) {
+  n_loops <- 0
+  
+  # Initial grouping
+  df <- df %>%
+    mutate(across(all_of(vars), ~cut(.x, breaks = breaks, labels = FALSE), .names = "group_{.col}"))
+  
+  while (TRUE) {
+    # Check coverage for all varsiables
+    group_counts <- sapply(vars, function(vars) {
+      first_grp <- sum(df[[paste0("group_", vars)]] == 1, na.rm = TRUE)
+      last_grp <- sum(df[[paste0("group_", vars)]] == breaks, na.rm = TRUE)
+      return(c(first_grp, last_grp))
+    })
+    
+    colnames(group_counts) <- vars
+    print("Current group counts:")
+    print(group_counts)
+    
+    # Find vars that need filtering
+    to_remove <- vars[apply(group_counts, 2, function(x) any(x < n_min))]
+    
+    if (length(to_remove) == 0 ){ 
+      break  # Stop if all vars have sufficient coverage or max loops reached
+    } 
+    stopifnot(n_loops <= max_loops)
+    
+    for (vars in to_remove) {
+      first_grp <- group_counts[1, vars]
+      last_grp <- group_counts[2, vars]
+      
+      if (first_grp < n_min) {
+        print(paste("Removing first group for", vars))
+        df <- df %>% filter(.data[[paste0("group_", vars)]] != 1)
+      }
+      if (last_grp < n_min) {
+        print(paste("Removing last group for", vars))
+        df <- df %>% filter(.data[[paste0("group_", vars)]] != breaks)
+      }
+    }
+    
+    # Update group assignments after row removals
+    df <- df %>%
+      mutate(across(all_of(vars), ~cut(.x, breaks = breaks, labels = FALSE), .names = "group_{.col}"))
+    n_loops <- n_loops + 1
+  }
+  
+  # Drop temporary grouping columns
+  print(paste("Rows remaining after iteration", n_loops, ":", nrow(df)))
+  
+  df <- df %>% select(-starts_with("group_"))
+  
+  return(df)
+}

@@ -116,23 +116,26 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
      mutate(outer = ifelse((y < low | y > high), 1, 0)) %>%
      summarise(n = n(),
                n_outer = sum(outer)) %>%
-     mutate(pcnt = n_outer/n)
+     mutate(pcnt = n_outer/n,
+            x = xlim.worm * 0.95,
+            y = ylim.worm * 0.95)
     
     #Return the plot
     p<-ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
       geom_point() + theme_classic() +
       xlab("Unit Normal Quantile") + ylab("Deviation") + 
       {if (is.finite(xlim.worm)) xlim(c(-xlim.worm, xlim.worm))} + 
-      {if (is.finite(ylim.worm)) { ylim(c(-ylim.worm, ylim.worm)) } else { ylim(c(-1,1))} } +
+      #{if (is.finite(ylim.worm)) { ylim(c(-ylim.worm, ylim.worm)) } else { ylim(c(-1,1))} } +
+      {if (is.finite(ylim.worm)) { coord_cartesian(ylim = c(-ylim.worm, ylim.worm)) } else { coord_cartesian(ylim = c(-1,1))} } + 
       geom_line(data = lims.df, aes(x=zval,y=low),linetype = "dashed") +
       geom_line(data = lims.df, aes(x=zval,y=high),linetype = "dashed")  + 
       geom_hline(yintercept = 0, linetype = "dashed") +
       geom_text(data=n_outer, 
-                mapping = aes(x = Inf, y = Inf, 
+                mapping = aes(x = x, 
+                              y = y, 
                               label = scales::percent(pcnt)),
-                hjust = 1.5,
-                vjust = 1.5,
-                label.size = 0.15,
+                inherit.aes = FALSE,
+                #label.size = 0.15,
                 color="blue")
     return(p)
     

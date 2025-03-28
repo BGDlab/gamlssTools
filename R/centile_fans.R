@@ -230,7 +230,20 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 #'  labs(title="Normative Sepal Width by Length",
 #'  x ="Sepal Length", y = "Sepal Width",
 #'  color = "Species", fill="Species")
+#'  
+#'#################################
+#' #conditioning time 2 model on time 1 -> residualize point effects
+#' iris$Sepal.Width_t2 <- iris$Sepal.Width  + rnorm(nrow(iris), mean = 0.1, sd = 0.05)
+#' iris_model_long <- gamlss(formula = Sepal.Width_t2 ~ Sepal.Width + Sepal.Length + re(random=~1|Species), 
+#' sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
 #' 
+#' #Looks bad:
+#' make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", desiredCentiles=c(0.05, .5, 0.95))
+#' 
+#' #Looks good:
+#' make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", remove_point_effect = "Sepal.Width", desiredCentiles=c(0.05, .5, 0.95))
+#' 
+#' #################################
 #' #simulate a dataframe to use x_axis options
 #' df <- data.frame(
 #'  Age = sample(0:36525, 10000, replace = TRUE),
