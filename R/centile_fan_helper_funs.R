@@ -380,9 +380,29 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
   if (is.null(og_data)){
     og_data <- df
   }
-  rm_effects_link <- predict(gamlssModel, newdata=df, data=og_data, type="terms") %>%
+  
+  print(rm_terms)
+  
+  effects_link <- predict(object = gamlssModel,
+                             newdata = df,
+                             what = "mu",
+                             data = og_data,
+                             type="terms",
+                             reformula = ~ 1  # Forces prediction without random effects
+  )
+  
+  rm_effects_link <- tryCatch({
+    effects_link %>%
     subset(TRUE, rm_terms) %>%
-    rowSums()
+      rowSums()
+  }, error = function(e) {
+    rand_terms <- paste0("random(", rm_terms, ")")
+    print(rand_terms)
+    effects_link %>%
+    subset(TRUE, rand_terms) %>%
+      rowSums()
+  })
+    
   
   #inverse link function to get to response scale
   link_fun <- gamlssModel$mu.link
