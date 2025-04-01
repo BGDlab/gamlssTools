@@ -281,6 +281,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              color_manual = NULL,
                              get_derivs = FALSE,
                              ...){
+  opt_args_list <- list(...)
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
   #check that var names are input correctly
@@ -288,12 +289,15 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
-    sim_list <- sim_data(df, x_var, color_var, gamlssModel)
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
+    sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel), 
+                                    sim_args))
   } else if (!is.null(sim_data_list)) {
     sim_list <- sim_data_list
   }
   
-  #predict centiles - CHECK IF THIS WORKS FOR SPECIFYING OPTIONAL ARGS
+  #predict centiles
+  pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
   centile_dfs <- centile_predict(gamlssModel = gamlssModel, 
                                sim_df_list = sim_list, 
                                x_var = x_var, 
@@ -301,6 +305,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                                df = df,
                                average_over = average_over,
                                resid_terms = remove_cent_effect)
+  
+  
   
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
   

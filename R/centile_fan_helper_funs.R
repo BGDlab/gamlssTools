@@ -109,6 +109,8 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
         special_col <- rlang::as_string(rlang::f_lhs(f_parts))  # extract column name
         col_def <- rlang::f_rhs(f_parts) # extract col def
         
+        print(paste("updating special term", special_col))
+        
         new_df <- new_df %>%
           mutate(!!sym(special_col) := !!col_def)
       }
@@ -150,6 +152,8 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
       f_parts <- rlang::parse_expr(special_term)
       special_col <- rlang::as_string(rlang::f_lhs(f_parts))  # extract column name
       col_def <- rlang::f_rhs(f_parts) # extract col def
+      
+      print(paste("updating special term", special_col))
       
       new_df <- new_df %>%
         mutate(!!sym(special_col) := !!col_def)
