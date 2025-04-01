@@ -396,11 +396,23 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
     subset(TRUE, rm_terms) %>%
       rowSums()
   }, error = function(e) {
+    tryCatch({
     rand_terms <- paste0("random(", rm_terms, ")")
     print(rand_terms)
     effects_link %>%
-    subset(TRUE, rand_terms) %>%
+      subset(TRUE, rand_terms) %>%
       rowSums()
+      
+    }, error = function(e){
+      smooth_pattern <- paste0("^pb\\(", rm_terms, "|^fp\\(", rm_terms, ")")
+      smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
+      
+      print(smooth_terms)
+      effects_link %>%
+        subset(TRUE, smooth_terms) %>%
+        rowSums()
+    } )
+
   })
     
   
