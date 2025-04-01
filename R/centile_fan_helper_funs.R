@@ -387,8 +387,7 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
                              newdata = df,
                              what = "mu",
                              data = og_data,
-                             type="terms",
-                             reformula = ~ 1  # Forces prediction without random effects
+                             type="terms"
   )
   
   rm_effects_link <- tryCatch({
