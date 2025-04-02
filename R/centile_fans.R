@@ -289,6 +289,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
+    print("simulating data")
     sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
     sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel), 
                                     sim_args))
@@ -306,12 +307,11 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                                average_over = average_over,
                                resid_terms = remove_cent_effect)
   
-  
-  
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
   
   #get derivatives as needed
   if (get_derivs == TRUE){
+    print("taking derivatives")
     line_dfs <- lapply(centile_dfs, get_derivatives)
   } else {
     #rename centile dfs

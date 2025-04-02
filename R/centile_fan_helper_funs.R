@@ -266,6 +266,13 @@ pred_residualized <- function(gamlssModel, new_data, og_data=NULL,
   #init lists to hold results
   pred <- c()
   
+  #set any numeric variables to be residulaized to 0 in new_data
+  for (term in rm_terms){
+    if(is.numeric(og_data[[term]])){
+      new_data[[term]] <-0
+    }
+  }
+
   #NOTE: due to bug in gamlss.predict, need to predict all moments then select
   link_pred_all <- predictAll(gamlssModel, newdata=new_data, data=og_data, type="link")
 
@@ -286,15 +293,16 @@ pred_residualized <- function(gamlssModel, new_data, og_data=NULL,
     for (term in rm_terms_sub){
       #look for simple linear effect
       if (is.numeric(og_data[[term]])){
-        beta <- coefficients(gamlssModel, what=moment)[[term]]
-        
-        #multiply beta weight by term's simulated value
-        eff <- unique(new_data[[term]])*beta
-        effect_to_rm <- effect_to_rm + eff
+        # beta <- coefficients(gamlssModel, what=moment)[[term]]
+        # 
+        # #multiply beta weight by term's simulated value
+        # eff <- unique(new_data[[term]])*beta
+        # effect_to_rm <- effect_to_rm + eff
+        next
         
       } else {
       #look for fixed effect of categorical variable
-        term_level <- unique(new_data[[term]]) #expects only 1 level in simulated df
+        term_level <- unique(new_data[[term]]) #expects only 1 level in simulated df - fails if that level is the base level
         term_level_str <- paste0(term, term_level)
         beta <- tryCatch({
           coefficients(gamlssModel, what=moment)[[term_level_str]]
@@ -355,8 +363,7 @@ pred_residualized <- function(gamlssModel, new_data, og_data=NULL,
 #'
 #' Works by running `predict.gamlss()` with type="terms" to estimate effects of specified terms/covariates on mu,
 #' applying the inverse of the link function to convert into response scale, then subtracting from known y value.
-#' Works with random effects, smooths, etc, but terms must be listed as they appear in `coefficients(gamlssModel)`
-#' (see examples below).
+#' Works with random effects, smooths, etc, but terms must be listed as they appear in `coefficients(gamlssModel)`.
 #' 
 #' IMPORTANT: Will not work if dataset has no variability (e.g. data with values simulated to hold constant). To remove
 #' estimated covariate effects from simulated data, use [pred_residualized()].
@@ -376,63 +383,77 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
   inv_links <- list("log" = "exp",
                     "logit" = "inv.logit")
   
-  #predict rm_terms value for mu
   if (is.null(og_data)){
     og_data <- df
   }
   
   print(rm_terms)
   
-  effects_link <- predict(object = gamlssModel,
+  #define moments
+  moment_list <- eval(gamlssModel[[2]])
+  
+  # Initialize a vector to store total effect
+  total_effect <- rep(0, nrow(df))
+  
+  #LOOP OVER MOMENTS TO GET EFFECTS TO REMOVE
+  for (m in moment_list){
+    print(m)
+    
+    #find terms in that moment
+    moment_terms <- list_predictors(gamlssModel, m)
+    rm_terms_m <- rm_terms[rm_terms %in% moment_terms]
+    
+    if (length(rm_terms_m) < 1){
+      next()
+    }
+    
+    effects_link <- predict(object = gamlssModel,
                              newdata = df,
-                             what = "mu",
+                             what = m,
                              data = og_data,
                              type="terms"
-  )
-  
-  rm_effects_link <- tryCatch({
-    effects_link %>%
-    subset(TRUE, rm_terms) %>%
-      rowSums()
-  }, error = function(e) {
-    tryCatch({
-    rand_terms <- paste0("random(", rm_terms, ")")
-    print(rand_terms)
-    effects_link %>%
-      subset(TRUE, rand_terms) %>%
-      rowSums()
-      
-    }, error = function(e){
-      smooth_pattern <- paste0("^pb\\(", rm_terms, "|^fp\\(", rm_terms, ")")
-      smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
-      
-      print(smooth_terms)
+                            )
+    #subset effects
+    rm_effects_link <- tryCatch({
+      #try just fixed effects
       effects_link %>%
-        subset(TRUE, smooth_terms) %>%
+      subset(TRUE, rm_terms_m) %>%
         rowSums()
-    } )
-
-  })
+      
+    }, error = function(e) {
+      #if that doesn't work, try any possible combo of fixed, random and smooth effects
+      smooth_pattern <- paste0("^pb\\(", rm_terms_m, "|^fp\\(", rm_terms_m, "|^random\\(", rm_terms_m, ")")
+      smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
+      print(c(rm_terms_m, smooth_terms))
+      
+      effects_link %>%
+        as.data.frame() %>%
+        select(any_of(c(rm_terms_m, smooth_terms))) %>%
+        rowSums()
+    })
     
-  
-  #inverse link function to get to response scale
-  link_fun <- gamlssModel$mu.link
-  
-  if (link_fun != "identity"){
-    stopifnot("don't know how to handle link function" = 
-                link_fun %in% names(inv_links))
+    #inverse link function to get to response scale
+    link_fun <- gamlssModel[[paste0(m, ".link")]]
     
-    inv_fun <- inv_links[[link_fun]]
-    rm_effects <- eval(call(inv_fun, rm_effects_link))
-  } else {
-    rm_effects <- rm_effects_link
+    if (link_fun != "identity"){
+      stopifnot("don't know how to handle link function" = 
+                  link_fun %in% names(inv_links))
+      
+      inv_fun <- inv_links[[link_fun]]
+      rm_effects <- eval(call(inv_fun, rm_effects_link))
+    } else {
+      rm_effects <- rm_effects_link
+    }
+    
+    # Sum effects across moments
+    total_effect <- total_effect + rm_effects
   }
-  
+
   #subtract from y
   pheno <- gamlssModel$mu.terms[[2]]
-  stopifnot("lengths don't match" = length(df[[pheno]]) == length(rm_effects))
+  stopifnot("lengths don't match" = length(df[[pheno]]) == length(total_effect))
   
-  corrected_pheno <- df[[pheno]] - rm_effects
+  corrected_pheno <- df[[pheno]] - total_effect
   df[[pheno]] <- corrected_pheno
   return(df)
 }
@@ -503,9 +524,11 @@ centile_predict <- function(gamlssModel,
     
     # Predict centiles
     if (is.null(resid_terms)){
+      print("predicting centiles")
       pred_df <- predictAll(gamlssModel, newdata=sub_df, type="response", data=df)
     } else {
       #residualize effects if needed
+      print("predicting residualized centiles")
       pred_df <- pred_residualized(gamlssModel, new_data=sub_df, og_data=df, rm_terms=resid_terms)
     }
     
@@ -617,3 +640,4 @@ get_derivatives <- function(cent_df){
   return(df)
   
 }
+
