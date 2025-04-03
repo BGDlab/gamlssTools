@@ -24,8 +24,7 @@ Residualize data by removing terms' location effects as estimated by gamlss mode
 \details{
 Works by running \code{predict.gamlss()} with type="terms" to estimate effects of specified terms/covariates on mu,
 applying the inverse of the link function to convert into response scale, then subtracting from known y value.
-Works with random effects, smooths, etc, but terms must be listed as they appear in \code{coefficients(gamlssModel)}
-(see examples below).
+Works with random effects, smooths, etc, but terms must be listed as they appear in \code{coefficients(gamlssModel)}.
 
 IMPORTANT: Will not work if dataset has no variability (e.g. data with values simulated to hold constant). To remove
 estimated covariate effects from simulated data, use \code{\link[=pred_residualized]{pred_residualized()}}.

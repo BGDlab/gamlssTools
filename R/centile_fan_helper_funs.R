@@ -414,7 +414,7 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
     #get y to link scale
     pheno <- gamlssModel$mu.terms[[2]]
     stopifnot("lengths don't match" = length(df[[pheno]]) == length(rm_effects_link))
-    link_fun <- gamlssModel[[paste0(m, ".link")]]
+    link_fun <- gamlssModel[["mu.link"]]
 
     if (link_fun != "identity"){
       stopifnot("don't know how to handle link function" = 
