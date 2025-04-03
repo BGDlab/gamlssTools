@@ -266,13 +266,6 @@ pred_residualized <- function(gamlssModel, new_data, og_data=NULL,
   #init lists to hold results
   pred <- c()
   
-  #set any numeric variables to be residulaized to 0 in new_data
-  for (term in rm_terms){
-    if(is.numeric(og_data[[term]])){
-      new_data[[term]] <-0
-    }
-  }
-
   #NOTE: due to bug in gamlss.predict, need to predict all moments then select
   link_pred_all <- predictAll(gamlssModel, newdata=new_data, data=og_data, type="link")
 
@@ -293,11 +286,11 @@ pred_residualized <- function(gamlssModel, new_data, og_data=NULL,
     for (term in rm_terms_sub){
       #look for simple linear effect
       if (is.numeric(og_data[[term]])){
-        # beta <- coefficients(gamlssModel, what=moment)[[term]]
-        # 
-        # #multiply beta weight by term's simulated value
-        # eff <- unique(new_data[[term]])*beta
-        # effect_to_rm <- effect_to_rm + eff
+        beta <- coefficients(gamlssModel, what=moment)[[term]]
+
+        #multiply beta weight by term's simulated value
+        eff <- unique(new_data[[term]])*beta
+        effect_to_rm <- effect_to_rm + eff
         next
         
       } else {
@@ -388,28 +381,14 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
   }
   
   print(rm_terms)
-  
-  #define moments
-  moment_list <- eval(gamlssModel[[2]])
-  
-  # Initialize a vector to store total effect
-  total_effect <- rep(0, nrow(df))
-  
-  #LOOP OVER MOMENTS TO GET EFFECTS TO REMOVE
-  for (m in moment_list){
-    print(m)
     
-    #find terms in that moment
-    moment_terms <- list_predictors(gamlssModel, m)
-    rm_terms_m <- rm_terms[rm_terms %in% moment_terms]
-    
-    if (length(rm_terms_m) < 1){
+    if (length(rm_terms) < 1){
       next()
     }
     
     effects_link <- predict(object = gamlssModel,
                              newdata = df,
-                             what = m,
+                             what = "mu",
                              data = og_data,
                              type="terms"
                             )
@@ -417,43 +396,38 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
     rm_effects_link <- tryCatch({
       #try just fixed effects
       effects_link %>%
-      subset(TRUE, rm_terms_m) %>%
+      subset(TRUE, rm_terms) %>%
         rowSums()
       
     }, error = function(e) {
       #if that doesn't work, try any possible combo of fixed, random and smooth effects
-      smooth_pattern <- paste0("^pb\\(", rm_terms_m, "|^fp\\(", rm_terms_m, "|^random\\(", rm_terms_m, ")")
+      smooth_pattern <- paste0("^pb\\(", rm_terms, "|^fp\\(", rm_terms, "|^random\\(", rm_terms, ")")
       smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
-      print(c(rm_terms_m, smooth_terms))
+      print(c(rm_terms, smooth_terms))
       
       effects_link %>%
         as.data.frame() %>%
-        select(any_of(c(rm_terms_m, smooth_terms))) %>%
+        select(any_of(c(rm_terms, smooth_terms))) %>%
         rowSums()
     })
     
-    #inverse link function to get to response scale
+    #get y to link scale
+    pheno <- gamlssModel$mu.terms[[2]]
+    stopifnot("lengths don't match" = length(df[[pheno]]) == length(rm_effects_link))
     link_fun <- gamlssModel[[paste0(m, ".link")]]
-    
+
     if (link_fun != "identity"){
       stopifnot("don't know how to handle link function" = 
                   link_fun %in% names(inv_links))
-      
-      inv_fun <- inv_links[[link_fun]]
-      rm_effects <- eval(call(inv_fun, rm_effects_link))
-    } else {
-      rm_effects <- rm_effects_link
-    }
-    
-    # Sum effects across moments
-    total_effect <- total_effect + rm_effects
-  }
 
-  #subtract from y
-  pheno <- gamlssModel$mu.terms[[2]]
-  stopifnot("lengths don't match" = length(df[[pheno]]) == length(total_effect))
-  
-  corrected_pheno <- df[[pheno]] - total_effect
+      inv_fun <- inv_links[[link_fun]]
+      link_pheno <- eval(call(link_fun, df[[pheno]]))
+      corrected_pheno <- eval(call(inv_fun, (link_pheno - rm_effects_link)))
+    } else {
+      corrected_pheno <- df[[pheno]] - rm_effects_link
+    }
+
+  #back to df
   df[[pheno]] <- corrected_pheno
   return(df)
 }
