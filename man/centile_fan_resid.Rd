@@ -17,8 +17,7 @@ centile_fan_resid(
   sim_data_list = NULL,
   show_points = TRUE,
   label_centiles = TRUE,
-  remove_cent_effect,
-  remove_point_effect = NULL,
+  resid_effect,
   ...
 )
 }
@@ -30,7 +29,7 @@ Wrapper function to make it easier to plot centile fans in which the
 effects of nuisance covariates are residualized out.
 }
 \details{
-Calls \code{\link[=make_centile_fan]{make_centile_fan()}} but with different defaults. Is able to use covariates specified in
-\code{remove_cent_effect} (which takes straightforward variable names) to find the and remove the same
-covariates from individual data points, as necessary.
+Calls \code{\link[=make_centile_fan]{make_centile_fan()}} but with different args/defaults. Uses covariates specified in
+\code{resid_effect} (which takes straightforward variable names) to find and residualize
+effects from original datapoints and centile curves, as needed.
 }

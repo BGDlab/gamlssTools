@@ -9,9 +9,9 @@
 #' Wrapper function to make it easier to plot centile fans in which the
 #' effects of nuisance covariates are residualized out.
 #' 
-#' Calls [make_centile_fan()] but with different defaults. Is able to use covariates specified in
-#' `remove_cent_effect` (which takes straightforward variable names) to find the and remove the same
-#' covariates from individual data points, as necessary.
+#' Calls [make_centile_fan()] but with different args/defaults. Uses covariates specified in
+#' `resid_effect` (which takes straightforward variable names) to find and residualize
+#' effects from original datapoints and centile curves, as needed.
 #' 
 #' @returns ggplot object
 #' 
@@ -27,17 +27,16 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
                                    sim_data_list = NULL,
                                    show_points = TRUE,
                                    label_centiles = TRUE,
-                                   remove_cent_effect,
-                                   remove_point_effect = NULL,
+                                   resid_effect,
                                    ...){
   
-  stopifnot(remove_cent_effect %in% list_predictors(gamlssModel))
+  stopifnot(resid_effect %in% list_predictors(gamlssModel))
   if (get_peaks == TRUE){
     warning("Peaks calculated from residualized data")
   }
   
   #if point effects not provided, recreate from `remove_cent_effect`
-  if (show_points == TRUE && is.null(remove_point_effect)){
+  if (show_points == TRUE){
     
     #list smooth coefficients in mu, look for random effects/smooths
     mu_coef_sm <- gamlssModel[["mu.s"]] %>% colnames()
@@ -61,7 +60,7 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
       return(results)
     }
     
-    remove_point_effect <- update_strings(mu_coef_sm, remove_cent_effect)
+    remove_point_effect <- update_strings(mu_coef_sm, resid_effect)
     
     if(length(remove_point_effect) < 1){
       warning("No effects found in mu, not residualizing data points")
@@ -77,7 +76,7 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
                            sim_data_list = sim_data_list,
                            show_points = show_points,
                            label_centiles = label_centiles,
-                           remove_cent_effect = remove_cent_effect,
+                           remove_cent_effect = resid_effect,
                            remove_point_effect = remove_point_effect,
                            ...)
   return(plot)
@@ -354,7 +353,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #remove effects from points if necessary
   if (show_points == TRUE && !is.null(remove_point_effect)) {
     message(paste("Residualizing", remove_point_effect, "from data points"))
-    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect)
+    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect, sim=sim_list[[1]][1,])
   } else if (show_points == TRUE && is.null(remove_point_effect)) {
     point_df <- df
   } else if (show_points == FALSE && !is.null(remove_point_effect)){

@@ -13,21 +13,25 @@ pred_residualized(gamlssModel, new_data, og_data = NULL, rm_terms)
 
 \item{og_data}{original dataframe used to fit the model (optional)}
 
-\item{rm_terms}{list of term(s) whose effects will be residualized (removed).}
+\item{rm_terms}{list of factor/categorical term(s) whose effects will be residualized (removed).}
 }
 \value{
 list of predicted values, corrected for effects listed in \code{rm_terms}.
 }
 \description{
-Correct predicted response to remove the effects of certain unwanted covariates from simulated data
+Remove the effects of certain unwanted covariates from simulated data
 }
 \details{
-Works by predicting moment on link scale, subtracting beta weights for specified terms (\code{rm_terms}) as estimated by gamlss model
-from all moments, then applying the inverse of the link function to convert into response scale.
+Works by predicting moment on link scale, subtracting beta weights for specified terms (\code{rm_terms}) as estimated
+by gamlss model from all moments, then applying the inverse of the link function to convert into response scale.
 Resulting responses can be fed into \code{\link[=pred_centile]{pred_centile()}} to calculate centiles from moments calculated WITHOUT
-unwanted effects (such as site or study effects). Works for random effects but not other smooths.
+unwanted effects (such as site or study effects).
 
-IMPORTANT: assumes that data is simulated so that the values of \code{rm_terms} in \code{new_data} are constant.
+IMPORTANT: This only makes sense for factor variables, as numeric variables are already simulated at their mean
+and thus controlled for. Notably, it will return 0 if the only level of a factor variable is itself the base level.
+In this case, try \code{average_over()}.
+
+Also assumes that data is simulated so that the values of \code{rm_terms} in \code{new_data} are constant.
 If you want to residualize covariate effects from real/variable data, use \code{\link[=resid_data]{resid_data()}}.
 }
 \examples{
@@ -36,7 +40,7 @@ iris_model <- gamlss(formula = Sepal.Width ~ fp(Sepal.Length) + Petal.Width + re
   sigma.formula = ~ Sepal.Length + random(Species), data=iris, family=BCCG)
 sim_df <- sim_data(iris, "Sepal.Length", gamlssModel=iris_model)
 pred_df <- pred_residualized(iris_model, new_data = sim_df[[1]], og_data=iris, 
-  rm_terms=c("Species", "Petal.Width"))
+  rm_terms=c("Species"))
 pred_centile(0.1, pred_df, "qBCCG", 3)
 
 }
