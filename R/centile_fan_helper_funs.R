@@ -402,20 +402,11 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
   
   print(rm_terms)
   
-  #define moments
-  moment_list <- eval(gamlssModel[[2]])
-  
-  #start with y=pheno, will update for each loop across moments
+  #start with y=pheno
   pheno <- gamlssModel$mu.terms[[2]]
   corrected_pheno <- df[[pheno]]
   
-    rm_terms_m <- rm_terms #[rm_terms %in% moment_terms]
-    
-    if (length(rm_terms_m) < 1){
-      next()
-    }
-    
-    effects_link <- predict(object = gamlssModel,
+        effects_link <- predict(object = gamlssModel,
                              newdata = df,
                              what = "mu",
                              data = og_data,
@@ -427,10 +418,10 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
                                        link_pheno = numeric(nrow(og_data)))
     
     #look for pb or random effects
-    if (all(rm_terms_m %in% colnames(effects_link))){
+    if (all(rm_terms %in% colnames(effects_link))){
       #try just variables as written
       rm_effects_link <- effects_link %>%
-          subset(TRUE, rm_terms_m) 
+          subset(TRUE, rm_terms) 
       
       #sum across
       rm_holder$effect <- rm_effects_link %>%
@@ -438,14 +429,14 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
       
     } else {
       #if that doesn't work, try any possible combo of fixed, random and smooth effects
-      smooth_pattern <- paste0("^pb\\(", rm_terms_m, "|^fp\\(", rm_terms_m, "|^random\\(", rm_terms_m, ")")
+      smooth_pattern <- paste0("^pb\\(", rm_terms, "|^fp\\(", rm_terms, "|^random\\(", rm_terms, ")")
       smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
-      print(c(rm_terms_m, smooth_terms))
+      print(c(rm_terms, smooth_terms))
       
       #find effects
       rm_effects_link <- effects_link %>%
         as.data.frame() %>%
-        select(any_of(c(rm_terms_m, smooth_terms))) 
+        select(any_of(c(rm_terms, smooth_terms))) 
       
       #sum across
       rm_holder$effect <- rm_effects_link%>%
@@ -468,7 +459,7 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
       
       inv_fun <- inv_links[[link_fun]]
       
-      #re-update pheno (as residualized in prior moment)
+      #update pheno
       rm_holder$link_pheno <- eval(call(link_fun, df[[pheno]]))
       rm_holder <- rm_holder %>%
         mutate(corrected_link_pheno = link_pheno - (link_pheno*linear + effect))
@@ -483,7 +474,7 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
     }
 
   #back to df
-  df[[pheno]] <-- corrected_pheno
+  df[[pheno]] <- corrected_pheno
   return(df)
 }
 
