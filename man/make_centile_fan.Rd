@@ -21,6 +21,7 @@ make_centile_fan(
   remove_point_effect = NULL,
   color_manual = NULL,
   get_derivs = FALSE,
+  y_scale = NULL,
   ...
 )
 }
@@ -65,6 +66,8 @@ both the centile fan and points if \code{show_points=TRUE}. Defaults to \code{FA
 \item{color_manual}{optional arg to specify color for points and centile fans. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
 
 \item{get_derivs}{plot 1st derivative of centile lines instead of the centile lines themselves}
+
+\item{y_scale}{function to be applied to dependent variable (y axis)}
 }
 \value{
 ggplot object
