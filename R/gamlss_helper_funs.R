@@ -195,11 +195,11 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
   }
   
   #remove y
-  pheno <- as.character(gamlssModel$mu.terms[[2]])
+  pheno <- gamlssModel$mu.terms[[2]]
   cov_list <- cov_list[cov_list != pheno]
   
   #remove dataset name
-  df_name <- gamlssModel$call$data
+  df_name <- as.character(gamlssModel$call$data)
   cov_list <- cov_list[cov_list != df_name]
   
   #finally drop duplicates
