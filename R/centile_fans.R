@@ -354,8 +354,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   
   #remove effects from points if necessary
   if (show_points == TRUE && !is.null(remove_point_effect)) {
-    message(paste("Residualizing", remove_point_effect, "from data points"))
-    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect, sim=sim_list[[1]][1,])
+    print(paste("Residualizing", remove_point_effect, "from data points"))
+    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect, sim_df=sim_list[[1]])
   } else if (show_points == TRUE && is.null(remove_point_effect)) {
     point_df <- df
   } else if (show_points == FALSE && !is.null(remove_point_effect)){
