@@ -4,7 +4,7 @@
 \alias{resid_data}
 \title{Residualize data}
 \usage{
-resid_data(gamlssModel, df, og_data = NULL, rm_terms, sim = NULL)
+resid_data(gamlssModel, df, og_data = NULL, rm_terms)
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}

@@ -284,8 +284,6 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
     pheno <- as.character(gamlssModel$mu.terms[[2]])
     
     df[[pheno]] <- df[[pheno]] - (pred_true - pred_resid)
-    stopifnot(length(resid_pheno) == nrow(df))
-    
     return(df)
 }  
 
