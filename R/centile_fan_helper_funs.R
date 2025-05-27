@@ -395,57 +395,7 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
   
   #start with y=pheno
   pheno <- gamlssModel$mu.terms[[2]]
-  if (is.null(pheno)) {
-    stop("Could not determine response variable from model")
-  }
-  if (!(pheno %in% names(df))) {
-    stop(sprintf("Response variable '%s' not found in data", pheno))
-  }
   
-  corrected_pheno <- df[[pheno]]
-  
-        effects_link <- predict(object = gamlssModel,
-                             newdata = df,
-                             what = "mu",
-                             data = og_data,
-                             type="terms"
-                            )
-    #placeholder
-    rm_holder <- data.frame(effect = numeric(nrow(og_data)),
-                                       linear = numeric(nrow(og_data)),
-                                       link_pheno = numeric(nrow(og_data)))
-    
-    #look for pb or random effects
-    if (all(rm_terms %in% colnames(effects_link))){
-      #try just variables as written
-      rm_effects_link <- effects_link %>%
-          subset(TRUE, rm_terms) 
-      
-      #sum across
-      rm_holder$effect <- rm_effects_link %>%
-        rowSums()
-      
-    } else {
-      #if that doesn't work, try any possible combo of fixed, random and smooth effects
-      smooth_pattern <- paste0("^pb\\(", rm_terms, "|^fp\\(", rm_terms, "|^random\\(", rm_terms, ")")
-      smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
-      print(c(rm_terms, smooth_terms))
-      
-      #find effects
-      rm_effects_link <- effects_link %>%
-        as.data.frame() %>%
-        select(any_of(c(rm_terms, smooth_terms))) 
-      
-      #sum across
-      rm_holder$effect <- rm_effects_link%>%
-         rowSums()
-    }
-    
-    #if pb() terms included, account for hidden linear effect!
-    if(any(grepl("^pb\\(", colnames(rm_effects_link)))){
-      t <- grep("^pb\\(", colnames(rm_effects_link), value=TRUE)
-      rm_holder$linear <- gamlssModel$mu.coefficients[[t]]
-      }
     
     #get y to link scale
     stopifnot("lengths don't match" = length(df[[pheno]]) == nrow(rm_effects_link))
@@ -460,20 +410,62 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
       #update pheno
       rm_holder$link_pheno <- eval(call(link_fun, df[[pheno]]))
       rm_holder <- rm_holder %>%
-        mutate(corrected_link_pheno = link_pheno - (link_pheno*linear + effect))
+        mutate(corrected_link_pheno = link_pheno - (linear + effect))
       
       #scale back
       corrected_pheno <- eval(call(inv_fun, rm_holder$corrected_link_pheno))
     } else {
       rm_holder$link_pheno <- df[[pheno]]
       rm_holder <- rm_holder %>%
-        mutate(corrected_link_pheno = link_pheno - (link_pheno*linear + effect))
+        mutate(corrected_link_pheno = link_pheno - (linear + effect))
       corrected_pheno <- rm_holder$corrected_link_pheno
     }
 
   #back to df
   df[[pheno]] <- corrected_pheno
   return(df)
+}
+
+get_link_effects <- function(gamlssModel, df, og_data, rm_terms){
+  #placeholder
+  rm_holder <- data.frame(effect = numeric(nrow(og_data)),
+                          linear = numeric(nrow(og_data)),
+                          link_pheno = numeric(nrow(og_data)))
+  
+  #predict effects for each term in link space
+  effects_link <- predict(object = gamlssModel,
+                          newdata = df,
+                          what = "mu",
+                          data = og_data,
+                          type="terms"
+                          )
+  #look for pb or random effects
+  if (all(rm_terms %in% colnames(effects_link))){
+    #try just variables as written
+    rm_holder$effect <- effects_link %>%
+      subset(TRUE, rm_terms) %>%
+      rowSums()
+    
+    } else {
+      #if that doesn't work, try any possible combo of fixed, random and smooth effects
+      smooth_pattern <- paste0("^pb\\(", rm_terms, "|^fp\\(", rm_terms, "|^random\\(", rm_terms, ")")
+      smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
+      print(c(rm_terms, smooth_terms))
+      
+      #find effects
+      rm_effects_link <- effects_link %>%
+        as.data.frame() %>%
+        select(any_of(c(rm_terms, smooth_terms))) #sum across
+      
+      rm_holder$effect <- rm_effects_link%>%
+        rowSums()
+  
+      #if pb() terms included, account for hidden linear effect!
+      if(any(grepl("^pb\\(", colnames(rm_effects_link)))){
+        t <- grep("^pb\\(", colnames(rm_effects_link), value=TRUE)
+        rm_holder$linear <- gamlssModel$mu.coefficients[[t]]
+        }
+  }
 }
 
 #' Predict centiles
