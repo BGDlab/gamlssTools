@@ -35,13 +35,13 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
     warning("Peaks calculated from residualized data")
   }
   
-  #if point effects not provided, recreate from `remove_cent_effect`
+  #if point effects not provided, recreate
   if (show_points == TRUE){
     
     #list smooth coefficients in mu, look for random effects/smooths
     mu_coef_sm <- gamlssModel[["mu.s"]] %>% colnames()
 
-    #subfunction with help from ChatGPT to match & rename coeff in `remove_cent_effect` 
+    #subfunction with help from ChatGPT to match
     #with smooth mu coeff as needed
     update_strings <- function(strings, substrings) {
       # Initialize a vector to store the results (same length as substrings)
@@ -76,7 +76,6 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
                            sim_data_list = sim_data_list,
                            show_points = show_points,
                            label_centiles = label_centiles,
-                           remove_cent_effect = resid_effect,
                            remove_point_effect = remove_point_effect,
                            ...)
   return(plot)
@@ -105,7 +104,6 @@ centile_fan_minimal <- function(gamlssModel, df, x_var,
                            sim_data_list = sim_data_list,
                            show_points = FALSE,
                            label_centiles = FALSE,
-                           remove_cent_effect = NULL,
                            remove_point_effect = NULL,
                            ...)
   return(plot)
@@ -135,7 +133,6 @@ centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge",
                            sim_data_list = sim_data_list,
                            show_points = FALSE,
                            label_centiles = FALSE,
-                           remove_cent_effect = NULL,
                            remove_point_effect = NULL,
                            ...)
   return(plot)
@@ -169,7 +166,6 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
                            sim_data_list = sim_data_list,
                            show_points = FALSE,
                            label_centiles = FALSE,
-                           remove_cent_effect = NULL,
                            remove_point_effect = NULL,
                            color_manual = NULL,
                            get_derivs = TRUE,
@@ -208,10 +204,7 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 #' many models fit on the same dataframe 
 #' @param show_points logical indicating whether to plot data points below centile fans. Defaults to `TRUE`
 #' @param label_centiles logical indicating whether to note the percentile corresponding to each centile line. Defaults to `TRUE`
-#' @param remove_cent_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Removes from 
-#' both the centile fan and points if `show_points=TRUE`. Defaults to `FALSE`.
-#' @param remove_point_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Removes from 
-#' both the centile fan and points if `show_points=TRUE`. Defaults to `FALSE`.
+#' @param remove_point_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to `FALSE`.
 #' @param color_manual optional arg to specify color for points and centile fans. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
 #' @param y_scale function to be applied to dependent variable (y axis)
@@ -276,13 +269,15 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              sim_data_list = NULL,
                              show_points = TRUE,
                              label_centiles = TRUE,
-                             remove_cent_effect = NULL,
                              remove_point_effect = NULL,
                              color_manual = NULL,
                              get_derivs = FALSE,
                              y_scale = NULL,
                              ...){
   opt_args_list <- list(...)
+  if ("remove_cent_effect" %in% names(opt_args_list)) {
+    print("WARNING: The 'remove_cent_effect' argument is deprecated, ignoring.")
+  }
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
   #check that var names are input correctly
@@ -305,8 +300,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                                x_var = x_var, 
                                desiredCentiles = desiredCentiles,
                                df = df,
-                               average_over = average_over,
-                               resid_terms = remove_cent_effect)
+                               average_over = average_over)
   
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
   
@@ -354,12 +348,12 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   
   #remove effects from points if necessary
   if (show_points == TRUE && !is.null(remove_point_effect)) {
-    message(paste("Residualizing", remove_point_effect, "from data points"))
-    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect, sim=sim_list[[1]][1,])
+    print(paste("Residualizing", remove_point_effect, "from data points"))
+    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect)
   } else if (show_points == TRUE && is.null(remove_point_effect)) {
     point_df <- df
   } else if (show_points == FALSE && !is.null(remove_point_effect)){
-    warning("Points not shown so no residual effects removed")
+    warning("Points not shown so no residual effects removed", call. = FALSE)
   }
   
   #scale y if necessary
@@ -513,6 +507,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
       labs(title=deparse(substitute(gamlssModel))) +
       ylab(deparse(substitute(pheno)))
   }
+  
+  warnings()
   
   return(final_plot_obj)
   

@@ -548,8 +548,7 @@ pheno_at_centiles <- function(gamlssModel, df,
                                x_var = range_var, 
                                desiredCentiles = desiredCentiles,
                                df = df,
-                               average_over = average_over,
-                               resid_terms = remove_cent_effect)
+                               average_over = average_over)
   
   # extract centiles and concatenate into single dataframe
   select_centile_dfs <- grep("^fanCentiles_", names(pred_list), value = TRUE)

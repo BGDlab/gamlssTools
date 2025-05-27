@@ -227,148 +227,6 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
   }
 }
 
-#' Predict residualized response
-#' 
-#' Remove the effects of certain unwanted covariates from simulated data
-#'
-#' Works by predicting moment on link scale, subtracting beta weights for specified terms (`rm_terms`) as estimated 
-#' by gamlss model from all moments, then applying the inverse of the link function to convert into response scale. 
-#' Resulting responses can be fed into [pred_centile()] to calculate centiles from moments calculated WITHOUT
-#' unwanted effects (such as site or study effects).
-#' 
-#' IMPORTANT: This only makes sense for factor variables, as numeric variables are already simulated at their mean 
-#' and thus controlled for. Notably, it will return 0 if the only level of a factor variable is itself the base level.
-#' In this case, try `average_over()`.
-#' 
-#' Also assumes that data is simulated so that the values of `rm_terms` in `new_data` are constant.
-#' If you want to residualize covariate effects from real/variable data, use [resid_data()].
-#' 
-#' @param gamlssModel gamlss model object
-#' @param new_data dataframe to predict from. may be simulated data created with [sim_data()]
-#' @param og_data original dataframe used to fit the model (optional)
-#' @param rm_terms list of factor/categorical term(s) whose effects will be residualized (removed). 
-#' 
-#' @returns list of predicted values, corrected for effects listed in `rm_terms`.
-#' 
-#' @examples
-#' #predict a specific centile value across simulated data
-#' iris_model <- gamlss(formula = Sepal.Width ~ fp(Sepal.Length) + Petal.Width + re(random=~1|Species), 
-#'   sigma.formula = ~ Sepal.Length + random(Species), data=iris, family=BCCG)
-#' sim_df <- sim_data(iris, "Sepal.Length", gamlssModel=iris_model)
-#' pred_df <- pred_residualized(iris_model, new_data = sim_df[[1]], og_data=iris, 
-#'   rm_terms=c("Species"))
-#' pred_centile(0.1, pred_df, "qBCCG", 3)
-#' 
-#' @importFrom boot inv.logit
-#' @export
-pred_residualized <- function(gamlssModel, new_data, og_data=NULL, rm_terms){
-  
-  #define inverse link functions
-  inv_links <- list("log" = "exp",
-                    "logit" = "inv.logit")
-  
-  #init lists to hold results
-  pred <- c()
-  
-  #NOTE: due to bug in gamlss.predict, need to predict all moments then select
-  link_pred_all <- predictAll(gamlssModel, newdata=new_data, data=og_data, type="link")
-  
-  #list moments 
-  moment_list <- eval(gamlssModel[[2]])
-  
-  for (moment in moment_list) {
-    print(moment)
-    #get link value for each moment (includes all terms)
-    link_pred <- link_pred_all[[moment]]
-
-    #get rm_term effects in this moment
-    moment_terms <- list_predictors(gamlssModel, moment)
-    rm_terms_sub <- rm_terms[rm_terms %in% moment_terms]
-
-    #get effects  - rm_terms' values must be constant across new_data
-    effect_to_rm <- 0
-    for (term in rm_terms_sub){
-      #look for simple linear effect
-      if (is.numeric(og_data[[term]])){
-        warning(paste(term, "is numeric - ignoring"))
-        next
-        
-      } else {
-      #look for fixed effect of categorical variable
-        term_level <- unique(new_data[[term]]) #expects only 1 level in simulated df - fails if that level is the base level
-        term_level_str <- paste0(term, term_level)
-        beta <- tryCatch({
-          coefficients(gamlssModel, what=moment)[[term_level_str]]
-          }, error = function(e) {
-      #if fails, try random effect
-        message(paste("trying random effect for", term))
-         moment_str <- paste0(moment, ".coefSmo")
-         #find random effect - re()
-         rand_eff <- gamlssModel[[moment_str]][grep("random", gamlssModel[[moment_str]])]
-         
-         if (length(rand_eff) > 1){
-           stop("Sorry, can't handle more than one random effect")
-         } else if (length(rand_eff) == 1) {
-           #get effect at level simulated in new_df
-           beta_int <- rand_eff[[1]]$coefficients$fixed %>% unname()
-           beta_level <- rand_eff[[1]]$coefficients$random[[term]][term_level,]
-           
-           #add random and fixed components
-           return(beta_int + beta_level)
-           
-         } else if (length(rand_eff) < 1){
-           #look for random effect defined by random() - doesn't appear to have hidden intercept
-           rand_eff2 <- gamlssModel[[moment_str]][sapply(gamlssModel[[moment_str]], class) == "random"]
-           
-           if (length(rand_eff2) == 0) {
-             message("No matching random effect found. Assuming 0.")
-             beta <- 0
-           } else {
-             beta <- tryCatch({
-               rand_eff2[[1]]$coef[[term_level]]
-             }, error = function(e) {
-               message("can't find beta, assuming zero")
-               0
-             })
-           }
-           
-           # beta <- tryCatch({
-           #   #another tryCatch to prevent failure when simulated level=base level
-           #   rand_eff2[[1]]$coef[[term_level]]
-           #   }, error = function(e) {
-           #     message("can't find beta, assuming zero")
-           #     0
-           #   })
-           # return(beta)
-           }
-         })
-        
-        #sum the beta weights for all rm terms in that moment
-        effect_to_rm <- effect_to_rm + beta
-      }
-    }
-    
-    #remove effects - will remove 0 if no rm_terms are included in the moment (check this)
-    corrected_pred <- link_pred - effect_to_rm
-
-    #inverse link function to get to response scale
-    search_str <- paste0(moment, ".link")
-    link_fun <- gamlssModel[[search_str]]
-    
-    if (link_fun != "identity"){
-      stopifnot("don't know how to handle link function" = 
-                  link_fun %in% names(inv_links))
-      
-      inv_fun <- inv_links[[link_fun]]
-      corrected_pred <- eval(call(inv_fun, corrected_pred))
-    }
-    #save results
-    pred[[moment]] <- corrected_pred
-  }
-  return(pred)
-}
-
-
 #' Residualize data
 #' 
 #' Residualize data by removing terms' location effects as estimated by gamlss model
@@ -390,93 +248,44 @@ pred_residualized <- function(gamlssModel, new_data, og_data=NULL, rm_terms){
 #' 
 #' @importFrom boot inv.logit
 #' @export
-resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
-  
-  #define inverse link functions
-  inv_links <- list("log" = "exp",
-                    "logit" = "inv.logit")
-  
+resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
   if (is.null(og_data)){
     og_data <- df
   }
   
-  print(rm_terms)
+  #run predict on og data
+  pred_true <- predictAll(gamlssModel,
+                       newdata = df,
+                       type = "response",
+                       data=og_data)$mu
   
-  #start with y=pheno
-  pheno <- gamlssModel$mu.terms[[2]]
-  corrected_pheno <- df[[pheno]]
-  
-        effects_link <- predict(object = gamlssModel,
-                             newdata = df,
-                             what = "mu",
-                             data = og_data,
-                             type="terms"
-                            )
-    #placeholder
-    rm_holder <- data.frame(effect = numeric(nrow(og_data)),
-                                       linear = numeric(nrow(og_data)),
-                                       link_pheno = numeric(nrow(og_data)))
+  #run predict on data with rm_terms held at mean/mode
+    #sim new df
+    print("simulating residualized data")
+    #update df to remove variability in rm_terms (written with help from GPT)
+    new_df <- df %>%
+      mutate(across(
+          all_of(rm_terms) & where(is.numeric),
+          ~ mean(.x, na.rm = TRUE)
+        ),
+        across(
+          all_of(rm_terms) & where(~ is.character(.x) | is.factor(.x)),
+          ~ mode(.x)
+        )
+      )
     
-    #look for pb or random effects
-    if (all(rm_terms %in% colnames(effects_link))){
-      #try just variables as written
-      rm_effects_link <- effects_link %>%
-          subset(TRUE, rm_terms) 
+    #predict on new_df
+      pred_resid <- predictAll(gamlssModel,
+                        newdata=new_df,
+                        type="response",
+                        data=og_data)$mu
       
-      #sum across
-      rm_holder$effect <- rm_effects_link %>%
-        rowSums()
-      
-    } else {
-      #if that doesn't work, try any possible combo of fixed, random and smooth effects
-      smooth_pattern <- paste0("^pb\\(", rm_terms, "|^fp\\(", rm_terms, "|^random\\(", rm_terms, ")")
-      smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
-      print(c(rm_terms, smooth_terms))
-      
-      #find effects
-      rm_effects_link <- effects_link %>%
-        as.data.frame() %>%
-        select(any_of(c(rm_terms, smooth_terms))) 
-      
-      #sum across
-      rm_holder$effect <- rm_effects_link%>%
-         rowSums()
-    }
+  #take difference and subtract from pheno
+    pheno <- as.character(gamlssModel$mu.terms[[2]])
     
-    #if pb() terms included, account for hidden linear effect!
-    if(any(grepl("^pb\\(", colnames(rm_effects_link)))){
-      t <- grep("^pb\\(", colnames(rm_effects_link), value=TRUE)
-      rm_holder$linear <- gamlssModel$mu.coefficients[[t]]
-      }
-    
-    #get y to link scale
-    stopifnot("lengths don't match" = length(df[[pheno]]) == nrow(rm_effects_link))
-    link_fun <- gamlssModel$mu.link
-
-    if (link_fun != "identity"){
-      stopifnot("don't know how to handle link function" = 
-                  link_fun %in% names(inv_links))
-      
-      inv_fun <- inv_links[[link_fun]]
-      
-      #update pheno
-      rm_holder$link_pheno <- eval(call(link_fun, df[[pheno]]))
-      rm_holder <- rm_holder %>%
-        mutate(corrected_link_pheno = link_pheno - (link_pheno*linear + effect))
-      
-      #scale back
-      corrected_pheno<- eval(call(inv_fun, (corrected_pheno)))
-    } else {
-      rm_holder$link_pheno <- df[[pheno]]
-      rm_holder <- rm_holder %>%
-        mutate(corrected_link_pheno = link_pheno - (link_pheno*linear + effect))
-      corrected_pheno <- rm_holder$corrected_link_pheno
-    }
-
-  #back to df
-  df[[pheno]] <- corrected_pheno
-  return(df)
-}
+    df[[pheno]] <- df[[pheno]] - (pred_true - pred_resid)
+    return(df)
+}  
 
 #' Predict centiles
 #' 
@@ -518,9 +327,7 @@ centile_predict <- function(gamlssModel,
                             x_var, 
                             desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
                             df = NULL,
-                            average_over = FALSE,
-                            resid_terms = NULL,
-                            get_deriv = FALSE){
+                            average_over = FALSE){
   
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
@@ -543,14 +350,8 @@ centile_predict <- function(gamlssModel,
     sub_df <- sim_df_list[[factor_level]]
     
     # Predict centiles
-    if (is.null(resid_terms)){
-      print("predicting centiles")
-      pred_df <- predictAll(gamlssModel, newdata=sub_df, type="response", data=df)
-    } else {
-      #residualize effects if needed
-      print("predicting residualized centiles")
-      pred_df <- pred_residualized(gamlssModel, new_data=sub_df, og_data=df, rm_terms=resid_terms)
-    }
+    print("predicting centiles")
+    pred_df <- predictAll(gamlssModel, newdata=sub_df, type="response", data=df)
     
     fanCentiles <- lapply(desiredCentiles, pred_centile, df = pred_df, q_func = qfun, n_param = n_param)
     names(fanCentiles) <- paste0("cent_", desiredCentiles)
@@ -610,7 +411,7 @@ centile_predict <- function(gamlssModel,
 age_at_peak <- function(cent_df, peak_from=NULL){
   
   y_name <- ifelse(is.null(peak_from), 
-                   grep("*_0.5", colnames(cent_df), value=TRUE),
+                   grep(".*_0.5", colnames(cent_df), value=TRUE),
                    peak_from)
   y_data <- cent_df[[y_name]]
   x_data <- cent_df[,ncol(cent_df)]

@@ -17,7 +17,6 @@ make_centile_fan(
   sim_data_list = NULL,
   show_points = TRUE,
   label_centiles = TRUE,
-  remove_cent_effect = NULL,
   remove_point_effect = NULL,
   color_manual = NULL,
   get_derivs = FALSE,
@@ -57,11 +56,7 @@ many models fit on the same dataframe}
 
 \item{label_centiles}{logical indicating whether to note the percentile corresponding to each centile line. Defaults to \code{TRUE}}
 
-\item{remove_cent_effect}{logical indicating whether to correct for the effect of a variable (such as study) in the plot. Removes from
-both the centile fan and points if \code{show_points=TRUE}. Defaults to \code{FALSE}.}
-
-\item{remove_point_effect}{logical indicating whether to correct for the effect of a variable (such as study) in the plot. Removes from
-both the centile fan and points if \code{show_points=TRUE}. Defaults to \code{FALSE}.}
+\item{remove_point_effect}{logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to \code{FALSE}.}
 
 \item{color_manual}{optional arg to specify color for points and centile fans. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
 
