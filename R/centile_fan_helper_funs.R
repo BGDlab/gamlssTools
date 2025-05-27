@@ -381,92 +381,46 @@ pred_residualized <- function(gamlssModel, new_data, og_data=NULL, rm_terms){
 #' 
 #' @importFrom boot inv.logit
 #' @export
-resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms, sim=NULL){
-  
-  #define inverse link functions
-  inv_links <- list("log" = "exp",
-                    "logit" = "inv.logit")
-  
+resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
   if (is.null(og_data)){
     og_data <- df
   }
   
-  print(rm_terms)
+  #run predict on og data
+  pred_true <- predictAll(gamlssModel,
+                       newdata = df,
+                       type = "response",
+                       data=og_data)$mu
   
-  #start with y=pheno
-  pheno <- gamlssModel$mu.terms[[2]]
-  
+  #run predict on data with rm_terms held at mean/mode
+    #sim new df
+    print("simulating residualized data")
+    #update df to remove variability in rm_terms (written with help from GPT)
+    new_df <- df %>%
+      mutate(across(
+          all_of(rm_terms) & where(is.numeric),
+          ~ mean(.x, na.rm = TRUE)
+        ),
+        across(
+          all_of(rm_terms) & where(~ is.character(.x) | is.factor(.x)),
+          ~ mode(.x)
+        )
+      )
     
-    #get y to link scale
-    stopifnot("lengths don't match" = length(df[[pheno]]) == nrow(rm_effects_link))
-    link_fun <- gamlssModel$mu.link
-
-    if (link_fun != "identity"){
-      stopifnot("don't know how to handle link function" = 
-                  link_fun %in% names(inv_links))
+    #predict on new_df
+      pred_resid <- predictAll(gamlssModel,
+                        newdata=new_df,
+                        type="response",
+                        data=og_data)$mu
       
-      inv_fun <- inv_links[[link_fun]]
-      
-      #update pheno
-      rm_holder$link_pheno <- eval(call(link_fun, df[[pheno]]))
-      rm_holder <- rm_holder %>%
-        mutate(corrected_link_pheno = link_pheno - (linear + effect))
-      
-      #scale back
-      corrected_pheno <- eval(call(inv_fun, rm_holder$corrected_link_pheno))
-    } else {
-      rm_holder$link_pheno <- df[[pheno]]
-      rm_holder <- rm_holder %>%
-        mutate(corrected_link_pheno = link_pheno - (linear + effect))
-      corrected_pheno <- rm_holder$corrected_link_pheno
-    }
-
-  #back to df
-  df[[pheno]] <- corrected_pheno
-  return(df)
-}
-
-get_link_effects <- function(gamlssModel, df, og_data, rm_terms){
-  #placeholder
-  rm_holder <- data.frame(effect = numeric(nrow(og_data)),
-                          linear = numeric(nrow(og_data)),
-                          link_pheno = numeric(nrow(og_data)))
-  
-  #predict effects for each term in link space
-  effects_link <- predict(object = gamlssModel,
-                          newdata = df,
-                          what = "mu",
-                          data = og_data,
-                          type="terms"
-                          )
-  #look for pb or random effects
-  if (all(rm_terms %in% colnames(effects_link))){
-    #try just variables as written
-    rm_holder$effect <- effects_link %>%
-      subset(TRUE, rm_terms) %>%
-      rowSums()
+  #take difference and subtract from pheno
+    pheno <- as.character(gamlssModel$mu.terms[[2]])
     
-    } else {
-      #if that doesn't work, try any possible combo of fixed, random and smooth effects
-      smooth_pattern <- paste0("^pb\\(", rm_terms, "|^fp\\(", rm_terms, "|^random\\(", rm_terms, ")")
-      smooth_terms <- grep(paste(smooth_pattern, collapse = "|"), colnames(effects_link), value = TRUE)
-      print(c(rm_terms, smooth_terms))
-      
-      #find effects
-      rm_effects_link <- effects_link %>%
-        as.data.frame() %>%
-        select(any_of(c(rm_terms, smooth_terms))) #sum across
-      
-      rm_holder$effect <- rm_effects_link%>%
-        rowSums()
-  
-      #if pb() terms included, account for hidden linear effect!
-      if(any(grepl("^pb\\(", colnames(rm_effects_link)))){
-        t <- grep("^pb\\(", colnames(rm_effects_link), value=TRUE)
-        rm_holder$linear <- gamlssModel$mu.coefficients[[t]]
-        }
-  }
-}
+    df[[pheno]] <- df[[pheno]] - (pred_true - pred_resid)
+    stopifnot(length(resid_pheno) == nrow(df))
+    
+    return(df)
+}  
 
 #' Predict centiles
 #' 

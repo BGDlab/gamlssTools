@@ -1,0 +1,243 @@
+---
+title: "Testing Residualized Centile Fan Plots"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+if(!require('pacman')) {
+  install.packages('pacman')
+}
+```
+
+```{r}
+pacman::p_load(ggplot2, tidyverse, gamlss, gamlss.ggplots, dplyr)
+# install.packages("devtools")
+# devtools::install_github("BGDlab/gamlssTools", force=TRUE)
+# library(gamlssTools)
+```
+
+Using the iris dataset to simulate models with nonlinear effects of age and eTIV and random effect of site
+```{r}
+df <- iris %>%
+  select(!Petal.Length) %>%
+  rename("site" = "Species",
+         "pheno" = "Sepal.Width",
+         "age" = "Sepal.Length",
+         "eTIV" = "Petal.Width")
+```
+
+```{r}
+test_model <- gamlss(formula = pheno ~ pb(age) + random(site) + pb(eTIV), 
+                     sigma.formula = ~ age + eTIV, 
+                     family = GG, data = df)
+
+test_model2 <- gamlss(formula = pheno ~ pb(age) + site + eTIV, 
+                     sigma.formula = ~ age, 
+                     family = GG, data = df)
+
+test_model3 <- gamlss(formula = pheno ~ pb(age) + eTIV, 
+                     sigma.formula = ~ age, 
+                     family = NO, data = df)
+```
+
+#Test with current gamlssTools functions
+
+```{r}
+make_centile_fan(test_model, df, x_var="age") 
+make_centile_fan(test_model, df, x_var="age", remove_cent_effect = "site")
+```
+
+try residualizing eTIV from points
+```{r}
+ggplot(df) +
+  geom_point(aes(x=age, y=pheno, color=site))
+make_centile_fan(test_model3, df, x_var="age", show_points = TRUE, 
+                 #remove_point_effect = c("eTIV", "site"),
+                 #remove_cent_effect = c("site", "eTIV")
+                 )
+
+make_centile_fan(test_model3, df, x_var="age", show_points = TRUE, 
+                 remove_point_effect = c("eTIV"),
+                 #remove_cent_effect = c("site", "eTIV")
+                 )
+
+make_centile_fan(test_model3, df, x_var="age", show_points = TRUE, 
+                 remove_point_effect = c("eTIV", "site"),
+                 #remove_cent_effect = c("site")
+                 )
+cent_cdf(test_model, df, interval_var="age", n=4, plot = FALSE)
+
+make_centile_fan(test_model, df, x_var="eTIV", show_points = TRUE, 
+                 remove_point_effect = c("age", "site"),
+                 #remove_cent_effect = "site"
+                 )
+cent_cdf(test_model, df, interval_var="eTIV", n=4, plot=FALSE)
+
+#resid_data(test_model, df, rm_terms="eTIV")
+```
+
+
+still off - try residualizing out site effects (removing from centile fans as well, because centile lines are simulated at level=mode while Betas are calculated against whatever gamlss sets as the base level, which may or may not be the same)
+
+```{r}
+make_centile_fan(test_model, df, x_var="age", 
+                 #remove_cent_effect = c("site"),
+                 remove_point_effect = c("site", "eTIV"))
+```
+
+#Other Ideas
+what if i just predict df from the gamlss model, except i replace the values of df i'm residualizing with the means?
+
+```{r}
+test_model4 <- gamlss(formula = pheno ~ pb(age) + site, 
+                     sigma.formula = ~ age, 
+                     family = GG, data = df)
+
+make_centile_fan(test_model4, x_var = "age", df)
+
+make_centile_fan(test_model4, x_var = "age", df, remove_point_effect = "site")
+```
+
+```{r}
+df2 <- df %>%
+  mutate(site = mode(df$site))
+
+test_pred <- predictAll(test_model4, newdata = df2, data=df)
+
+test_pred2 <- predictAll(test_model4, newdata = df, data=df)
+
+test_pheno <- df$pheno + (test_pred$mu - test_pred2$mu)
+
+ggplot() +
+  geom_point(aes(x=df$age, y=test_pheno))
+
+resid_data(test_model4, df, og_data=df, rm_terms="site")
+```
+
+
+Currently, the subfunction that removes gamlss effects from points (`resid_data()`) only removes mu effects. Will try refitting the model without eTIV in sigma to see if this aligns better.
+
+```{r}
+test_model2 <- gamlss(formula = pheno ~ pb(age) + random(site) + 
+    pb(eTIV), sigma.formula = ~ age, 
+    family = GG, data = df)
+
+make_centile_fan(test_model2, df, x_var="age", 
+                 remove_cent_effect = "site",
+                 remove_point_effect = c("eTIV", "site"))
+```
+doesn't seem to help
+
+what if eTIV is linear?
+```{r}
+test_model3 <- gamlss(formula = pheno ~ pb(age) + random(site) + eTIV, sigma.formula = ~ age, 
+    family = GG, data = df)
+
+make_centile_fan(test_model3, df, x_var="age", 
+                 remove_cent_effect = "site",
+                 remove_point_effect = "site")
+make_centile_fan(test_model3, df, x_var="age", 
+                 remove_cent_effect = "site",
+                 remove_point_effect = c("eTIV", "site"))
+```
+
+looks much better!
+
+```{r}
+test_model4 <- gamlss(formula = pheno ~ pb(age) + site + eTIV, 
+    family = NO, data = df)
+
+make_centile_fan(test_model4, df, x_var="age",
+                 color_var="site", average_over=TRUE,
+                 remove_point_effect = c("site", "eTIV"))
+```
+Seems to work better with linear effects/when family=NO, trying resisdualizing from other moments
+
+```{r}
+make_centile_fan(test_model, df, x_var="age", remove_point_effect = c("site", "eTIV"))
+
+resid_pts <- resid_data(test_model, df, df, rm_terms="eTIV")
+ggplot(resid_pts) +
+  geom_point(aes(x=age, y=pheno))
+```
+
+```{r}
+make_centile_fan(test_model2, df, x_var="age", remove_point_effect = c("site", "eTIV"))
+
+resid_pts <- resid_data(test_model2, df, df, rm_terms="eTIV")
+ggplot(resid_pts) +
+  geom_point(aes(x=age, y=pheno))
+```
+
+seems to be less wonky with NO()/removing effect in sigma
+
+back to thinking the problem is with pb effects :(
+
+```{r}
+test_model5 <- gamlss(formula = pheno ~ pb(age) + site + pb(eTIV), 
+    family = NO, data = df)
+
+
+effects_link <- predict(object = test_model5,
+                             newdata = df,
+                             what = "mu",
+                             data = df,
+                             type="terms"
+                            )
+new_df <- data.frame(
+  age = mean(df$age),
+  eTIV=mean(df$eTIV),
+  site="setosa"
+)
+
+mean_link <- predict(object = test_model5,
+                             newdata = new_df,
+                             what = "mu",
+                             data = df,
+                             type="terms"
+                            )
+
+
+df_test <- df
+eff_link <- effects_link %>%
+  as.data.frame()
+eff_link[['pb(eTIV)']]
+
+df_test$link_effects <- test_model5$mu.coefSmo[[2]]$fv
+  #eff_link[['pb(eTIV)']]
+  
+df_test <- df_test %>%
+  mutate(pheno_minus = pheno - link_effects,
+         pheno_plus = pheno + link_effects,
+         linear_effect = eTIV * 0.5451) %>%
+  mutate(pheno_minus_linear = pheno_minus + linear_effect)
+
+# df_test$response <- predict(object = test_model5,
+#                              newdata = df,
+#                              what = "mu",
+#                              data = df,
+#                              type="response"
+#                             )
+# 
+# predictAll(object = test_model5, newdata = df, data = df)
+
+ggplot(df_test) +
+  geom_point(aes(x=age, y=pheno_minus))
+ggplot(df_test) +
+  geom_point(aes(x=age, y=pheno_plus))
+
+ggplot(df_test) +
+  geom_point(aes(x=age, y=pheno_minus_linear))
+
+make_centile_fan(test_model5, df, "age")
+make_centile_fan(test_model5, df, "age", remove_point_effect=c("eTIV"))
+make_centile_fan(test_model5, df, "age", "site", average_over=TRUE, remove_point_effect=c("eTIV", "site"))
+#make_centile_fan(test_model5, df, "age", remove_point_effect=c("eTIV", "site"), remove_cent_effect = "site")
+```
+
+adding effect of pb(mean(eTIV)) doesn't work :(
+
+```{r}
+getSmo(test_model5, which=2)$
+```
