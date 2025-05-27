@@ -45,7 +45,7 @@ test_model3 <- gamlss(formula = pheno ~ pb(age) + eTIV,
 
 ```{r}
 make_centile_fan(test_model, df, x_var="age") 
-make_centile_fan(test_model, df, x_var="age", remove_cent_effect = "site")
+make_centile_fan(test_model, df, x_var="age", remove_point_effect = c("site", "eTIV"))
 ```
 
 try residualizing eTIV from points
@@ -82,7 +82,7 @@ still off - try residualizing out site effects (removing from centile fans as we
 
 ```{r}
 make_centile_fan(test_model, df, x_var="age", 
-                 #remove_cent_effect = c("site"),
+                 remove_cent_effect = c("site"),
                  remove_point_effect = c("site", "eTIV"))
 ```
 
@@ -96,7 +96,9 @@ test_model4 <- gamlss(formula = pheno ~ pb(age) + site,
 
 make_centile_fan(test_model4, x_var = "age", df)
 
-make_centile_fan(test_model4, x_var = "age", df, remove_point_effect = "site")
+make_centile_fan(test_model4, x_var = "age", df, remove_cent_effect = "site")
+
+centile_fan_resid(test_model4, df, x_var="age", resid_effect = "site")
 ```
 
 ```{r}
