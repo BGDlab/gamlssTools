@@ -91,6 +91,8 @@ iris_fan_plot +
  x ="Sepal Length", y = "Sepal Width",
  color = "Species", fill="Species")
  
+#add facets
+iris_fan_plot + facet_wrap(~Species)
 #################################
 #conditioning time 2 model on time 1 -> residualize point effects
 iris$Sepal.Width_t2 <- iris$Sepal.Width  + rnorm(nrow(iris), mean = 0.1, sd = 0.05)
