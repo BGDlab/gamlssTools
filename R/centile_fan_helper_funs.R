@@ -252,7 +252,6 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
   if (is.null(og_data)){
     og_data <- df
   }
-  
   #run predict on og data
   pred_true <- predictAll(gamlssModel,
                        newdata = df,
@@ -262,17 +261,15 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
   #run predict on data with rm_terms held at mean/mode
     #sim new df
     print("simulating residualized data")
+    new_df <- df
     #update df to remove variability in rm_terms (written with help from GPT)
-    new_df <- df %>%
-      mutate(across(
-          all_of(rm_terms) & where(is.numeric),
-          ~ mean(.x, na.rm = TRUE)
-        ),
-        across(
-          all_of(rm_terms) & where(~ is.character(.x) | is.factor(.x)),
-          ~ mode(.x)
-        )
-      )
+    for (col in rm_terms){
+      if (is.numeric(og_data[[col]])){
+        new_df[[col]] <- mean(og_data[[col]], na.rm = TRUE)
+      } else {
+        new_df[[col]] <- mode(og_data[[col]])
+      }
+    }
     
     #predict on new_df
       pred_resid <- predictAll(gamlssModel,
