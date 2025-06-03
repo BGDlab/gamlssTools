@@ -316,6 +316,11 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   if (!is.null(color_var)){
     #merge across levels of color_var
     merged_centile_df <- bind_rows(line_dfs, .id = color_var)
+    # Ensure color_var matches original data type
+    if (is.factor(df[[color_var]])) {
+      merged_centile_df[[color_var]] <- factor(merged_centile_df[[color_var]], 
+                                             levels = levels(df[[color_var]]))
+    }
   } else {
     merged_centile_df <- line_dfs[[1]]
     
@@ -368,32 +373,36 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     print("plotting centile fans...")
     if (show_points == TRUE & is.null(color_manual)){
       base_plot_obj <- ggplot() +
-        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], 
-                       color=point_df[[color_var]], 
-                       fill=point_df[[color_var]]), alpha=0.3)
+        geom_point(data = point_df,
+                   mapping = aes(y = !!sym(pheno), x = !!sym(x_var), 
+                       color = !!sym(color_var), 
+                       fill = !!sym(color_var)), alpha=0.3)
       
     } else if (show_points == TRUE & !is.null(color_manual)){
       base_plot_obj <- ggplot() +
-        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]]), 
-                       color=color_manual, 
-                       fill=color_manual, alpha=0.3)
+        geom_point(data = point_df,
+                   mapping = aes(y = !!sym(pheno), x = !!sym(x_var)), 
+                   color=color_manual, 
+                   fill=color_manual, alpha=0.3)
     } else if (show_points==FALSE){
       base_plot_obj <- ggplot()
     }
     
     #now add centile fans
     if (is.null(color_manual)){
-    base_plot_obj <- base_plot_obj +
-      geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
-                    group = interaction(long_centile_df$id.vars, long_centile_df[[color_var]]),
-                    color = long_centile_df[[color_var]],
-                    linewidth = long_centile_df$id.vars)) + 
-      scale_linewidth_manual(values = centile_linewidth, guide = "none")
+      base_plot_obj <- base_plot_obj +
+        geom_line(data = long_centile_df,
+                  mapping = aes(x = !!sym(x_var), y = values,
+                      group = interaction(id.vars, !!sym(color_var)),
+                      color = !!sym(color_var),
+                      linewidth = id.vars)) + 
+        scale_linewidth_manual(values = centile_linewidth, guide = "none")
     } else {
       base_plot_obj <- base_plot_obj +
-        geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
-                      group = interaction(long_centile_df$id.vars, long_centile_df[[color_var]]),
-                      linewidth = long_centile_df$id.vars),
+        geom_line(data = long_centile_df,
+                  mapping = aes(x = !!sym(x_var), y = values,
+                      group = interaction(id.vars, !!sym(color_var)),
+                      linewidth = id.vars),
                   color=color_manual) + 
         scale_linewidth_manual(values = centile_linewidth, guide = "none")
     }
@@ -425,20 +434,23 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     #find farthest point on x axis for each centile
     x_var_s <- sym(x_var)
     
-    if (!is.null(color_var)){
-      color_var_s <- sym(color_var)
-    } else {
-      color_var_s <- NULL
-    }
+    # if (!is.null(color_var)){
+    #   color_var_s <- sym(color_var)
+    # } else {
+    #   color_var_s <- NULL
+    # }
     
     data_end <- long_centile_df %>%
-      dplyr::group_by(!!color_var_s, id.vars) %>%
+      dplyr::group_by(!!sym(color_var), id.vars) %>%
       dplyr::filter(!!x_var_s == max(!!x_var_s, na.rm=TRUE)) %>%
       ungroup() %>%
       mutate(id.vars = as.numeric(gsub("cent_|deriv_", "", id.vars))) #make centile labels prettier
 
     base_plot_obj <- base_plot_obj +
-      ggrepel::geom_text_repel(aes(x=data_end[[x_var_s]], y=data_end$values, label=scales::percent(data_end$id.vars)),
+      ggrepel::geom_text_repel(aes(x=.data[[x_var_s]], 
+                                   y=values, 
+                                   label=scales::percent(id.vars)),
+                               data = data_end,
                                nudge_x=(data_end[[x_var_s]]*.03), box.padding=0.15, size=3)
   }
   
@@ -457,7 +469,11 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     }
     
     base_plot_obj <- base_plot_obj +
-      geom_point(aes(x=merged_peak_df[[x_var]], y=merged_peak_df$y), size=3)
+      geom_point(aes(x=.data[[x_var]], 
+                     y=y,
+                     fill=.data[[color_var]]),
+                 data=merged_peak_df,
+                 size=3)
       
   }
 
