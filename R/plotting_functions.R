@@ -22,7 +22,7 @@
 #' @param xlim.worm control plot range(s)
 #' @param ylim.worm control plot range(s)
 #' 
-#' @returns ggplot objects of worm plot(s)
+#' @returns list with ggplot objects of worm plot(s) ($plot) and df of pts outside dotted CI ($outliers)
 #' 
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
@@ -121,7 +121,7 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
             y = ylim.worm * 0.95)
     
     #Return the plot
-    p<-ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
+    p <- ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
       geom_point() + theme_classic() +
       xlab("Unit Normal Quantile") + ylab("Deviation") + 
       {if (is.finite(xlim.worm)) xlim(c(-xlim.worm, xlim.worm))} + 
@@ -137,7 +137,6 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
                 inherit.aes = FALSE,
                 #label.size = 0.15,
                 color="blue")
-    return(p)
     
   } else {
     
@@ -194,10 +193,8 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
                 n_outer = sum(outer)) %>%
       mutate(pcnt = n_outer/n)
     
-    #print(n_outer)
-    
    #Return the plot
-    p<-ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
+    p <- ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
       geom_point() + facet_wrap(~z) + theme_classic() +
       xlab("Unit Normal Quantile") + ylab("Deviation") +
       {if (is.finite(xlim.worm)) xlim(c(-xlim.worm, xlim.worm))} + 
@@ -212,7 +209,9 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
                 vjust = 1.5,
                 label.size = 0.15,
                 color="blue")
-    
-    return(p)
   }
+  out <- list()
+  out$plot <- p
+  out$outliers <- n_outer
+  return(out)
 }
