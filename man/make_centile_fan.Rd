@@ -16,7 +16,7 @@ make_centile_fan(
   average_over = FALSE,
   sim_data_list = NULL,
   show_points = TRUE,
-  label_centiles = TRUE,
+  label_centiles = c("label", "legend", "none"),
   remove_point_effect = NULL,
   color_manual = NULL,
   get_derivs = FALSE,
@@ -54,7 +54,8 @@ many models fit on the same dataframe}
 
 \item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
 
-\item{label_centiles}{logical indicating whether to note the percentile corresponding to each centile line. Defaults to \code{TRUE}}
+\item{label_centiles}{label the percentile corresponding to each centile line(\code{label}), map thickness in legend(\code{legend}), or neither(\code{none}).
+Defaults to \code{label}.}
 
 \item{remove_point_effect}{logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to \code{FALSE}.}
 
