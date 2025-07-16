@@ -203,7 +203,8 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 #' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're plotting
 #' many models fit on the same dataframe 
 #' @param show_points logical indicating whether to plot data points below centile fans. Defaults to `TRUE`
-#' @param label_centiles logical indicating whether to note the percentile corresponding to each centile line. Defaults to `TRUE`
+#' @param label_centiles label the percentile corresponding to each centile line(`label`), map thickness in legend(`legend`), or neither(`none`). 
+#' Defaults to `label`.
 #' @param remove_point_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to `FALSE`.
 #' @param color_manual optional arg to specify color for points and centile fans. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
@@ -270,20 +271,27 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              average_over = FALSE,
                              sim_data_list = NULL,
                              show_points = TRUE,
-                             label_centiles = TRUE,
+                             label_centiles = c("label", "legend", "none"),
                              remove_point_effect = NULL,
                              color_manual = NULL,
                              get_derivs = FALSE,
                              y_scale = NULL,
                              ...){
+  
+  #handle args
   opt_args_list <- list(...)
   if ("remove_cent_effect" %in% names(opt_args_list)) {
     print("WARNING: The 'remove_cent_effect' argument is deprecated, ignoring.")
   }
-  pheno <- as.character(gamlssModel$mu.terms[[2]])
+  x_axis <- match.arg(x_axis)
+  label_centiles <- match.arg(label_centiles)
+  #reorder centiles from largest to smallest
+  desiredCentiles_reord <- sort(desiredCentiles, decreasing = TRUE)
   
   #check that var names are input correctly
   stopifnot(is.character(x_var))
+  
+  pheno <- as.character(gamlssModel$mu.terms[[2]])
   
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
@@ -300,7 +308,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   centile_dfs <- centile_predict(gamlssModel = gamlssModel, 
                                sim_df_list = sim_list, 
                                x_var = x_var, 
-                               desiredCentiles = desiredCentiles,
+                               desiredCentiles = desiredCentiles_reord,
                                df = df,
                                average_over = average_over)
   
@@ -346,7 +354,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     }
   }
   
-  centile_linewidth <- sapply(desiredCentiles, map_thickness)
+  centile_linewidth <- sapply(desiredCentiles_reord, map_thickness)
+  names(centile_linewidth) <- unique(long_centile_df$id.vars)
   
   #convert color_var to factor as needed
   if (!is.null(color_var) && is.numeric(df[[color_var]])){
@@ -397,16 +406,16 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                   mapping = aes(x = !!sym(x_var), y = values,
                       group = interaction(id.vars, !!sym(color_var)),
                       color = !!sym(color_var),
-                      linewidth = id.vars)) + 
-        scale_linewidth_manual(values = centile_linewidth, guide = "none")
+                      linewidth = id.vars))
+        
     } else {
       base_plot_obj <- base_plot_obj +
         geom_line(data = long_centile_df,
                   mapping = aes(x = !!sym(x_var), y = values,
                       group = interaction(id.vars, !!sym(color_var)),
                       linewidth = id.vars),
-                  color=color_manual) + 
-        scale_linewidth_manual(values = centile_linewidth, guide = "none")
+                  color=color_manual)
+      
     }
     
   } else if (average_over == TRUE){
@@ -424,24 +433,33 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                     group = long_centile_df$id.vars,
                     linewidth = long_centile_df$id.vars,
                     color=color_manual)) + 
-      scale_linewidth_manual(values = centile_linewidth, guide = "none") +
       scale_color_identity()
     
   } else {
     stop(paste0("Do you want to average over values of ", color_var, "?"))
   }
   
+  #linewidths
+  if(label_centiles == "legend"){
+    base_plot_obj <- base_plot_obj +
+      scale_linewidth_manual(values = centile_linewidth,
+                             breaks = names(centile_linewidth),
+                             guide = "legend",
+                             name = "Percentile",
+                             label = scales::percent(as.numeric(gsub("cent_|deriv_", 
+                                                                   "", 
+                                                                   unique(long_centile_df$id.vars)))))
+  } else {
+    base_plot_obj <- base_plot_obj +
+      scale_linewidth_manual(values = centile_linewidth,
+                             guide = "none")
+  }
+  
   #label centile curves as needed
-  if (label_centiles == TRUE){
+  if (label_centiles == "label"){
     #find farthest point on x axis for each centile
     x_var_s <- sym(x_var)
-    
-    # if (!is.null(color_var)){
-    #   color_var_s <- sym(color_var)
-    # } else {
-    #   color_var_s <- NULL
-    # }
-    
+
     data_end <- long_centile_df %>%
       dplyr::group_by(!!sym(color_var), id.vars) %>%
       dplyr::filter(!!x_var_s == max(!!x_var_s, na.rm=TRUE)) %>%
@@ -476,12 +494,9 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                      fill=.data[[color_var]]),
                  data=merged_peak_df,
                  size=3)
-      
   }
 
   #format x-axis
-  x_axis <- match.arg(x_axis)
-  
   if(x_axis != "custom") {
     
     #add days for fetal development?
