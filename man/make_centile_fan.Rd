@@ -21,6 +21,7 @@ make_centile_fan(
   color_manual = NULL,
   get_derivs = FALSE,
   y_scale = NULL,
+  x_scale = NULL,
   ...
 )
 }
@@ -64,6 +65,8 @@ Defaults to \code{label}.}
 \item{get_derivs}{plot 1st derivative of centile lines instead of the centile lines themselves}
 
 \item{y_scale}{function to be applied to dependent variable (y axis)}
+
+\item{x_scale}{function to be applied to variable on x axis}
 }
 \value{
 ggplot object

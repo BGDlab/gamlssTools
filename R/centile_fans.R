@@ -209,6 +209,7 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 #' @param color_manual optional arg to specify color for points and centile fans. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
 #' @param y_scale function to be applied to dependent variable (y axis)
+#' @param x_scale function to be applied to variable on x axis
 #' 
 #' @returns ggplot object
 #' 
@@ -276,6 +277,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              color_manual = NULL,
                              get_derivs = FALSE,
                              y_scale = NULL,
+                             x_scale = NULL,
                              ...){
   
   #handle args
@@ -374,9 +376,16 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   
   #scale y if necessary
   if (!is.null(y_scale) & is.function(y_scale)){
-    print("scaling")
+    print("scaling y")
     point_df[[pheno]] <- unlist(lapply(point_df[[pheno]], y_scale))
     long_centile_df$values <- unlist(lapply(long_centile_df$values, y_scale))
+  }
+  
+  #scale x if necessary
+  if (!is.null(x_scale) & is.function(x_scale)){
+    print("scaling x")
+    point_df[[x_var]] <- unlist(lapply(point_df[[x_var]], x_scale))
+    long_centile_df[[x_var]] <- unlist(lapply(long_centile_df[[x_var]], x_scale))
   }
   
   #def base gg object (w/ or w/o points)
@@ -486,6 +495,10 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     
     if (!is.null(y_scale)){
       merged_peak_df$y <- unlist(lapply(merged_peak_df$y, y_scale))
+    }
+    
+    if (!is.null(x_scale)){
+      merged_peak_df[[x_var]] <- unlist(lapply(merged_peak_df[[x_var]], x_scale))
     }
     
     base_plot_obj <- base_plot_obj +
