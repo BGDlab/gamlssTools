@@ -15,10 +15,10 @@
 #' across all groups; alternatively, it may be combined with `stratify=TRUE` and `group_var` args below to bootstrap
 #' while maintaining each group's (e.g study's) n. `bayes` keeps the original dataframe but randomizes each observation's
 #' weight. `LOSO` drops an entire subset from the sample (indicated by `group_var`) with each bootstrap.
-#' @param stratify logical. with `type=resample` will bootstrap within each level of `group_var`. Can also be a list, allowing
+#' @param stratify logical. with `type=resample` will bootstrap within each level of `group_var`. 
+#' @param group_var categorical/factor variable that resampling will be stratified within (when `type=resample`) 
+#' or that one level will be dropped from in each bootstraped sample (when `type=LOSO`). Can also be a list, allowing
 #' stratification within multiple groups e.g. `group_var=c(sex, study)`
-#' @param group_var categorical/factor variable that resampling will be stratified within (when `type=resample`)
-#' or that one level will be dropped from in each bootstraped sample (when `type=LOSO`)
 #' 
 #' @returns list of gamlss model objects
 #' 
@@ -122,3 +122,73 @@ bootstrap_gamlss <- function(gamlssModel, df=NULL, B=100,
   return(mod_list)
   
 }
+
+gamlss_ci <- function(boot_list,
+                      x_var,
+                      factor_var=NULL,
+                      special_term=NULL,
+                      moment=c("mu", "sigma"),
+                      interval=.95){
+  stopifnot(interval > 0 && interval < 1)
+  moment <- match.arg(moment)
+  
+  #simulate df to calculate centiles from
+  sim_boot_list <- lapply(boot_list, function(gamlssModel, x_var, factor_var, special_term){
+    df <- gamlssModel$call$data
+    sim_df <- sim_data(df, x_var, factor_var, gamlssModel, special_term)
+    return(sim_df)
+  }, x_var, factor_var, special_term)
+  stopifnot(length(boot_list) == length(sim_boot_list))
+  
+  #for mu, estimate 50th percentile from each gamlss model
+  if (moment == "mu"){
+    #50th centiles
+    cent_boot_list <- Map(centile_predict, 
+                     gamlssModel = boot_list, 
+                     sim_df_list = sim_boot_list,
+                     x_var=x_var,
+                     desiredCentiles=0.5)
+    
+    #get n unique values of x_var for later
+    x_var_vec <- cent_boot_list[[1]][[1]][[x_var]]
+    
+    #merge across each bootstrap sample, w/in factor_var as necessary
+    if (!is.null(factor_var)){
+      cent_boot_list2 <- cent_boot_list %>%
+        purrr:::transpose() %>%
+        purrr:::map(bind_rows)
+      
+      #check number of factor levels
+      stopifnot(length(cent_boot_list2) == length(cent_boot_list[[1]]))
+    } else {
+      cent_boot_list2 <- cent_boot_list
+    }
+    
+  #for sigma, estimate ???
+  } else if (moment == "sigma"){
+    print("help, not implemented yet")
+  }
+
+  #group across xvar to get quantiles -> CIs
+  ci_df_list <- lapply(cent_boot_list2, function(df) {
+    df_out <- df %>%
+      arrange(!!sym(x_var)) %>%
+      #grouping x_var to deal with rounding
+      mutate(x_bin = cut(!!sym(x_var), breaks = length(x_var_vec))) %>%
+      group_by(x_bin) %>%
+      summarise(
+        lower = quantile(cent_0.5, probs = 0.5-(interval/2), na.rm = TRUE),
+        med = quantile(cent_0.5, probs = 0.5, na.rm = TRUE),
+        upper = quantile(cent_0.5, probs = 0.5+(interval/2), na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      select(!x_bin)
+    stopifnot(nrow(df_out) == length(x_var_vec))
+    
+    #add back x_var values
+    df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
+    return(df_out)
+  })
+
+}
+  
