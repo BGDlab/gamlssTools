@@ -132,6 +132,11 @@ gamlss_ci <- function(boot_list,
   stopifnot(interval > 0 && interval < 1)
   moment <- match.arg(moment)
   
+  #subfunction with help from chatgpt
+  calc_ci_boot <- function(x) {
+    quantile(x, probs = c(0.025, 0.5, 0.975), na.rm = TRUE)
+  }
+  
   #simulate df to calculate centiles from
   sim_boot_list <- lapply(boot_list, function(gamlssModel, x_var, factor_var, special_term){
     df <- gamlssModel$call$data
@@ -148,9 +153,6 @@ gamlss_ci <- function(boot_list,
                      sim_df_list = sim_boot_list,
                      x_var=x_var,
                      desiredCentiles=0.5)
-    
-    #get n unique values of x_var for later
-    x_var_vec <- cent_boot_list[[1]][[1]][[x_var]]
     
     #merge across each bootstrap sample, w/in factor_var as necessary
     if (!is.null(factor_var)){
@@ -173,21 +175,17 @@ gamlss_ci <- function(boot_list,
   ci_df_list <- lapply(cent_boot_list2, function(df) {
     df_out <- df %>%
       arrange(!!sym(x_var)) %>%
-      #grouping x_var to deal with rounding
-      mutate(x_bin = cut(!!sym(x_var), breaks = length(x_var_vec))) %>%
-      group_by(x_bin) %>%
-      summarise(
-        lower = quantile(cent_0.5, probs = 0.5-(interval/2), na.rm = TRUE),
-        med = quantile(cent_0.5, probs = 0.5, na.rm = TRUE),
-        upper = quantile(cent_0.5, probs = 0.5+(interval/2), na.rm = TRUE),
-        .groups = "drop"
-      ) %>%
-      select(!x_bin)
-    stopifnot(nrow(df_out) == length(x_var_vec))
-    
-    #add back x_var values
-    df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
-    return(df_out)
+      zoo::rollapply(
+        width = 5*length(boot_list),
+        FUN = calc_ci_boot,
+        by = 10,
+        align = "center"
+      )
+    df_out <- df_out[,c(1:3,5)]
+    colnames(df_out) <- c("lower", "med", "upper", x_var)
+    # #add back x_var values
+    # df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
+    return(as.data.frame(df_out))
   })
 
 }
