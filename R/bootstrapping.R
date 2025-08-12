@@ -123,12 +123,39 @@ bootstrap_gamlss <- function(gamlssModel, df=NULL, B=100,
   
 }
 
+#' Bootstrap Confidence Intervals
+#' 
+#' Uses bootstrapped gamlss models to calculate CIs
+#' 
+#' Takes output of gamlssTools::bootstrap_gamlss() and uses them to calculate confidence intervals for 
+#' the 50th percentiles across the range of `x_var`.
+#' 
+#' @param boot_list output of gamlssTools::bootstrap_gamlss()
+#' @param x_var numeric variable to plot confidence intervals across
+#' @param factor_var categorical variable, CIs will be calculated separately at each level.
+#' @param special_term optional, passed to gamlssTools::sim_data()
+#' @param moment what moment to get CIs for. Currently only implemented for mu, which returns 50th percentile CIs
+#' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
+#' @param sliding_window logical indicating whether to calculate CI at 500 point clusters along x or use sliding windows.
+#' Defaults to FALSE
+#' @param xmin minimum value of `x_var` in the true dataframe. Optional, but can help with merging results
+#' @param xmax max value of `x_var` in the true dataframe. Optional, but can help with merging results
+#' 
+#' @returns list of dataframes, with one dataframe for each level of `factor_var`
+#' 
+#' @export
+#' @importFrom purrr map transpose
+#' @importFrom zoo rollapply
+
 gamlss_ci <- function(boot_list,
                       x_var,
                       factor_var=NULL,
                       special_term=NULL,
                       moment=c("mu", "sigma"),
-                      interval=.95){
+                      interval=.95,
+                      sliding_window = FALSE,
+                      xmin=NULL,
+                      xmax=NULL){
   stopifnot(interval > 0 && interval < 1)
   moment <- match.arg(moment)
   
@@ -171,22 +198,160 @@ gamlss_ci <- function(boot_list,
     print("help, not implemented yet")
   }
 
-  #group across xvar to get quantiles -> CIs
-  ci_df_list <- lapply(cent_boot_list2, function(df) {
-    df_out <- df %>%
-      arrange(!!sym(x_var)) %>%
-      zoo::rollapply(
-        width = 5*length(boot_list),
-        FUN = calc_ci_boot,
-        by = 10,
-        align = "center"
-      )
-    df_out <- df_out[,c(1:3,5)]
-    colnames(df_out) <- c("lower", "med", "upper", x_var)
-    # #add back x_var values
-    # df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
-    return(as.data.frame(df_out))
-  })
+  #method 1: sliding window
+  if (sliding_window == TRUE){
+    ci_df_list <- lapply(cent_boot_list2, function(df) {
+      df_out <- df %>%
+        arrange(!!sym(x_var)) %>%
+        zoo::rollapply(
+          width = 3*length(boot_list),
+          FUN = calc_ci_boot,
+          by = 5,
+          align = "center"
+        )
+      df_out <- df_out[,c(1:3,5)]
+      colnames(df_out) <- c("lower", "med", "upper", x_var)
+      # #add back x_var values
+      # df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
+      return(df_out)
+    })
+    
+    #method 2: group across xvar to get quantiles -> CIs
+    ## closer to centiles.boot() from gamlss.foreach
+  } else if (sliding_window == FALSE){
+    if (is.null(xmin && xmax)){
+      x_var_vec <- cent_boot_list[[1]][[1]][[x_var]]
+    } else {
+      x_var_vec <- seq(xmin, xmax, length.out=500)
+    }
+    
+    ci_df_list <- lapply(cent_boot_list2, function(df) {
+      df_out <- df %>%
+        arrange(!!sym(x_var)) %>%
+        #grouping x_var to deal with rounding
+        mutate(x_bin = cut(!!sym(x_var), breaks = (x_var_vec))) %>%
+        group_by(x_bin) %>%
+        summarise(
+          lower = quantile(cent_0.5, probs = 0.5-(interval/2), na.rm = TRUE),
+          med = quantile(cent_0.5, probs = 0.5, na.rm = TRUE),
+          upper = quantile(cent_0.5, probs = 0.5+(interval/2), na.rm = TRUE),
+          .groups = "drop"
+        ) %>%
+        select(!x_bin)
+      stopifnot(nrow(df_out) == length(x_var_vec))
+      
+      #add back x_var values
+      df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
+      return(df_out)
+    })
+  }
 
 }
+
+#' Test Median Diffs across X
+#' 
+#' Uses bootstrapped CIs to find regions across `x_var` where the levels of a factor significantly differ
+#' 
+#' Only works for factors with 2 levels
+#' 
+#' @param ci_list output of gamlssTools::gamlss_ci()
+#' 
+#' @returns dataframe
+#' 
+#' @export
+
+ci_diffs <- function(ci_list){
+  stopifnot(length(ci_list) == 2)
   
+  #https://stackoverflow.com/questions/3269434/whats-the-most-efficient-way-to-test-if-two-ranges-overlap
+  check_overlap <- function(A_lower, A_upper, B_lower, B_upper){
+    max(A_lower, B_lower) - min(A_upper, B_upper) <= 0 
+  }
+  
+  #store original factor level names
+  names(ci_list) <- c("A", "B") #rename to generic levels for calculations
+  
+  ci_df <- bind_rows(ci_list, .id = "factor") %>%
+    tidyr:::pivot_wider(names_from="factor", values_from = c("lower", "med", "upper")) %>%
+    mutate(overlap = check_overlap(lower_A, upper_A, lower_B, upper_B)) %>%
+    mutate(sig_diff = ifelse(overlap == TRUE, FALSE, TRUE))
+  
+  return(ci_df)
+}
+
+#' Calculate Median Differences
+#' 
+#' Wrapper function for bootstrapping samples, refitting gamlss models, getting CIs, 
+#' testing significance of differences in two factor levels' trajectories, and calculating that
+#' difference
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe model was originally fit on
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_df_list` varies over#' 
+#' @param factor_var categorical variable to compare levels within.
+#' @param B number of samples/models to bootstrap. Defaults to 100. if `type = "LOSO"`, B will be updated to 
+#' the number of unique values of `group_var`
+#' @param type which type of bootstrapping to perform. `resample` performs traditional bootstrapping (resample with replacement)
+#' across all groups; alternatively, it may be combined with `stratify=TRUE` and `group_var` args below to bootstrap
+#' while maintaining each group's (e.g study's) n. `bayes` keeps the original dataframe but randomizes each observation's
+#' weight. `LOSO` drops an entire subset from the sample (indicated by `group_var`) with each bootstrap.
+#' @param stratify logical. with `type=resample` will bootstrap within each level of `group_var`. 
+#' @param boot_group_var categorical/factor variable that resampling will be stratified within (when `type=resample`) 
+#' or that one level will be dropped from in each bootstraped sample (when `type=LOSO`). Can also be a list, allowing
+#' stratification within multiple groups e.g. `group_var=c(sex, study)`
+#' @param sim_df_list list of simulated dataframes returned by `sim_data()`
+#' @param special_term optional, passed to gamlssTools::sim_data()
+#' @param moment what moment to get CIs for. Currently only implemented for mu, which returns 50th percentile CIs
+#' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
+#' 
+#' @returns list of dataframes containing differences in trajectories, as well as CIs calculated at each level of `factor_var`
+#' 
+#' @export
+get_median_diffs <- function(gamlssModel, 
+                             df, 
+                             x_var, 
+                             factor_var, 
+                             B=100, 
+                             type=c("resample", "bayes", "LOSO"), 
+                             stratify=FALSE,
+                             boot_group_var=NULL,
+                             sim_data_list = NULL,
+                             special_term=NULL,
+                             moment=c("mu", "sigma"),
+                             interval=.95){
+  #only works for 2-levels
+  stopifnot(length(unique(df[[factor_var]])) == 2)
+  
+  #bootstrap models
+  print(paste("fitting", B, "bootstrap models"))
+  boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
+  
+  #get CIs
+  print(paste("calculating", interval, "CIs"))
+  ci_list <- gamlss_ci(boot_list, x_var, factor_var, special_term, moment, interval, sliding_window=FALSE,
+                       xmin=min(df[[x_var]]), xmax=max(df[[x_var]]))
+  
+  #find regions w significant diffs
+  print(paste("checking for significant differences in", factor_var, "levels"))
+  sig_diff_df <- ci_diffs(ci_list)
+  
+  #get median trajectory differences on OG sample
+  print(paste("finding differences in", factor_var, "levels' median trajectories"))
+  med_diff_df <- med_diff(gamlssModel, 
+                       df, 
+                       x_var, 
+                       factor_var, 
+                       sim_data_list = sim_data_list,
+                       get_derivs = FALSE,
+                       special_term = special_term)
+  
+  #wonky merge to account for rounding differences
+  stopifnot(range(sig_diff_df[[x_var]]) == range(med_diff_df[[x_var]]))
+  stopifnot(nrow(sig_diff_df) == nrow(med_diff_df))
+  
+  med_diff_df$sig_diff <- sig_diff_df$sig_diff
+  
+  out_list <- list(med_diff_df, ci_list)
+  names(out_list) <- c("median_diffs", "conf_int")
+  return(out_list)
+}

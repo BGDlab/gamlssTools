@@ -236,8 +236,7 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
 #' Works with random effects, smooths, etc, but might have trouble correctly identifying terms 
 #' if they are not listed as they appear in `coefficients(gamlssModel)`.
 #' 
-#' IMPORTANT: Will not work if dataset has no variability (e.g. data with values simulated to hold constant). To remove
-#' estimated covariate effects from simulated data, use [pred_residualized()].
+#' IMPORTANT: Will not work if dataset has no variability (e.g. data with values simulated to hold constant).
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe to residualize. NOTE: gamlssModel will be refit to these data
@@ -459,3 +458,59 @@ get_derivatives <- function(cent_df){
   
 }
 
+#' Get Median Diffs across X
+#' 
+#' Calculate differences in 50th centile trajectories between 2 factor levels
+#' 
+#' To test significance, see gamlssTools::ci_diffs()
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe model was originally fit on
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_df_list` varies over#' 
+#' @param factor_var categorical variable to compare levels within.
+#' @param sim_df_list list of simulated dataframes returned by `sim_data()`
+#' 
+#' @returns dataframe
+#' 
+#' @export
+med_diff <- function(gamlssModel, 
+                     df, 
+                     x_var, 
+                     factor_var, 
+                     sim_data_list = NULL,
+                     ...){
+  opt_args_list <- list(...)
+  stopifnot(length(unique(df[[factor_var]])) == 2)
+  L1 <- as.character(unique(df[[factor_var]])[1])
+  L2 <- as.character(unique(df[[factor_var]])[2])
+  
+  ##get 50th percentiles##
+  #simulate dataset(s) if not already supplied
+  if (is.null(sim_data_list)) {
+    print("simulating data")
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
+    sim_list <- do.call(sim_data, c(list(df, x_var, factor_var, gamlssModel), 
+                                    sim_args))
+  } else if (!is.null(sim_data_list)) {
+    sim_list <- sim_data_list
+  }
+  
+  #predict centiles
+  pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
+  centile_dfs <- centile_predict(gamlssModel = gamlssModel, 
+                                 sim_df_list = sim_list, 
+                                 x_var = x_var, 
+                                 desiredCentiles = c(0.5),
+                                 df = df,
+                                 average_over = FALSE)
+  
+  names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
+  col_name <- paste(L1, "minus", L2, sep="_")
+  
+  ##get differences across x axis##
+  diff_df <- bind_rows(centile_dfs, .id = factor_var) %>%
+    tidyr:::pivot_wider(names_from=factor_var, values_from = c("cent_0.5")) %>%
+    mutate(!!sym(col_name) := !!sym(L1) - !!sym(L2))
+  
+  return(diff_df)
+}

@@ -31,5 +31,7 @@ Imports:
 	tidyr,
 	foreach,
 	boot,
-	pracma
+	pracma,
+	purrr,
+	zoo
 Config/testthat/edition: 3

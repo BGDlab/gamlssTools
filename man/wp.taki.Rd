@@ -9,6 +9,7 @@ wp.taki(
   xvar = NULL,
   resid = NULL,
   n.inter = 4,
+  inter.breaks = NULL,
   xlim.worm = 3.5,
   ylim.worm = 12 * sqrt(n.inter/length(resid)),
   ...

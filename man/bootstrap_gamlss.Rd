@@ -26,11 +26,11 @@ across all groups; alternatively, it may be combined with \code{stratify=TRUE} a
 while maintaining each group's (e.g study's) n. \code{bayes} keeps the original dataframe but randomizes each observation's
 weight. \code{LOSO} drops an entire subset from the sample (indicated by \code{group_var}) with each bootstrap.}
 
-\item{stratify}{logical. with \code{type=resample} will bootstrap within each level of \code{group_var}. Can also be a list, allowing
-stratification within multiple groups e.g. \code{group_var=c(sex, study)}}
+\item{stratify}{logical. with \code{type=resample} will bootstrap within each level of \code{group_var}.}
 
 \item{group_var}{categorical/factor variable that resampling will be stratified within (when \code{type=resample})
-or that one level will be dropped from in each bootstraped sample (when \code{type=LOSO})}
+or that one level will be dropped from in each bootstraped sample (when \code{type=LOSO}). Can also be a list, allowing
+stratification within multiple groups e.g. \code{group_var=c(sex, study)}}
 }
 \value{
 list of gamlss model objects

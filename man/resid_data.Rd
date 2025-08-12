@@ -27,6 +27,5 @@ applying the inverse of the link function to convert into response scale, then s
 Works with random effects, smooths, etc, but might have trouble correctly identifying terms
 if they are not listed as they appear in \code{coefficients(gamlssModel)}.
 
-IMPORTANT: Will not work if dataset has no variability (e.g. data with values simulated to hold constant). To remove
-estimated covariate effects from simulated data, use \code{\link[=pred_residualized]{pred_residualized()}}.
+IMPORTANT: Will not work if dataset has no variability (e.g. data with values simulated to hold constant).
 }

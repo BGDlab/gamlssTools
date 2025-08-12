@@ -37,6 +37,7 @@
 #' 
 #' @export
 wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4, 
+                   inter.breaks = NULL,
                    xlim.worm = 3.5, ylim.worm = 12 * sqrt(n.inter/length(resid)),
                    #show.given = TRUE, line = TRUE, ylim.all = 12 * sqrt(1/length(resid)), xlim.all = 4,
                    #pch = 21, bg = "wheat", col = "red", bar.bg = c(num = "light blue"),
@@ -146,6 +147,8 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
       
       if (is.factor(xvar)) {
         wp.df<-data.frame(z=xvar)
+      } else if (!is.null(inter.breaks)){ 
+        wp.df<-data.frame(z=cut(xvar,breaks=inter.breaks,include.lowest=TRUE))
       } else { 
         wp.df<-data.frame(z=cut(xvar,breaks=quantile(xvar,probs=seq(0,1,length.out=n.inter+1)),include.lowest=TRUE))
       }
@@ -162,6 +165,8 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
         xvar.vec<-eval(deparen(deparen(xvar)[[2L]]), envir = as.environment(DaTa))
         if (is.factor(xvar.vec)) {
           wp.df<-data.frame(z=xvar.vec)
+        } else if (!is.null(inter.breaks)){ 
+          wp.df<-data.frame(z=cut(xvar.vec,breaks=inter.breaks,include.lowest=TRUE))
         } else { 
           wp.df<-data.frame(z=cut(xvar.vec,breaks=quantile(xvar.vec,probs=seq(0,1,length.out=n.inter+1)),include.lowest=TRUE))
         }

@@ -201,6 +201,8 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
   #remove dataset name
   df_name <- as.character(gamlssModel$call$data)
   cov_list <- cov_list[cov_list != df_name]
+  #remove NAs
+  cov_list <- cov_list[!is.na(cov_list)]
   
   #finally drop duplicates
   term_vector_clean <- unique(cov_list)
@@ -661,4 +663,72 @@ trunc_coverage <- function(df,
   df <- df %>% select(-starts_with("group_"))
   
   return(df)
+}
+
+
+
+gamlss_try <- function(...){
+  
+  #parse gamlss parameters
+  params<-list(...)
+  for (name in names(params) ) {
+    assign(name, params[[name]])
+  }
+  print(params)
+  
+  result <- tryCatch({
+    gamlss(params)
+  } , warning = function(w) {
+    message("warning")
+    gamlss(params)
+    
+  } , error = function(e) {
+    message(e$message, ", trying method=CG()")
+    tryCatch({
+      params_tmp <- params
+      params_tmp$method <- "CG()"
+      gamlss(params_tmp)
+      
+      #if CG also fails, return NULL
+    }, error = function(e2) {
+      message(e2$message, ", returning NULL")
+      return(NULL)
+    })
+  } , finally = {
+    message("...")
+  } )
+  
+  #if needed, try again with tiny steps
+  if(is.null(result)){
+    params$mu.step <- 0.01
+    params$sigma.step <- 0.01
+    params$nu.step <- 0.00000000001
+    params$tau.step <- 0.00000000001
+    
+    result <- tryCatch({
+      gamlss(params)
+      
+    } , warning = function(w) {
+      message("warning")
+      gamlss(params)
+      
+    } , error = function(e) {
+      message(e$message, ", trying method=CG()")
+      tryCatch({
+        params_tmp <- params
+        params_tmp$method <- "CG()"
+        gamlss(params_tmp)
+        
+        #if CG also fails, return NULL
+      }, error = function(e2) {
+        message(e2$message, ", returning NULL")
+        return(NULL)
+      })
+    } , finally = {
+      message("done")
+    } )
+    
+  }
+  
+  return(result)
 }
