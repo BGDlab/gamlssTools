@@ -1,11 +1,17 @@
 # gamlssTools
-This package is intended to make interacting with and plotting gamlss models easier. It contains a number of auxiliary functions 
-that will be useful for those using [gamlss()](https://cran.r-project.org/web/packages/gamlss/index.html). 
+This package is intended to make interacting with and plotting GAMLSS models easier. It contains a number of auxiliary functions 
+that will be useful for those using [gamlss()](https://cran.r-project.org/web/packages/gamlss/index.html) or [gamlss2()](https://github.com/gamlss-dev/gamlss2)
 
 ### Plotting
 
 `make_centile_fan()` is the primary plotting function. It's designed to cleanly visualize centile fans using ggplot. It should be compatible
 with all gamlss models, regardless of the number of covariates, smooths, random factors, distribution family, etc.
+
+### Bootstrapping and Confidence Intervals
+Several functions borrow from/adapt from the [gamlss-dev suite](https://github.com/gamlss-dev) to easily fit models to bootstrapped samples
+(`bootstrap_gamlss()`), use them to provide confidence intervals on the 50th centile curves (`gamlss_ci()`), and test differences in the median 
+trajectories of different factor levels (`get_median_diffs()`).
+Visualization is provided in the wrapper function `plot_centile_cis()`.
 
 ### Extracting Information
 

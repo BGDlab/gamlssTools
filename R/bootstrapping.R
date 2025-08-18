@@ -36,6 +36,15 @@ bootstrap_gamlss <- function(gamlssModel, df=NULL, B=100,
                              type=c("resample", "bayes", "LOSO"), 
                              stratify=FALSE,
                              group_var=NULL){
+  UseMethod("bootstrap_gamlss")
+}
+
+#' @export
+#' @importFrom foreach %dopar%
+bootstrap_gamlss.gamlss <- function(gamlssModel, df=NULL, B=100, 
+                             type=c("resample", "bayes", "LOSO"), 
+                             stratify=FALSE,
+                             group_var=NULL){
   
   #make sure args provided
   stopifnot("Not a gamlss model object" = is.gamlss(gamlssModel))
@@ -112,6 +121,98 @@ bootstrap_gamlss <- function(gamlssModel, df=NULL, B=100,
       #now that the sample is defined, refit the model
       refit_mod <- eval(mod_call)
 
+    }
+  
+  #warn about any failed models
+  if (length(mod_list) < B) {
+    message(paste(B - length(mod_list), "bootstraps failed"))
+  }
+  
+  return(mod_list)
+  
+}
+
+#' @export
+#' @importFrom foreach %dopar%
+bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100, 
+                                    type=c("resample", "bayes", "LOSO"), 
+                                    stratify=FALSE,
+                                    group_var=NULL){
+  
+  #make sure args provided
+  type <- match.arg(type)
+  stopifnot(is.logical(stratify))
+  
+  #get data provided or from gamlssModel
+  if (!is.null(df)) {
+    data <- df
+  } else {
+    data <- eval(gamlssModel$call$data)
+  }
+  
+  #get gamlss model to refit
+  mod_call <- as.call(gamlssModel$call)
+  mod_call$control <- gamlss2_control(trace = FALSE)
+  
+  #def subfunction for bayesian bootstrapping - taken from gamlss.foreach::BayesianBoot()
+  rFun <- function(n) {
+    U <- runif(n - 1)
+    oU <- U[order(U)]
+    oU <- c(0, oU, 1)
+    g <- diff(oU)
+    g
+  }
+  
+  #if LOSO, update B to be the number of studies (or other groups)
+  if (type == "LOSO") {
+    stopifnot("Please provide grouping var" = !is.null(group_var)) #make sure args provided
+    B <- length(unique(df[[group_var]]))
+    print(paste("Updating # bootstrapped samples to", B, "to match unique levels of", group_var))
+  }
+  
+  #attempting to parallelize, using formatting from gamlss.foreach for now
+  mod_list <- foreach::foreach(i=1:B, .packages=c("gamlss")) %dopar%
+    {
+      if (type == "resample") {
+        if (stratify == FALSE) {
+          #warn if group_var is listed
+          if (!is.null(group_var)) {
+            warning(paste("'stratify'== FALSE, ignoring 'group_var' = ", group_var))
+          }
+          #simple bootstrapping
+          bootstrap_df <- df[sample(nrow(df), nrow(df), replace = TRUE), ]
+          
+        } else if (stratify == TRUE) {
+          #bootstrap within study
+          stopifnot("Please provide grouping var" = !is.null(group_var)) #make sure args provided
+          bootstrap_df <- df %>%
+            slice_sample(prop=1, by=!!group_var, replace=TRUE)
+        }
+        
+      } else if (type == "bayes") {
+        if (stratify == TRUE | !is.null(group_var)) {
+          message("Stratified Bayesian bootstrapping not implemented, ignoring")
+        }
+        #bootstrap weights & pass original data
+        b_weights <- rFun(nrow(df)) * nrow(df)
+        mod_call$weights <- b_weights
+        bootstrap_df <- df
+        
+      } else if (type == "LOSO") {
+        if (stratify == TRUE) {
+          message("Stratified LOSO not implemented, ignoring")
+        }
+        #drop one study/group at a time
+        drop_level <- unique(df[[group_var]][i])
+        bootstrap_df <- df %>%
+          dplyr::filter(!!group_var != drop_level)
+      }
+      
+      mod_call$data <- bootstrap_df
+      
+      #now that the sample is defined, refit the model
+      refit_mod <- eval(mod_call)
+      
     }
   
   #warn about any failed models
@@ -219,7 +320,7 @@ gamlss_ci <- function(boot_list,
     #method 2: group across xvar to get quantiles -> CIs
     ## closer to centiles.boot() from gamlss.foreach
   } else if (sliding_window == FALSE){
-    if (is.null(xmin && xmax)){
+    if (is.null(xmin) & is.null(xmax)){
       x_var_vec <- cent_boot_list[[1]][[1]][[x_var]]
     } else {
       x_var_vec <- seq(xmin, xmax, length.out=500)

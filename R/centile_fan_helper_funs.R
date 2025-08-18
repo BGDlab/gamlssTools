@@ -95,6 +95,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
           } else if (is.factor(df[[col]])) {
             mode_value <- mode(df[[col]])
             new_df[[col]] <- as.factor(rep(mode_value, n_rows))
+            levels(new_df[[col]]) <- levels(df[[col]])
             print(paste("simulating", col, "at", mode_value))
           } else {
             mode_value <- mode(df[[col]])
@@ -248,6 +249,11 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
 #' @importFrom boot inv.logit
 #' @export
 resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
+  UseMethod("resid_data")
+}
+
+#' @export
+resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
   if (is.null(og_data)){
     og_data <- df
   }
@@ -281,6 +287,80 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
     
     df[[pheno]] <- df[[pheno]] - (pred_true - pred_resid)
     return(df)
+}  
+
+#' @export
+resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
+  if (is.null(og_data)){
+    og_data <- df
+  }
+  
+  # Validate that all required columns exist in both dataframes
+  required_cols <- c(rm_terms, as.character(get_y(gamlssModel)))
+  missing_cols_df <- setdiff(required_cols, names(df))
+  missing_cols_og <- setdiff(required_cols, names(og_data))
+  
+  if (length(missing_cols_df) > 0) {
+    stop(paste("Missing columns in df:", paste(missing_cols_df, collapse = ", ")))
+  }
+  if (length(missing_cols_og) > 0) {
+    stop(paste("Missing columns in og_data:", paste(missing_cols_og, collapse = ", ")))
+  }
+  
+  # Ensure data types match between df and og_data for rm_terms
+  for (col in rm_terms) {
+    if (class(df[[col]]) != class(og_data[[col]])) {
+      warning(paste("Data type mismatch for column", col, "- converting df[[col]] to match og_data[[col]]"))
+      if (is.factor(og_data[[col]])) {
+        df[[col]] <- as.factor(df[[col]])
+      } else if (is.numeric(og_data[[col]])) {
+        df[[col]] <- as.numeric(df[[col]])
+      } else {
+        df[[col]] <- as.character(df[[col]])
+      }
+    }
+  }
+  
+  tryCatch({
+    #run predict on og data
+    pred_true <- predict(gamlssModel,
+                         newdata = df,
+                         type = "parameter",
+                         model = "mu",
+                         data=og_data)
+    
+    #run predict on data with rm_terms held at mean/mode
+    #sim new df
+    print("simulating residualized data")
+    new_df <- df
+    #update df to remove variability in rm_terms (written with help from GPT)
+    for (col in rm_terms){
+      if (is.numeric(og_data[[col]])){
+        new_df[[col]] <- mean(og_data[[col]], na.rm = TRUE)
+      } else {
+        new_df[[col]] <- mode(og_data[[col]])
+      }
+    }
+    
+    #predict on new_df
+    pred_resid <- predict(gamlssModel,
+                           newdata=new_df,
+                           type = "parameter",
+                           model = "mu",
+                           data=og_data)
+    
+    #take difference and subtract from pheno
+    pheno <- as.character(get_y(gamlssModel))
+    
+    df[[pheno]] <- df[[pheno]] - (pred_true - pred_resid)
+    return(df)
+    
+  }, error = function(e) {
+    # More informative error message
+    stop(paste("Error in resid_data.gamlss2():", e$message, 
+               "\nThis might be due to data structure issues or incompatible model parameters.",
+               "\nTry checking that all variables in rm_terms exist and have compatible types."))
+  })
 }  
 
 #' Predict centiles
@@ -324,9 +404,19 @@ centile_predict <- function(gamlssModel,
                             desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
                             df = NULL,
                             average_over = FALSE){
+  UseMethod("centile_predict")
+}
+
+#' @export
+centile_predict.gamlss <- function(gamlssModel, 
+                            sim_df_list, 
+                            x_var, 
+                            desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
+                            df = NULL,
+                            average_over = FALSE){
   
   #get dist type (e.g. GG, BCCG) and write out function
-  fname <- gamlssModel$family[1]
+  fname <- gamlssModel$family[[1]]
   qfun <- paste0("q", fname)
   
   print("Returning the following centiles:")
@@ -362,6 +452,77 @@ centile_predict <- function(gamlssModel,
     cent_name <- paste0("fanCentiles_", factor_level)
     centile_result_list[[cent_name]] <- centiles_df
 
+  }
+  
+  #now that centiles are calculated for all levels (e.g., sexes) average over as needed
+  if (average_over == TRUE){
+    average_result_list <- list()
+    
+    #confirm correct number
+    stopifnot(length(centile_result_list) == length(sim_df_list))
+    
+    #stop if not all output numeric
+    df_is_numeric <- all(sapply(centile_result_list, function(df) {all(sapply(df, is.numeric))}))
+    stopifnot(df_is_numeric == TRUE)
+    
+    avg_centile_df <- Reduce("+", centile_result_list)/length(centile_result_list)
+    average_result_list[["fanCentiles_average"]] <- avg_centile_df
+    
+    return(average_result_list)
+    
+  } else if (average_over == FALSE){
+    return(centile_result_list)
+  } else{
+    stop("Do you want results to be averaged across variable levels?")
+  }
+  
+}
+
+#' @export
+centile_predict.gamlss2 <- function(gamlssModel, 
+                                   sim_df_list, 
+                                   x_var, 
+                                   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
+                                   df = NULL,
+                                   average_over = FALSE){
+  
+  #get dist type (e.g. GG, BCCG) and write out function
+  fname <- gamlssModel$family[[1]]
+  qfun <- paste0("q", fname)
+  
+  print("Returning the following centiles:")
+  print(desiredCentiles)
+  
+  #count number of parameters to model
+  n_param <- length(gamlssModel$fitted.values)
+  
+  #initialize empty list(s)
+  centile_result_list <- list()
+  
+  # Predict phenotype values for each simulated level of factor_var
+  for (factor_level in names(sim_df_list)) {
+    
+    #make sure variable names are correct
+    stopifnot(x_var %in% names(sim_df_list[[factor_level]]))
+    sub_df <- sim_df_list[[factor_level]]
+    
+    # Predict centiles
+    print("predicting centiles")
+    pred_df <- predict(gamlssModel, newdata=sub_df, type="parameter", data=df)
+    
+    fanCentiles <- lapply(desiredCentiles, pred_centile, df = pred_df, q_func = qfun, n_param = n_param)
+    names(fanCentiles) <- paste0("cent_", desiredCentiles)
+    centiles_df <- as.data.frame(fanCentiles)
+    
+    # check correct dim
+    stopifnot(ncol(centiles_df) == length(desiredCentiles))
+    stopifnot(nrow(centiles_df) == nrow(pred_df))
+    
+    #add x_vals, name centiles for factor_var level and append to results list
+    centiles_df[[x_var]] <- sub_df[[x_var]]
+    cent_name <- paste0("fanCentiles_", factor_level)
+    centile_result_list[[cent_name]] <- centiles_df
+    
   }
   
   #now that centiles are calculated for all levels (e.g., sexes) average over as needed

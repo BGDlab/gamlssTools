@@ -31,9 +31,6 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
                                    ...){
   
   stopifnot(resid_effect %in% list_predictors(gamlssModel))
-  if (get_peaks == TRUE){
-    warning("Peaks calculated from residualized data")
-  }
   
   #if point effects not provided, recreate
   if (show_points == TRUE){
@@ -173,6 +170,57 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
   return(plot)
 }
 
+
+#' Plot with CIs
+#' 
+#' Plot centile fan with confidence intervals on 50th centile
+#' 
+#' @returns ggplot object
+#'
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' plot_centile_cis(iris_model, iris, "Sepal.Length", "Species", stratify=TRUE, boot_group_var="Species")
+#' 
+#' @export
+plot_centile_cis <- function(gamlssModel, df, x_var, 
+                              color_var,
+                              desiredCentiles = c(0.5),
+                              interval=.95,
+                              B=100,
+                              sim_data_list = NULL,
+                              type=c("resample", "bayes", "LOSO"), 
+                              stratify=FALSE,
+                              boot_group_var=NULL,
+                              special_term = NULL,
+                               ...){
+    #bootstrap models
+    print(paste("fitting", B, "bootstrap models"))
+    boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
+    
+    #get CIs
+    print(paste("calculating", interval, "CIs"))
+    ci_list <- gamlss_ci(boot_list, x_var, color_var, special_term, moment="mu", interval, sliding_window=FALSE,
+                         xmin=min(df[[x_var]]), xmax=max(df[[x_var]]))
+    names(ci_list) <- sub("fanCentiles_", "", names(ci_list)) #drop prefix
+    ci_df <- bind_rows(ci_list, .id=color_var)
+  
+  plot <- make_centile_fan(gamlssModel, df, x_var, 
+                           color_var = color_var,
+                           get_peaks = TRUE,
+                           desiredCentiles = desiredCentiles,
+                           average_over = FALSE,
+                           sim_data_list = sim_data_list,
+                           show_points = FALSE,
+                           label_centiles = "none",
+                           remove_point_effect = NULL,
+                           color_manual = NULL,
+                           ...)
+  
+  plot_full <- plot +
+    geom_ribbon(aes(ymin=ci_df$lower, ymax=ci_df$upper, x=ci_df[[x_var]], fill=ci_df[[color_var]]), alpha=0.4)
+  return(plot_full)
+}
+
 #' Plot centile fan using ggplot
 #' 
 #' `make_centile_fan` takes a gamlss model and creates a basic centile fan for it in ggplot
@@ -293,7 +341,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #check that var names are input correctly
   stopifnot(is.character(x_var))
   
-  pheno <- as.character(gamlssModel$mu.terms[[2]])
+  pheno <- as.character(get_y(gamlssModel))
   
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
@@ -340,8 +388,13 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     average_over <- TRUE
   }
     #now make long so centile lines connect
-    long_centile_df <- merged_centile_df %>%
-      tidyr::gather(id.vars, values, !any_of(c(color_var, x_var)))
+    if (!is.null(color_var)) {
+      long_centile_df <- merged_centile_df %>%
+        tidyr::gather(id.vars, values, !any_of(c(color_var, x_var)))
+    } else {
+      long_centile_df <- merged_centile_df %>%
+        tidyr::gather(id.vars, values, !any_of(c(x_var)))
+    }
     
   # subfunction to define thickness of each centile line, with the 50th being thickest
   map_thickness <- function(x){
@@ -359,20 +412,24 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   centile_linewidth <- sapply(desiredCentiles_reord, map_thickness)
   names(centile_linewidth) <- unique(long_centile_df$id.vars)
   
-  #convert color_var to factor as needed
-  if (!is.null(color_var) && is.numeric(df[[color_var]])){
-    df[[color_var]] <- as.factor(df[[color_var]])
-  }
-  
   #remove effects from points if necessary
   if (show_points == TRUE && !is.null(remove_point_effect)) {
     print(paste("Residualizing", remove_point_effect, "from data points"))
     point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect)
+    print("success")
   } else if (show_points == TRUE && is.null(remove_point_effect)) {
     point_df <- df
   } else if (show_points == FALSE && !is.null(remove_point_effect)){
     warning("Points not shown so no residual effects removed", call. = FALSE)
+    point_df <- df  # Still need point_df for scaling operations
+  } else if (show_points == FALSE && is.null(remove_point_effect)){
+    point_df <- df  # Still need point_df for scaling operations
   }
+  
+  #convert color_var to factor as needed
+  if (!is.null(color_var) && is.numeric(df[[color_var]])){
+    point_df[[color_var]] <- as.factor(point_df[[color_var]])
+  } 
   
   #scale y if necessary
   if (!is.null(y_scale) & is.function(y_scale)){

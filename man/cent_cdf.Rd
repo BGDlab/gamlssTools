@@ -27,7 +27,7 @@ estimated from a gamlss model.
 }
 \details{
 Results can be grouped by any variable in the original dataframe. Inspired by output of \code{\link[gamlss:centiles]{gamlss::centiles()}}.
-Calls \code{\link[=pred_og_centile]{pred_og_centile()}}.
+Calls \code{\link[=pred_og_centile]{pred_og_centile()}}. Already works with both gamlss and gamlss2 objs
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)

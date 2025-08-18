@@ -22,7 +22,7 @@
 #' mode(study_factor) #returns "Study_B"
 #' 
 #' @export
-mode = function(x){
+mode <- function(x){
   ta = table(x)
   tam = max(ta)
  if(is.numeric(x)){
@@ -56,7 +56,7 @@ mode = function(x){
 #' @export
 un_log <- function(x){return(10^(x))}
 
-#' Get Beta
+#' Get Coefficient
 #' 
 #' Extract beta weight of a term in a gamlss model
 #' 
@@ -74,9 +74,19 @@ un_log <- function(x){return(10^(x))}
 #' 
 #' @export
 get_coeff <- function(gamlssModel, moment, term){
+  UseMethod("get_coeff")
+}
+
+#' @export
+get_coeff.gamlss <- function(gamlssModel, moment, term){
   moment_str <- paste0(moment, ".coefficients")
   return(unname(gamlssModel[[moment_str]][term]))
-  }
+}
+
+#' @export
+get_coeff.gamlss2 <- function(gamlssModel, moment, term){
+  return(unname(gamlssModel$coefficients[[moment]][term]))
+}
 
 #' GG variance
 #' 
@@ -178,7 +188,11 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), name = NA, ...){
 #' 
 #' @export
 list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "tau")){
-  
+  UseMethod("list_predictors")
+}
+
+#' @export
+list_predictors.gamlss <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "tau")){
   #list moments
   moment <- match.arg(moment)
   if (moment == "all"){
@@ -210,6 +224,47 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
   return(term_vector_clean)
 }
 
+#' @export
+list_predictors.gamlss2 <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "tau")){
+  #list moments
+  moment <- match.arg(moment)
+  if (moment == "all"){
+    return(attributes(gamlssModel$terms)$term.labels)
+  } else if (moment == "mu") {
+    return(attributes(gamlssModel$fake_formula)$rhs[[1]])
+  } else if (moment == "sigma") {
+    return(attributes(gamlssModel$fake_formula)$rhs[[2]])
+  } else if (moment == "nu") {
+    return(attributes(gamlssModel$fake_formula)$rhs[[3]])
+  } else if (moment == "tau") {
+    return(attributes(gamlssModel$fake_formula)$rhs[[4]])
+  }
+  
+}
+
+#' Get y
+#' 
+#' Silly little function to extract y from gamlss model 
+#' 
+#' @param gamlssModel gamlss model object
+#' 
+#' @returns y variable name
+#' 
+#' @export
+get_y <- function(gamlssModel){
+  UseMethod("get_y")
+}
+
+#' @export
+get_y.gamlss <- function(gamlssModel){
+  return(gamlssModel$mu.terms[[2]])
+}
+
+#' @export
+get_y.gamlss2 <- function(gamlssModel){
+  return(gamlssModel$formula[[2]])
+}
+
 #' Predict original centiles
 #' 
 #' Returns the centile and/or z-score values for the original data points used to fit a gamlss model
@@ -232,6 +287,11 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
 #' 
 #' @export
 pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.data=NULL){
+  UseMethod("pred_og_centile")
+}
+
+#' @export
+pred_og_centile.gamlss <- function(gamlssModel, og.data, get.std.scores = FALSE, new.data=NULL){
   pheno <- gamlssModel$mu.terms[[2]]
   
   #subset df cols just to predictors from model
@@ -256,7 +316,7 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
   pfun <- paste0("p", fname)
-
+  
   #look for moments
   has_sigma <- "sigma" %in% gamlssModel[[2]]
   has_nu <- "nu" %in% gamlssModel[[2]]
@@ -300,8 +360,67 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
                      "std_score" = rqres)
     return(df)
   } 
-
+  
 }
+
+#' @export
+pred_og_centile.gamlss2 <- function(gamlssModel, og.data, get.std.scores = FALSE, new.data=NULL){
+  pheno <- get_y(gamlssModel)
+  
+  #subset df cols just to predictors from model
+  predictor_list <- list_predictors(gamlssModel)
+  stopifnot("Dataframe columns and model covariates don't match" = 
+              predictor_list %in% names(og.data))
+  if (is.null(new.data)) {
+    newData <- subset(og.data, select = predictor_list)
+    predict_me <- og.data
+  } else {
+    stopifnot("Dataframe columns and model covariates don't match" = 
+                predictor_list %in% names(new.data))
+    newData <- subset(new.data, select = predictor_list)
+    predict_me <- new.data
+    #make sure all vals are within range of those originally modeled
+    check_range(subset(og.data, select = predictor_list), newData)
+  }
+  
+  #predict
+  predModel <- predict(gamlssModel, newdata=newData, data=og.data, type="parameter")
+  
+  #get dist type (e.g. GG, BCCG) and write out function
+  fname <- gamlssModel$family[[1]]
+  pfun <- paste0("p", fname)
+  
+  #iterate through participants
+  predModel$q <- predict_me[[pheno]]
+  arg_order <- c("q", "mu", "sigma", "nu", "tau")
+  
+  centiles_df <- predModel %>%
+    rowwise() %>%
+    mutate(
+      centile = {
+        # extract all expected args in order
+        args <- pick(any_of(arg_order))
+        do.call(get(pfun), as.list(args))
+      }) %>%
+    ungroup() %>%
+    #round to get rid of any 1 or 0 centiles
+    mutate(centile = case_when(centile == 1 ~ 0.99999999999999994,
+                                centile == 0 ~0.0000000000000000000000001,
+                                TRUE ~ centile))
+    
+  if (get.std.scores == FALSE){
+    return(centiles_df$centile)
+  } else {
+    #get 'z scores' from normed centiles - how z.score() does it
+    final_df <- centiles_df %>%
+      mutate(std_score = qnorm(centile)) %>%
+      select(centile, std_score)
+ 
+    return(final_df)
+  } 
+  
+}
+
 
 #' Cohen's Fsquared Local
 #' 
@@ -322,8 +441,9 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #' 
 #' @export
 cohens_f2_local <- function(full_mod, null_mod){
-  full_rsq <- gamlss::Rsq(full_mod)
-  null_rsq <- gamlss::Rsq(null_mod)
+  #gamlss2 version of Rsq() has methods for both gamlss and gamlss2 objs
+  full_rsq <- gamlss2::Rsq(full_mod) 
+  null_rsq <- gamlss2::Rsq(null_mod)
   
   fsq <- (full_rsq - null_rsq)/(1-full_rsq)
   return(fsq)
@@ -391,7 +511,7 @@ check_range <- function(old_df, new_df) {
 #' estimated from a gamlss model. 
 #' 
 #' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()]. 
-#' Calls [pred_og_centile()].
+#' Calls [pred_og_centile()]. Already works with both gamlss and gamlss2 objs
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe to assess
@@ -532,7 +652,7 @@ pheno_at_centiles <- function(gamlssModel, df,
                              sim_data_list = NULL,
                              remove_cent_effect = NULL,
                              ...){
-  pheno <- as.character(gamlssModel$mu.terms[[2]])
+  pheno <- as.character(get_y(gamlssModel)) #works for gamlss & gamlss2
   
   #check that var names are input correctly
   stopifnot(is.character(range_var))
@@ -667,6 +787,7 @@ trunc_coverage <- function(df,
 
 
 
+#gamlss fitting with built-in trycatch, under development
 gamlss_try <- function(...){
   
   #parse gamlss parameters
