@@ -584,7 +584,7 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
   
   if(plot == TRUE){
     df_plt <- tidyr::pivot_longer(sum_df, cols=ends_with("%"), names_to= "fitted", values_to="empirical") %>%
-      mutate(empirical=as.numeric(sub("%", "",empirical,fixed=TRUE))/100)
+      mutate(fitted=as.numeric(sub("%", "",fitted,fixed=TRUE))/100)
     
     plt <- ggplot(df_plt) +
       geom_abline(slope=1, intercept=0, color="gray") +
