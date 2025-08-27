@@ -94,8 +94,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
             print(paste("simulating", col, "at", mean_value))
           } else if (is.factor(df[[col]])) {
             mode_value <- mode(df[[col]])
-            new_df[[col]] <- as.factor(rep(mode_value, n_rows))
-            levels(new_df[[col]]) <- levels(df[[col]])
+            new_df[[col]] <- factor(rep(mode_value, n_rows), levels = levels(df[[col]]))
             print(paste("simulating", col, "at", mode_value))
           } else {
             mode_value <- mode(df[[col]])
@@ -139,7 +138,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
         print(paste("simulating", col, "at", mean_value))
       } else if (is.factor(df[[col]])) {
         mode_value <- mode(df[[col]])
-        new_df[[col]] <- as.factor(rep(mode_value, n_rows))
+        new_df[[col]] <- factor(rep(mode_value, n_rows), levels = levels(df[[col]]))
         print(paste("simulating", col, "at", mode_value))
       } else {
         mode_value <- mode(df[[col]])
