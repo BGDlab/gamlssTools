@@ -583,7 +583,7 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
     )
   
   if(plot == TRUE){
-    df_plt <- tidyr::pivot_longer(sum_df, cols=ends_with("%"), names_to= "empirical", values_to="fitted") %>%
+    df_plt <- tidyr::pivot_longer(sum_df, cols=ends_with("%"), names_to= "fitted", values_to="empirical") %>%
       mutate(empirical=as.numeric(sub("%", "",empirical,fixed=TRUE))/100)
     
     plt <- ggplot(df_plt) +
@@ -591,9 +591,9 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
       theme_bw()
     
     if (!is.null(interval_var)) {
-      plt <- plt + geom_point(aes(x=empirical, y=fitted, color=Interval), alpha=.8)
+      plt <- plt + geom_point(aes(x=fitted, y=empirical, color=Interval), alpha=.8)
     } else {
-      plt <- plt + geom_point(aes(x=empirical, y=fitted))
+      plt <- plt + geom_point(aes(x=fitted, y=empirical))
     }
     
     if (!is.null(group)) {
