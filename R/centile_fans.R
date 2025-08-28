@@ -597,9 +597,21 @@ make_centile_fan <- function(gamlssModel, df, x_var,
       unit_lab <- "(years)"
     }
     
+    #get actual range of data points
+    xrange <- range(point_df[[x_var]], na.rm = TRUE)
+    buffer <- diff(xrange) * 0.01
+    xlims <- c(xrange[1] - buffer, xrange[2] + buffer)
+    
+    #keep only ticks w/in buffered range
+    inside <- tickMarks >= xlims[1] & tickMarks <= xlims[2]
+    valid_ticks <- tickMarks[inside]
+    valid_labels <- tickLabels[inside]
+    
+    
     final_plot_obj <- base_plot_obj +
-      scale_x_continuous(breaks=tickMarks, labels=tickLabels,
-                         limits=c(first(tickMarks), last(tickMarks))
+      scale_x_continuous(breaks = valid_ticks,
+                         labels = valid_labels,
+                         limits = xlims
                          ) +
       labs(title=deparse(substitute(gamlssModel))) +
       xlab(paste("Age at Scan", unit_lab)) +
