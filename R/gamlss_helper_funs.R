@@ -786,8 +786,27 @@ trunc_coverage <- function(df,
 }
 
 
-
-#gamlss fitting with built-in trycatch, under development
+#' gamlss try
+#' 
+#' Try-catch fitting gamlss with various methods, return NULL if failed
+#' 
+#' Takes any *named* gamlss model parameters. Tries quicker, default methods
+#' (e.g. mu.step=1, method=RS()) before resorting to slower methods as necessary to fit. Returns NULL model
+#' instead of giving errors, which is also useful when you need the script to continue
+#' despite nonconvergence of some models.
+#' 
+#' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in `summary()`.
+#' 
+#' @returns gamlss model object
+#' 
+#' @examples
+#' iris_model <- gamlss_try(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' 
+#' #make sure you name any parameters you pass! unnamed formula param will fail:
+#' \dontrun{
+#' iris_model <- gamlss_try(Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' }
+#' @export
 gamlss_try <- function(...){
   
   #parse gamlss parameters
@@ -795,20 +814,19 @@ gamlss_try <- function(...){
   for (name in names(params) ) {
     assign(name, params[[name]])
   }
-  print(params)
   
   result <- tryCatch({
-    gamlss(params)
+    do.call(gamlss, as.list(params))
   } , warning = function(w) {
     message("warning")
-    gamlss(params)
+    do.call(gamlss, as.list(params))
     
   } , error = function(e) {
     message(e$message, ", trying method=CG()")
     tryCatch({
       params_tmp <- params
       params_tmp$method <- "CG()"
-      gamlss(params_tmp)
+      do.call(gamlss, as.list(params_tmp))
       
       #if CG also fails, return NULL
     }, error = function(e2) {
@@ -827,18 +845,18 @@ gamlss_try <- function(...){
     params$tau.step <- 0.00000000001
     
     result <- tryCatch({
-      gamlss(params)
+      do.call(gamlss, as.list(params))
       
     } , warning = function(w) {
       message("warning")
-      gamlss(params)
+      do.call(gamlss, as.list(params))
       
     } , error = function(e) {
       message(e$message, ", trying method=CG()")
       tryCatch({
         params_tmp <- params
         params_tmp$method <- "CG()"
-        gamlss(params_tmp)
+        do.call(gamlss, as.list(params_tmp))
         
         #if CG also fails, return NULL
       }, error = function(e2) {
