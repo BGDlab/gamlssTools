@@ -262,7 +262,7 @@ resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
                        type = "response",
                        data=og_data)$mu
   
-  #run predict on data with rm_terms held at mean/mode
+    #run predict on data with rm_terms held at mean/mode
     #sim new df
     print("simulating residualized data")
     new_df <- df
@@ -270,6 +270,9 @@ resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
     for (col in rm_terms){
       if (is.numeric(og_data[[col]])){
         new_df[[col]] <- mean(og_data[[col]], na.rm = TRUE)
+      } else if (is.factor(og_data[[col]])) {
+        mode_value <- mode(og_data[[col]])
+        new_df[[col]] <- factor(rep(mode_value, nrow(new_df)), levels = levels(og_data[[col]]))
       } else {
         new_df[[col]] <- mode(og_data[[col]])
       }
@@ -336,6 +339,9 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
     for (col in rm_terms){
       if (is.numeric(og_data[[col]])){
         new_df[[col]] <- mean(og_data[[col]], na.rm = TRUE)
+      } else if (is.factor(og_data[[col]])) {
+        mode_value <- mode(og_data[[col]])
+        new_df[[col]] <- factor(rep(mode_value, nrow(new_df)), levels = levels(og_data[[col]]))
       } else {
         new_df[[col]] <- mode(og_data[[col]])
       }
