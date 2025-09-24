@@ -29,6 +29,7 @@
 #' #add another random factor to the iris dataset
 #' new_iris <- iris %>% mutate(Region = sample(c("north", "south", "east", "west"), size=nrow(iris), replace=TRUE))
 #' iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species + Region, sigma.formula = ~ Sepal.Length, data=new_iris)
+#' bootstrap_gamlss(iris_model2, df=new_iris, B=10,  type="resample", stratify=TRUE, group_var=c("Species", "Region"))
 #' 
 #' @export 
 #' @importFrom foreach %dopar%
@@ -73,7 +74,7 @@ bootstrap_gamlss.gamlss <- function(gamlssModel, df=NULL, B=100,
   
   #if LOSO, update B to be the number of studies (or other groups)
   if (type == "LOSO") {
-    stopifnot("Please provide grouping var" = !is.null(group_var)) #make sure args provided
+    stopifnot("Please provide single grouping var" = length(group_var) == 1) #make sure ONE arg provided
     B <- length(unique(df[[group_var]]))
     print(paste("Updating # bootstrapped samples to", B, "to match unique levels of", group_var))
   }
@@ -165,7 +166,7 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
   
   #if LOSO, update B to be the number of studies (or other groups)
   if (type == "LOSO") {
-    stopifnot("Please provide grouping var" = !is.null(group_var)) #make sure args provided
+    stopifnot("Please provide single grouping var" = length(group_var) == 1) #make sure ONE arg provided
     B <- length(unique(df[[group_var]]))
     print(paste("Updating # bootstrapped samples to", B, "to match unique levels of", group_var))
   }
@@ -242,6 +243,11 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
 #' @param df true dataframe
 #' 
 #' @returns list of dataframes, with one dataframe for each level of `factor_var`
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+#' boot_out <- bootstrap_gamlss(iris_model, df=iris, type="resample", stratify=TRUE, group_var="Species")
+#' gamlss_ci(boot_out, "Sepal.Length", "Species", df=iris)
 #' 
 #' @export
 #' @importFrom purrr map transpose
@@ -350,6 +356,13 @@ gamlss_ci <- function(boot_list,
 #' 
 #' @returns dataframe
 #' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+#' boot_out <- bootstrap_gamlss(iris_model, df=iris, type="resample", stratify=TRUE, group_var="Species")
+#' ci_out <- gamlss_ci(boot_out, "Sepal.Length", "Species", df=iris)
+#' #just pick two levels of Species to compare:
+#' ci_diffs(ci_out[1:2])
+#' 
 #' @export
 
 ci_diffs <- function(ci_list){
@@ -365,7 +378,9 @@ ci_diffs <- function(ci_list){
   
   ci_df <- bind_rows(ci_list, .id = "factor") %>%
     tidyr:::pivot_wider(names_from="factor", values_from = c("lower", "med", "upper")) %>%
+    rowwise() %>%
     mutate(overlap = check_overlap(lower_A, upper_A, lower_B, upper_B)) %>%
+    ungroup() %>%
     mutate(sig_diff = ifelse(overlap == TRUE, FALSE, TRUE))
   
   return(ci_df)
@@ -398,6 +413,19 @@ ci_diffs <- function(ci_list){
 #' 
 #' @returns list of dataframes containing differences in trajectories, as well as CIs calculated at each level of `factor_var`
 #' 
+#' @examples
+#' df <- data.frame(
+#'  Age = sample(0:36525, 10000, replace = TRUE),
+#'  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
+#'  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
+#'
+#' df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
+#' df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
+#' 
+#' #fit gamlss model
+#' pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
+#' get_median_diffs(pheno_model, df, "Age", "Sex", B=10, stratify=TRUE, boot_group_var=c("Study", "Sex"))
+#'
 #' @export
 get_median_diffs <- function(gamlssModel, 
                              df, 
@@ -407,7 +435,7 @@ get_median_diffs <- function(gamlssModel,
                              type=c("resample", "bayes", "LOSO"), 
                              stratify=FALSE,
                              boot_group_var=NULL,
-                             sim_data_list = NULL,
+                             sim_data_list=NULL,
                              special_term=NULL,
                              moment=c("mu", "sigma"),
                              interval=.95){
@@ -427,7 +455,7 @@ get_median_diffs <- function(gamlssModel,
   sig_diff_df <- ci_diffs(ci_list)
   
   #get median trajectory differences on OG sample
-  print(paste("finding differences in", factor_var, "levels' median trajectories"))
+  print(paste("calculating differences in", factor_var, "levels' median trajectories"))
   med_diff_df <- med_diff(gamlssModel, 
                        df, 
                        x_var, 
