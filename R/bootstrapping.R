@@ -30,7 +30,7 @@
 #' new_iris <- iris %>% mutate(Region = sample(c("north", "south", "east", "west"), size=nrow(iris), replace=TRUE))
 #' iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species + Region, sigma.formula = ~ Sepal.Length, data=new_iris)
 #' 
-#' @export
+#' @export 
 #' @importFrom foreach %dopar%
 bootstrap_gamlss <- function(gamlssModel, df=NULL, B=100, 
                              type=c("resample", "bayes", "LOSO"), 
@@ -239,8 +239,7 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' @param sliding_window logical indicating whether to calculate CI at 500 point clusters along x or use sliding windows.
 #' Defaults to FALSE
-#' @param xmin minimum value of `x_var` in the true dataframe. Optional, but can help with merging results
-#' @param xmax max value of `x_var` in the true dataframe. Optional, but can help with merging results
+#' @param df true dataframe
 #' 
 #' @returns list of dataframes, with one dataframe for each level of `factor_var`
 #' 
@@ -255,35 +254,36 @@ gamlss_ci <- function(boot_list,
                       moment=c("mu", "sigma"),
                       interval=.95,
                       sliding_window = FALSE,
-                      xmin=NULL,
-                      xmax=NULL){
+                      df){
   stopifnot(interval > 0 && interval < 1)
   moment <- match.arg(moment)
   
   #subfunction with help from chatgpt
-  calc_ci_boot <- function(x) {
-    quantile(x, probs = c(0.025, 0.5, 0.975), na.rm = TRUE)
+  calc_ci_boot <- function(x, interval) {
+    lower <- 0.5-(interval/2)
+    upper <- 0.5+(interval/2)
+    quantile(x, probs = c(lower, 0.5, upper), na.rm = TRUE)
   }
   
-  #simulate df to calculate centiles from
-  sim_boot_list <- lapply(boot_list, function(gamlssModel, x_var, factor_var, special_term){
-    df <- gamlssModel$call$data
-    sim_df <- sim_data(df, x_var, factor_var, gamlssModel, special_term)
-    return(sim_df)
-  }, x_var, factor_var, special_term)
-  stopifnot(length(boot_list) == length(sim_boot_list))
+  #simulate SINGLE df to calculate centiles from
+  ## using 1 df makes CI's calculated at the exact same x_var values, prevents weird spiking
+  first_mod <- boot_list[[1]]
+  sim_df <- sim_data(df, x_var, factor_var, first_mod, special_term)
   
   #for mu, estimate 50th percentile from each gamlss model
   if (moment == "mu"){
     #50th centiles
-    cent_boot_list <- Map(centile_predict, 
-                     gamlssModel = boot_list, 
-                     sim_df_list = sim_boot_list,
+    cent_boot_list <- lapply(boot_list,
+                             centile_predict,
+                     sim_df_list = sim_df,
                      x_var=x_var,
                      desiredCentiles=0.5)
     
+    stopifnot(length(boot_list) == length(cent_boot_list))
+    
     #merge across each bootstrap sample, w/in factor_var as necessary
     if (!is.null(factor_var)){
+      print(paste("merging within", factor_var))
       cent_boot_list2 <- cent_boot_list %>%
         purrr:::transpose() %>%
         purrr:::map(bind_rows)
@@ -320,33 +320,24 @@ gamlss_ci <- function(boot_list,
     #method 2: group across xvar to get quantiles -> CIs
     ## closer to centiles.boot() from gamlss.foreach
   } else if (sliding_window == FALSE){
-    if (is.null(xmin) & is.null(xmax)){
-      x_var_vec <- cent_boot_list[[1]][[1]][[x_var]]
-    } else {
-      x_var_vec <- seq(xmin, xmax, length.out=500)
-    }
-    
     ci_df_list <- lapply(cent_boot_list2, function(df) {
       df_out <- df %>%
         arrange(!!sym(x_var)) %>%
         #grouping x_var to deal with rounding
-        mutate(x_bin = cut(!!sym(x_var), breaks = (x_var_vec))) %>%
+        mutate(x_bin = cut(!!sym(x_var), breaks = 500)) %>%
         group_by(x_bin) %>%
         summarise(
           lower = quantile(cent_0.5, probs = 0.5-(interval/2), na.rm = TRUE),
           med = quantile(cent_0.5, probs = 0.5, na.rm = TRUE),
           upper = quantile(cent_0.5, probs = 0.5+(interval/2), na.rm = TRUE),
+          !!sym(x_var) := mean(!!sym(x_var)),
           .groups = "drop"
         ) %>%
         select(!x_bin)
-      stopifnot(nrow(df_out) == length(x_var_vec))
-      
-      #add back x_var values
-      df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
-      return(df_out)
     })
   }
 
+  return(ci_df_list)
 }
 
 #' Test Median Diffs across X
@@ -429,8 +420,7 @@ get_median_diffs <- function(gamlssModel,
   
   #get CIs
   print(paste("calculating", interval, "CIs"))
-  ci_list <- gamlss_ci(boot_list, x_var, factor_var, special_term, moment, interval, sliding_window=FALSE,
-                       xmin=min(df[[x_var]]), xmax=max(df[[x_var]]))
+  ci_list <- gamlss_ci(boot_list, x_var, factor_var, special_term, moment, interval, sliding_window=FALSE, df)
   
   #find regions w significant diffs
   print(paste("checking for significant differences in", factor_var, "levels"))
