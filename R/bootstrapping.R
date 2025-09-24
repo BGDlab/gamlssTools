@@ -424,8 +424,13 @@ ci_diffs <- function(ci_list){
 #' 
 #' #fit gamlss model
 #' pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
-#' get_median_diffs(pheno_model, df, "Age", "Sex", B=10, stratify=TRUE, boot_group_var=c("Study", "Sex"))
-#'
+#' diffs <- get_median_diffs(pheno_model, df, "Age", "Sex", B=10, stratify=TRUE, boot_group_var=c("Study", "Sex"))
+#' 
+#' #plot
+#' ggplot(diffs$median_diffs) +
+#'     geom_line(aes(x=Age, y=Female_minus_Male, alpha=sig_diff)) +
+#'     theme_linedraw()
+#'     
 #' @export
 get_median_diffs <- function(gamlssModel, 
                              df, 

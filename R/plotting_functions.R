@@ -220,3 +220,4 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
   out$outliers <- n_outer
   return(out)
 }
+
