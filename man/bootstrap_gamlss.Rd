@@ -51,5 +51,6 @@ bootstrap_gamlss(iris_model, df=iris, type="resample", stratify=TRUE, group_var=
 #add another random factor to the iris dataset
 new_iris <- iris \%>\% mutate(Region = sample(c("north", "south", "east", "west"), size=nrow(iris), replace=TRUE))
 iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species + Region, sigma.formula = ~ Sepal.Length, data=new_iris)
+bootstrap_gamlss(iris_model2, df=new_iris, B=10,  type="resample", stratify=TRUE, group_var=c("Species", "Region"))
 
 }

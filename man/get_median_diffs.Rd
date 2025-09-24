@@ -58,3 +58,22 @@ Wrapper function for bootstrapping samples, refitting gamlss models, getting CIs
 testing significance of differences in two factor levels' trajectories, and calculating that
 difference
 }
+\examples{
+df <- data.frame(
+ Age = sample(0:36525, 10000, replace = TRUE),
+ Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
+ Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
+
+df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
+df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
+
+#fit gamlss model
+pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
+diffs <- get_median_diffs(pheno_model, df, "Age", "Sex", B=10, stratify=TRUE, boot_group_var=c("Study", "Sex"))
+
+#plot
+ggplot(diffs$median_diffs) +
+    geom_line(aes(x=Age, y=Female_minus_Male, alpha=sig_diff)) +
+    theme_linedraw()
+    
+}

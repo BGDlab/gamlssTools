@@ -18,3 +18,11 @@ Uses bootstrapped CIs to find regions across \code{x_var} where the levels of a 
 \details{
 Only works for factors with 2 levels
 }
+\examples{
+iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+boot_out <- bootstrap_gamlss(iris_model, df=iris, type="resample", stratify=TRUE, group_var="Species")
+ci_out <- gamlss_ci(boot_out, "Sepal.Length", "Species", df=iris)
+#just pick two levels of Species to compare:
+ci_diffs(ci_out[1:2])
+
+}

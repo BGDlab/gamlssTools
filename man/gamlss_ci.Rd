@@ -12,8 +12,7 @@ gamlss_ci(
   moment = c("mu", "sigma"),
   interval = 0.95,
   sliding_window = FALSE,
-  xmin = NULL,
-  xmax = NULL
+  df
 )
 }
 \arguments{
@@ -32,9 +31,7 @@ gamlss_ci(
 \item{sliding_window}{logical indicating whether to calculate CI at 500 point clusters along x or use sliding windows.
 Defaults to FALSE}
 
-\item{xmin}{minimum value of \code{x_var} in the true dataframe. Optional, but can help with merging results}
-
-\item{xmax}{max value of \code{x_var} in the true dataframe. Optional, but can help with merging results}
+\item{df}{true dataframe}
 }
 \value{
 list of dataframes, with one dataframe for each level of \code{factor_var}
@@ -45,4 +42,10 @@ Uses bootstrapped gamlss models to calculate CIs
 \details{
 Takes output of gamlssTools::bootstrap_gamlss() and uses them to calculate confidence intervals for
 the 50th percentiles across the range of \code{x_var}.
+}
+\examples{
+iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+boot_out <- bootstrap_gamlss(iris_model, df=iris, type="resample", stratify=TRUE, group_var="Species")
+gamlss_ci(boot_out, "Sepal.Length", "Species", df=iris)
+
 }
