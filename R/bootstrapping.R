@@ -240,7 +240,8 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' @param sliding_window logical indicating whether to calculate CI at 500 point clusters along x or use sliding windows.
 #' Defaults to FALSE
-#' @param df true dataframe
+#' @param df true dataframe (optional, must pass this or `sim_data_list`)
+#' @param sim_data_list data simulated from true dataframe (optional, must pass this or `df`)
 #' 
 #' @returns list of dataframes, with one dataframe for each level of `factor_var`
 #' 
@@ -273,15 +274,18 @@ gamlss_ci <- function(boot_list,
   
   #simulate SINGLE df to calculate centiles from
   ## using 1 df makes CI's calculated at the exact same x_var values, prevents weird spiking
+  if (!is.null(sim_data_list)){
+    print("using simulated df provided")
+  }
   first_mod <- boot_list[[1]]
-  sim_df <- sim_data(df, x_var, factor_var, first_mod, special_term)
+  sim_data_list <- sim_data(df, x_var, factor_var, first_mod, special_term)
   
   #for mu, estimate 50th percentile from each gamlss model
   if (moment == "mu"){
     #50th centiles
     cent_boot_list <- lapply(boot_list,
                              centile_predict,
-                     sim_df_list = sim_df,
+                     sim_data_list = sim_data_list,
                      x_var=x_var,
                      desiredCentiles=0.5)
     
@@ -394,7 +398,7 @@ ci_diffs <- function(ci_list){
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe model was originally fit on
-#' @param x_var continuous predictor (e.g. 'age'), which `sim_df_list` varies over#' 
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over#' 
 #' @param factor_var categorical variable to compare levels within.
 #' @param B number of samples/models to bootstrap. Defaults to 100. if `type = "LOSO"`, B will be updated to 
 #' the number of unique values of `group_var`
@@ -406,7 +410,7 @@ ci_diffs <- function(ci_list){
 #' @param boot_group_var categorical/factor variable that resampling will be stratified within (when `type=resample`) 
 #' or that one level will be dropped from in each bootstraped sample (when `type=LOSO`). Can also be a list, allowing
 #' stratification within multiple groups e.g. `group_var=c(sex, study)`
-#' @param sim_df_list list of simulated dataframes returned by `sim_data()`
+#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
 #' @param special_term optional, passed to gamlssTools::sim_data()
 #' @param moment what moment to get CIs for. Currently only implemented for mu, which returns 50th percentile CIs
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%

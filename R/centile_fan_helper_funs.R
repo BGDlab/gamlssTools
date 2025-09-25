@@ -66,7 +66,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
   # get number of rows needed
   n_rows <- length(x_range)
   
-  sim_df_list <- list()
+  sim_data_list <- list()
   
   #simulate over levels of a factor
   if(!is.null(factor_var)){
@@ -117,7 +117,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
       
       #name new df for factor_var level and append to list
       df_name <- paste0(factor_level)
-      sim_df_list[[df_name]] <- new_df
+      sim_data_list[[df_name]] <- new_df
     }
   } else if (is.null(factor_var)){
   #or just simulate one df
@@ -159,9 +159,9 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
         mutate(!!sym(special_col) := !!col_def)
     }
     
-    sim_df_list[["df"]] <- new_df #append
+    sim_data_list[["df"]] <- new_df #append
   }
-  return(sim_df_list)
+  return(sim_data_list)
 }
 
 #' Predict single centile
@@ -379,8 +379,8 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
 #' `x_var`. Calls [pred_centile()] as a subfunction.
 #' 
 #' @param gamlssModel gamlss model object
-#' @param sim_df_list list of simulated dataframes returned by `sim_data()`
-#' @param x_var continuous predictor (e.g. 'age'), which `sim_df_list` varies over
+#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over
 #' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
 #' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
 #' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
@@ -388,7 +388,7 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
 #' fix some bugs in [gamlss::predictAll()]
 #' @param average_over logical indicating whether to return percentiles and 
 #' peaks averaged across multiple levels of a factor, with each level represented as 
-#' a dataframe in `sim_df_list`. Defaults to `FALSE`
+#' a dataframe in `sim_data_list`. Defaults to `FALSE`
 #' 
 #' @returns list of dataframes containing predicted centiles across range of predictors
 #' 
@@ -404,7 +404,7 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
 #' 
 #' @export
 centile_predict <- function(gamlssModel, 
-                            sim_df_list, 
+                            sim_data_list, 
                             x_var, 
                             desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
                             df = NULL,
@@ -414,7 +414,7 @@ centile_predict <- function(gamlssModel,
 
 #' @export
 centile_predict.gamlss <- function(gamlssModel, 
-                            sim_df_list, 
+                            sim_data_list, 
                             x_var, 
                             desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
                             df = NULL,
@@ -434,11 +434,11 @@ centile_predict.gamlss <- function(gamlssModel,
   centile_result_list <- list()
   
   # Predict phenotype values for each simulated level of factor_var
-  for (factor_level in names(sim_df_list)) {
+  for (factor_level in names(sim_data_list)) {
     
     #make sure variable names are correct
-    stopifnot(x_var %in% names(sim_df_list[[factor_level]]))
-    sub_df <- sim_df_list[[factor_level]]
+    stopifnot(x_var %in% names(sim_data_list[[factor_level]]))
+    sub_df <- sim_data_list[[factor_level]]
     
     # Predict centiles
     print("predicting centiles")
@@ -464,7 +464,7 @@ centile_predict.gamlss <- function(gamlssModel,
     average_result_list <- list()
     
     #confirm correct number
-    stopifnot(length(centile_result_list) == length(sim_df_list))
+    stopifnot(length(centile_result_list) == length(sim_data_list))
     
     #stop if not all output numeric
     df_is_numeric <- all(sapply(centile_result_list, function(df) {all(sapply(df, is.numeric))}))
@@ -485,7 +485,7 @@ centile_predict.gamlss <- function(gamlssModel,
 
 #' @export
 centile_predict.gamlss2 <- function(gamlssModel, 
-                                   sim_df_list, 
+                                   sim_data_list, 
                                    x_var, 
                                    desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
                                    df = NULL,
@@ -505,11 +505,11 @@ centile_predict.gamlss2 <- function(gamlssModel,
   centile_result_list <- list()
   
   # Predict phenotype values for each simulated level of factor_var
-  for (factor_level in names(sim_df_list)) {
+  for (factor_level in names(sim_data_list)) {
     
     #make sure variable names are correct
-    stopifnot(x_var %in% names(sim_df_list[[factor_level]]))
-    sub_df <- sim_df_list[[factor_level]]
+    stopifnot(x_var %in% names(sim_data_list[[factor_level]]))
+    sub_df <- sim_data_list[[factor_level]]
     
     # Predict centiles
     print("predicting centiles")
@@ -535,7 +535,7 @@ centile_predict.gamlss2 <- function(gamlssModel,
     average_result_list <- list()
     
     #confirm correct number
-    stopifnot(length(centile_result_list) == length(sim_df_list))
+    stopifnot(length(centile_result_list) == length(sim_data_list))
     
     #stop if not all output numeric
     df_is_numeric <- all(sapply(centile_result_list, function(df) {all(sapply(df, is.numeric))}))
@@ -632,9 +632,9 @@ get_derivatives <- function(cent_df){
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe model was originally fit on
-#' @param x_var continuous predictor (e.g. 'age'), which `sim_df_list` varies over#' 
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over 
 #' @param factor_var categorical variable to compare levels within.
-#' @param sim_df_list list of simulated dataframes returned by `sim_data()`
+#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
 #' 
 #' @returns dataframe
 #' 
@@ -664,7 +664,7 @@ med_diff <- function(gamlssModel,
   #predict centiles
   pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
   centile_dfs <- centile_predict(gamlssModel = gamlssModel, 
-                                 sim_df_list = sim_list, 
+                                 sim_data_list = sim_list, 
                                  x_var = x_var, 
                                  desiredCentiles = c(0.5),
                                  df = df,

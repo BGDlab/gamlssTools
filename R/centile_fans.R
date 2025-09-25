@@ -192,10 +192,17 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
                               stratify=FALSE,
                               boot_group_var=NULL,
                               special_term = NULL,
-                               ...){
+                              ...){
     #bootstrap models
     print(paste("fitting", B, "bootstrap models"))
     boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
+    
+    #if no sim_data_list, get that once now to pass to both gamlss_ci() and make_centile_fan()
+    if (is.null(sim_data_list)){
+      print("simulating data")
+      sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
+      sim_data_list <- sim_data(df, x_var, color_var, gamlssModel, special_term)
+    }
     
     #get CIs
     print(paste("calculating", interval, "CIs"))
@@ -355,7 +362,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #predict centiles
   pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
   centile_dfs <- centile_predict(gamlssModel = gamlssModel, 
-                               sim_df_list = sim_list, 
+                               sim_data_list = sim_list, 
                                x_var = x_var, 
                                desiredCentiles = desiredCentiles_reord,
                                df = df,

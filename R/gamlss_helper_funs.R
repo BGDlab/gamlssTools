@@ -666,7 +666,7 @@ pheno_at_centiles <- function(gamlssModel, df,
   
   #predict centiles
   pred_list <- centile_predict(gamlssModel = gamlssModel, 
-                               sim_df_list = sim_list, 
+                               sim_data_list = sim_list, 
                                x_var = range_var, 
                                desiredCentiles = desiredCentiles,
                                df = df,
