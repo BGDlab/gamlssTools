@@ -866,7 +866,6 @@ gamlss_try <- function(...){
     } , finally = {
       message("done")
     } )
-    
   }
   
   return(result)

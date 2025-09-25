@@ -261,24 +261,21 @@ gamlss_ci <- function(boot_list,
                       moment=c("mu", "sigma"),
                       interval=.95,
                       sliding_window = FALSE,
-                      df){
+                      df=NULL,
+                      sim_data_list=NULL){
   stopifnot(interval > 0 && interval < 1)
   moment <- match.arg(moment)
-  
-  #subfunction with help from chatgpt
-  calc_ci_boot <- function(x, interval) {
-    lower <- 0.5-(interval/2)
-    upper <- 0.5+(interval/2)
-    quantile(x, probs = c(lower, 0.5, upper), na.rm = TRUE)
-  }
-  
+
   #simulate SINGLE df to calculate centiles from
   ## using 1 df makes CI's calculated at the exact same x_var values, prevents weird spiking
   if (!is.null(sim_data_list)){
     print("using simulated df provided")
+  } else if (!is.null(df)){
+    first_mod <- boot_list[[1]]
+    sim_data_list <- sim_data(df, x_var, factor_var, first_mod, special_term)
+  } else {
+    stop("must provide either df or sim_data_list")
   }
-  first_mod <- boot_list[[1]]
-  sim_data_list <- sim_data(df, x_var, factor_var, first_mod, special_term)
   
   #for mu, estimate 50th percentile from each gamlss model
   if (moment == "mu"){
@@ -310,6 +307,13 @@ gamlss_ci <- function(boot_list,
   }
 
   #method 1: sliding window
+  #subfunction with help from chatgpt
+  calc_ci_boot <- function(x, interval) {
+    lower <- 0.5-(interval/2)
+    upper <- 0.5+(interval/2)
+    quantile(x, probs = c(lower, 0.5, upper), na.rm = TRUE)
+  }
+  
   if (sliding_window == TRUE){
     ci_df_list <- lapply(cent_boot_list2, function(df) {
       df_out <- df %>%
@@ -348,6 +352,101 @@ gamlss_ci <- function(boot_list,
   }
 
   return(ci_df_list)
+}
+
+
+#' Bootstrap CIs for Peak Values
+#' 
+#' Calculate CIs around age at peak
+#' 
+#' Takes output of gamlssTools::bootstrap_gamlss() and uses them to calculate confidence intervals for 
+#' the value of `x_var` where the 50th precentile value peaks
+#' 
+#' @param boot_list output of gamlssTools::bootstrap_gamlss()
+#' @param x_var numeric variable to plot confidence intervals across
+#' @param factor_var categorical variable, CIs will be calculated separately at each level.
+#' @param special_term optional, passed to gamlssTools::sim_data()
+#' @param moment what moment to get CIs for. Currently only implemented for mu, which returns 50th percentile CIs
+#' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
+#' @param df true dataframe (optional, must pass this or `sim_data_list`)
+#' @param sim_data_list data simulated from true dataframe (optional, must pass this or `df`)
+#' 
+#' @returns list of dataframes, with one dataframe for each level of `factor_var`
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+#' boot_out <- bootstrap_gamlss(iris_model, df=iris, type="resample", stratify=TRUE, group_var="Species")
+#' peak_ci(boot_out, "Sepal.Length", "Species", df=iris)
+#' 
+#' @export
+#' @importFrom purrr map transpose
+#' @importFrom zoo rollapply
+peak_ci <- function(boot_list,
+                      x_var,
+                      factor_var=NULL,
+                      special_term=NULL,
+                      moment=c("mu", "sigma"),
+                      interval=.95,
+                      df=NULL,
+                      sim_data_list=NULL){
+  stopifnot(interval > 0 && interval < 1)
+  moment <- match.arg(moment)
+  
+  #simulate SINGLE df to calculate centiles from
+  ## using 1 df makes CI's calculated at the exact same x_var values, prevents weird spiking
+  if (!is.null(sim_data_list)){
+    print("using simulated df provided")
+  } else if (!is.null(df)){
+    first_mod <- boot_list[[1]]
+    sim_data_list <- sim_data(df, x_var, factor_var, first_mod, special_term)
+  } else {
+    stop("must provide either df or sim_data_list")
+  }
+  
+  #for mu, estimate 50th percentile from each gamlss model
+  if (moment == "mu"){
+    #50th centiles
+    cent_boot_list <- lapply(boot_list,
+                             centile_predict,
+                             sim_data_list = sim_data_list,
+                             x_var=x_var,
+                             desiredCentiles=0.5)
+    
+    stopifnot(length(boot_list) == length(cent_boot_list))
+    
+    #get peak ages
+    peak_list <- purrr:::map(cent_boot_list, ~ map(.x, age_at_peak))
+
+    #merge across each bootstrap sample, w/in factor_var as necessary
+    if (!is.null(factor_var)){
+      print(paste("merging within", factor_var))
+      peak_list2 <- peak_list %>%
+        purrr:::transpose() %>%
+        purrr:::map(bind_rows)
+      
+      #check number of factor levels
+      stopifnot(length(peak_list2) == length(cent_boot_list[[1]]))
+    } else {
+      peak_list2 <- peak_list
+    }
+    
+    #for sigma, estimate ???
+  } else if (moment == "sigma"){
+    print("help, not implemented yet")
+  }
+  
+  peak_ci_list <- lapply(peak_list2, function(df){
+    df_out <- df %>%
+      arrange(!!sym(x_var)) %>%
+      summarise(
+        lower := quantile(!!sym(x_var), probs = 0.5-(interval/2), na.rm = TRUE),
+        med := quantile(!!sym(x_var), probs = 0.5, na.rm = TRUE),
+        upper := quantile(!!sym(x_var), probs = 0.5+(interval/2), na.rm = TRUE),
+        y := mean(y)
+      )
+  })
+  
+  return(peak_ci_list)
 }
 
 #' Test Median Diffs across X

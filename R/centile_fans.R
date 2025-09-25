@@ -206,7 +206,7 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
     
     #get CIs
     print(paste("calculating", interval, "CIs"))
-    ci_list <- gamlss_ci(boot_list, x_var, color_var, special_term, moment="mu", interval, sliding_window=FALSE, df)
+    ci_list <- gamlss_ci(boot_list, x_var, color_var, special_term, moment="mu", interval, sliding_window=FALSE, sim_data_list=sim_data_list)
     names(ci_list) <- sub("fanCentiles_", "", names(ci_list)) #drop prefix
     ci_df <- bind_rows(ci_list, .id=color_var)
   
