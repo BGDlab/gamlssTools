@@ -870,3 +870,76 @@ gamlss_try <- function(...){
   
   return(result)
 }
+
+#' Get Diffs in Trajectories
+#' 
+#' Calculate differences in 50th centile or sigma trajectories between 2 factor levels
+#' 
+#' To test significance, see gamlssTools::ci_diffs()
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe model was originally fit on
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over 
+#' @param factor_var categorical variable to compare levels within.
+#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
+#' @param moment what moment to get differences for. `mu` calculates differences in 50th centile, 
+#' `sigma` calculates differences in predicted value of sigma (with link-function applied)
+#' 
+#' @returns dataframe
+#' 
+#' @export
+trajectory_diff <- function(gamlssModel, 
+                            df, 
+                            x_var, 
+                            factor_var, 
+                            sim_data_list = NULL,
+                            moment=c("mu", "sigma"),
+                            ...){
+  opt_args_list <- list(...)
+  stopifnot(length(unique(df[[factor_var]])) == 2)
+  L1 <- as.character(unique(df[[factor_var]])[1])
+  L2 <- as.character(unique(df[[factor_var]])[2])
+  
+  ##get 50th percentiles##
+  #simulate dataset(s) if not already supplied
+  if (is.null(sim_data_list)) {
+    print("simulating data")
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
+    sim_list <- do.call(sim_data, c(list(df, x_var, factor_var, gamlssModel), 
+                                    sim_args))
+  } else if (!is.null(sim_data_list)) {
+    sim_list <- sim_data_list
+  }
+  
+  pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
+  
+  if (moment == "mu"){
+    #predict centiles
+    pred_dfs <- centile_predict(gamlssModel = gamlssModel, 
+                                sim_data_list = sim_list, 
+                                x_var = x_var, 
+                                desiredCentiles = c(0.5),
+                                df = df,
+                                average_over = FALSE)
+    val_col_name <- "cent_0.5"
+    names(pred_dfs) <- sub("fanCentiles_", "", names(pred_dfs)) #drop prefix
+  } else if (moment == "sigma"){
+    #predict sigma
+    pred_dfs <- sigma_predict(gamlssModel = gamlssModel, 
+                              sim_data_list = sim_list, 
+                              x_var = x_var, 
+                              df = df,
+                              average_over = FALSE)
+    val_col_name <- "sigma"
+    names(pred_dfs) <- sub("sigma_", "", names(pred_dfs)) #drop prefix
+  }
+  
+  diff_col_name <- paste(L1, "minus", L2, sep="_")
+  
+  ##get differences across x axis##
+  diff_df <- bind_rows(pred_dfs, .id = factor_var) %>%
+    tidyr:::pivot_wider(names_from=factor_var, values_from = c(val_col_name)) %>%
+    mutate(!!sym(diff_col_name) := !!sym(L1) - !!sym(L2))
+  
+  return(diff_df)
+}
