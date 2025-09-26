@@ -221,3 +221,301 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
   return(out)
 }
 
+#' Predict sigma
+#' 
+#' Calculates predicted sigma values across simulated data
+#' 
+#' This function takes a list of dataframes simulated with [sim_data()] and calculates
+#' the value of sigma (after link function is applied) as a way to visualize variability.
+#' 
+#' @param gamlssModel gamlss model object
+#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over
+#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
+#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
+#' @param df (optional) original dataframe from which new data will be simulated. Passing this can
+#' fix some bugs in [gamlss::predictAll()]
+#' @param average_over logical indicating whether to return sigma averaged across multiple 
+#' levels of a factor, with each level represented as a dataframe in `sim_data_list`. 
+#' Defaults to `FALSE`.
+#' 
+#' @returns list of dataframes containing predicted sigma across range of predictors
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
+#' 
+#' #to average across levels of "Species"
+#' sigma_predict(iris_model, sim_df, "Sepal.Length", average_over = TRUE)
+#' 
+#' @export
+sigma_predict <- function(gamlssModel, 
+                          sim_data_list, 
+                          x_var, 
+                          df = NULL,
+                          average_over = FALSE){
+  UseMethod("sigma_predict")
+}
+
+#' @export
+sigma_predict.gamlss <- function(gamlssModel, 
+                                   sim_data_list, 
+                                   x_var, 
+                                   df = NULL,
+                                   average_over = FALSE){
+  
+  #initialize empty list(s)
+  sig_result_list <- list()
+  
+  # Predict phenotype values for each simulated level of factor_var
+  for (factor_level in names(sim_data_list)) {
+    
+    #make sure variable names are correct
+    stopifnot(x_var %in% names(sim_data_list[[factor_level]]))
+    sub_df <- sim_data_list[[factor_level]]
+    
+    #predict sigma response
+    print("predicting sigma")
+    sig_response <- predictAll(gamlssModel, newdata=sub_df, type="response", data=df)$sigma
+    
+    #save as df with x_var
+    sig_df <- data.frame("sigma" = sig_response)
+    print(dim(sig_df))
+    sig_df[[x_var]] <- sub_df[[x_var]]
+    print(dim(sig_df))
+    
+    #append
+    df_name <- paste0("sigma_", factor_level)
+    sig_result_list[[df_name]] <- sig_df
+  }
+  
+  #now that centiles are calculated for all levels (e.g., sexes) average over as needed
+  if (average_over == TRUE){
+    average_result_list <- list()
+    
+    #confirm correct number
+    stopifnot(length(sig_result_list) == length(sim_data_list))
+    
+    #stop if not all output numeric
+    df_is_numeric <- all(sapply(sig_result_list, function(df) {all(sapply(df, is.numeric))}))
+    stopifnot(df_is_numeric == TRUE)
+    
+    avg_sigma_df <- Reduce("+", sig_result_list)/length(sig_result_list)
+    average_result_list[["sigma_average"]] <- avg_sigma_df
+    
+    return(average_result_list)
+    
+  } else if (average_over == FALSE){
+    return(sig_result_list)
+  } else{
+    stop("Do you want results to be averaged across variable levels?")
+  }
+  
+}
+
+#' @export
+sigma_predict.gamlss2 <- function(gamlssModel, 
+                                    sim_data_list, 
+                                    x_var, 
+                                    df = NULL,
+                                    average_over = FALSE){
+  
+  #initialize empty list(s)
+  sig_result_list <- list()
+  
+  # Predict phenotype values for each simulated level of factor_var
+  for (factor_level in names(sim_data_list)) {
+    
+    #make sure variable names are correct
+    stopifnot(x_var %in% names(sim_data_list[[factor_level]]))
+    sub_df <- sim_data_list[[factor_level]]
+    
+    #predict sigma response
+    print("predicting sigma")
+    sig_response <- predict(gamlssModel, newdata=sub_df, type="parameter")$sigma
+    
+    #save as df with x_var
+    sig_df <- data.frame("sigma" = sig_response)
+    sig_df[[x_var]] <- sub_df[[x_var]]
+
+    #append
+    df_name <- paste0("sigma_", factor_level)
+    sig_result_list[[df_name]] <- sig_df
+  }
+  
+  #now that centiles are calculated for all levels (e.g., sexes) average over as needed
+  if (average_over == TRUE){
+    average_result_list <- list()
+    
+    #confirm correct number
+    stopifnot(length(sig_result_list) == length(sim_data_list))
+    
+    #stop if not all output numeric
+    df_is_numeric <- all(sapply(sig_result_list, function(df) {all(sapply(df, is.numeric))}))
+    stopifnot(df_is_numeric == TRUE)
+    
+    avg_sigma_df <- Reduce("+", sig_result_list)/length(sig_result_list)
+    average_result_list[["sigma_average"]] <- avg_sigma_df
+    
+    return(average_result_list)
+    
+  } else if (average_over == FALSE){
+    return(sig_result_list)
+  } else{
+    stop("Do you want results to be averaged across variable levels?")
+  }
+  
+}
+
+#plot sigma
+plot_sigma <- function(gamlssModel, df, x_var, 
+                             color_var=NULL,
+                             get_peaks=TRUE,
+                             x_axis = c("custom",
+                                        "lifespan", "log_lifespan", 
+                                        "lifespan_fetal", "log_lifespan_fetal"),
+                             average_over = FALSE,
+                             sim_data_list = NULL,
+                             ...){
+  
+  #handle args
+  opt_args_list <- list(...)
+  x_axis <- match.arg(x_axis)
+
+  #check that var names are input correctly
+  stopifnot(is.character(x_var))
+  pheno <- as.character(get_y(gamlssModel))
+  
+  #simulate dataset(s) if not already supplied
+  if (is.null(sim_data_list)) {
+    print("simulating data")
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
+    sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel), 
+                                    sim_args))
+  } else if (!is.null(sim_data_list)) {
+    sim_list <- sim_data_list
+  }
+  
+  #predict sigma response
+  sigma_dfs <- sigma_predict(gamlssModel = gamlssModel, 
+                                 sim_data_list = sim_list, 
+                                 x_var = x_var, 
+                                 df = df,
+                                 average_over = average_over)
+  
+  names(sigma_dfs) <- sub("sigma_", "", names(sigma_dfs)) #drop prefix
+  
+  if (!is.null(color_var)){
+    #merge across levels of color_var
+    merged_sigma_df <- bind_rows(sigma_dfs, .id = color_var)
+    # Ensure color_var matches original data type
+    if (is.factor(df[[color_var]])) {
+      merged_sigma_df[[color_var]] <- factor(merged_sigma_df[[color_var]], 
+                                               levels = levels(df[[color_var]]))
+    }
+  } else {
+    merged_sigma_df <- sigma_dfs[["average"]] #check this
+    
+    #change average_over to TRUE to easily skip color selection
+    average_over <- TRUE
+  }
+  
+  #convert color_var to factor as needed
+  if (!is.null(color_var) && is.numeric(df[[color_var]])){
+    point_df[[color_var]] <- as.factor(point_df[[color_var]])
+  } 
+  
+  #def base gg object (w/ or w/o points)
+  if (average_over == FALSE){
+    print("plotting sigma...")
+    base_plot_obj <- ggplot() +
+      geom_line(data = merged_sigma_df,
+                mapping = aes(y = sigma, x = !!sym(x_var),
+                              color = !!sym(color_var)))
+  } else {
+    print("plotting sigma...")
+    base_plot_obj <- ggplot() +
+      geom_line(data = merged_sigma_df,
+                mapping = aes(y = sigma, x = !!sym(x_var)))
+  }
+  
+  #add peak points as needed
+  if (get_peaks == TRUE){
+    peak_dfs <- lapply(merged_sigma_df, age_at_peak, peak_from="sigma")
+    
+    if (!is.null(color_var)){
+      merged_peak_df <- bind_rows(peak_dfs, .id = color_var)
+    } else {
+      merged_peak_df <- peak_dfs[[1]]
+    }
+    
+    base_plot_obj <- base_plot_obj +
+      geom_point(aes(x=.data[[x_var]], 
+                     y=y,
+                     fill=.data[[color_var]]),
+                 data=merged_peak_df,
+                 size=3)
+  }
+  
+  #format x-axis
+  if(x_axis != "custom") {
+    
+    #add days for fetal development?
+    if (grepl("fetal", x_axis, fixed=TRUE)){
+      add_val <- 280
+      tickLabels <- c("Conception")
+      tickMarks <- c(0)
+    } else {
+      add_val <- 0
+      tickLabels<-c()
+      tickMarks <- c()
+    }
+    
+    #log scaled?
+    if (grepl("log", x_axis, fixed=TRUE)){
+      for (year in c(0, 1, 2, 5, 10, 20, 50, 100)){
+        tickMarks <- append(tickMarks, log(year*365.25 + add_val, base=10))
+        tickMarks[is.infinite(tickMarks)] <- 0
+      }
+      tickLabels <- append(tickLabels, c("Birth", "1", "2", "5", "10", "20", "50", "100"))
+      unit_lab <- "(log(years))"
+      
+    } else {
+      for (year in seq(0, 100, by=10)){
+        tickMarks <- append(tickMarks, year*365.25 + add_val)
+      }
+      tickLabels <- append(tickLabels, c("Birth", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"))
+      unit_lab <- "(years)"
+    }
+    
+    #get actual range of data points
+    xrange <- range(point_df[[x_var]], na.rm = TRUE)
+    buffer <- diff(xrange) * 0.01
+    xlims <- c(xrange[1] - buffer, xrange[2] + buffer)
+    
+    #keep only ticks w/in buffered range
+    inside <- tickMarks >= xlims[1] & tickMarks <= xlims[2]
+    valid_ticks <- tickMarks[inside]
+    valid_labels <- tickLabels[inside]
+    
+    
+    final_plot_obj <- base_plot_obj +
+      scale_x_continuous(breaks = valid_ticks,
+                         labels = valid_labels,
+                         limits = xlims
+      ) +
+      labs(title=deparse(substitute(pheno))) +
+      xlab(paste("Age at Scan", unit_lab))
+    
+  } else if (x_axis == "custom") {
+    final_plot_obj <- base_plot_obj +
+      labs(title=deparse(substitute(pheno)))
+  }
+  
+  warnings()
+  
+  return(final_plot_obj)
+}
+
+

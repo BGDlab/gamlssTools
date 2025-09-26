@@ -230,13 +230,14 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
 #' Uses bootstrapped gamlss models to calculate CIs
 #' 
 #' Takes output of gamlssTools::bootstrap_gamlss() and uses them to calculate confidence intervals for 
-#' the 50th percentiles across the range of `x_var`.
+#' the 50th percentiles OR sigma across the range of `x_var`.
 #' 
 #' @param boot_list output of gamlssTools::bootstrap_gamlss()
 #' @param x_var numeric variable to plot confidence intervals across
 #' @param factor_var categorical variable, CIs will be calculated separately at each level.
 #' @param special_term optional, passed to gamlssTools::sim_data()
-#' @param moment what moment to get CIs for. Currently only implemented for mu, which returns 50th percentile CIs
+#' @param moment what moment to get CIs for. `mu` returns CIs around 50th centile, `sigma` returns predicted
+#' value of sigma (with link-function applied)
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' @param sliding_window logical indicating whether to calculate CI at 500 point clusters along x or use sliding windows.
 #' Defaults to FALSE
@@ -280,31 +281,38 @@ gamlss_ci <- function(boot_list,
   #for mu, estimate 50th percentile from each gamlss model
   if (moment == "mu"){
     #50th centiles
-    cent_boot_list <- lapply(boot_list,
+    pred_boot_list <- lapply(boot_list,
                              centile_predict,
-                     sim_data_list = sim_data_list,
-                     x_var=x_var,
-                     desiredCentiles=0.5)
+                             sim_data_list = sim_data_list,
+                             desiredCentiles=0.5)
     
-    stopifnot(length(boot_list) == length(cent_boot_list))
+    #name of column to get ci's over
+    col_name <- "cent_0.5"
+
+  } else if (moment == "sigma"){
+    #50th centiles
+    pred_boot_list <- lapply(boot_list,
+                             sigma_predict,
+                             sim_data_list = sim_data_list,
+                             x_var = x_var)
+    
+    #name of column to get ci's over
+    col_name <- "sigma"
+  }
+    stopifnot(length(boot_list) == length(pred_boot_list))
     
     #merge across each bootstrap sample, w/in factor_var as necessary
     if (!is.null(factor_var)){
       print(paste("merging within", factor_var))
-      cent_boot_list2 <- cent_boot_list %>%
+      pred_boot_list2 <- pred_boot_list %>%
         purrr:::transpose() %>%
         purrr:::map(bind_rows)
       
       #check number of factor levels
-      stopifnot(length(cent_boot_list2) == length(cent_boot_list[[1]]))
+      stopifnot(length(pred_boot_list2) == length(pred_boot_list[[1]]))
     } else {
-      cent_boot_list2 <- cent_boot_list
+      pred_boot_list2 <- pred_boot_list
     }
-    
-  #for sigma, estimate ???
-  } else if (moment == "sigma"){
-    print("help, not implemented yet")
-  }
 
   #method 1: sliding window
   #subfunction with help from chatgpt
@@ -315,7 +323,7 @@ gamlss_ci <- function(boot_list,
   }
   
   if (sliding_window == TRUE){
-    ci_df_list <- lapply(cent_boot_list2, function(df) {
+    ci_df_list <- lapply(pred_boot_list2, function(df) {
       df_out <- df %>%
         arrange(!!sym(x_var)) %>%
         zoo::rollapply(
@@ -334,16 +342,16 @@ gamlss_ci <- function(boot_list,
     #method 2: group across xvar to get quantiles -> CIs
     ## closer to centiles.boot() from gamlss.foreach
   } else if (sliding_window == FALSE){
-    ci_df_list <- lapply(cent_boot_list2, function(df) {
+    ci_df_list <- lapply(pred_boot_list2, function(df) {
       df_out <- df %>%
         arrange(!!sym(x_var)) %>%
         #grouping x_var to deal with rounding
         mutate(x_bin = cut(!!sym(x_var), breaks = 500)) %>%
         group_by(x_bin) %>%
         summarise(
-          lower = quantile(cent_0.5, probs = 0.5-(interval/2), na.rm = TRUE),
-          med = quantile(cent_0.5, probs = 0.5, na.rm = TRUE),
-          upper = quantile(cent_0.5, probs = 0.5+(interval/2), na.rm = TRUE),
+          lower := quantile(!!sym(col_name), probs = 0.5-(interval/2), na.rm = TRUE),
+          med := quantile(!!sym(col_name), probs = 0.5, na.rm = TRUE),
+          upper := quantile(!!sym(col_name), probs = 0.5+(interval/2), na.rm = TRUE),
           !!sym(x_var) := mean(!!sym(x_var)),
           .groups = "drop"
         ) %>%
@@ -380,7 +388,6 @@ gamlss_ci <- function(boot_list,
 #' 
 #' @export
 #' @importFrom purrr map transpose
-#' @importFrom zoo rollapply
 peak_ci <- function(boot_list,
                       x_var,
                       factor_var=NULL,
@@ -446,16 +453,22 @@ peak_ci <- function(boot_list,
       )
   })
   
+  #rename
+  names(peak_ci_list) <- gsub("fanCentiles", "peak", names(peak_ci_list))
+  
   return(peak_ci_list)
 }
 
-#' Test Median Diffs across X
+#' Test Differences in CI
 #' 
-#' Uses bootstrapped CIs to find regions across `x_var` where the levels of a factor significantly differ
+#' Uses bootstrapped CIs to assess whether (and where along x) 2 levels of a factor differ.
+#' Can be used to test where along x the 50th centiles OR sigma of two factors significantly differ 
+#' (using output from `gamlssTools::gamlss_ci()`), or if the values of x where the 50th centiles'
+#' peak differ (using output from `gamlssTools::peak_ci()`)
 #' 
 #' Only works for factors with 2 levels
 #' 
-#' @param ci_list output of gamlssTools::gamlss_ci()
+#' @param ci_list output of `gamlssTools::gamlss_ci()` or `gamlssTools::gamlss_ci()`
 #' 
 #' @returns dataframe
 #' 
@@ -463,8 +476,17 @@ peak_ci <- function(boot_list,
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 #' boot_out <- bootstrap_gamlss(iris_model, df=iris, type="resample", stratify=TRUE, group_var="Species")
 #' ci_out <- gamlss_ci(boot_out, "Sepal.Length", "Species", df=iris)
-#' #just pick two levels of Species to compare:
+#' 
+#' #just pick two levels of Species to compare 50th centiles:
 #' ci_diffs(ci_out[1:2])
+#' 
+#' #compare sigmas:
+#' ci_sigma_out <- gamlss_ci(boot_out, "Sepal.Length", "Species", df=iris, moment="sigma")
+#' ci_diffs(ci_sigma_out[1:2])
+#' 
+#' #compare values of Sepal.Length where 50th centile peaks:
+#' ci_peak_out <- peak_ci(boot_out, "Sepal.Length", "Species", df=iris)
+#' ci_diffs(ci_peak_out[1:2])
 #' 
 #' @export
 
@@ -480,6 +502,7 @@ ci_diffs <- function(ci_list){
   names(ci_list) <- c("A", "B") #rename to generic levels for calculations
   
   ci_df <- bind_rows(ci_list, .id = "factor") %>%
+    select(-any_of("y")) %>% #drop y if calculating peak cis
     tidyr:::pivot_wider(names_from="factor", values_from = c("lower", "med", "upper")) %>%
     rowwise() %>%
     mutate(overlap = check_overlap(lower_A, upper_A, lower_B, upper_B)) %>%
@@ -511,7 +534,8 @@ ci_diffs <- function(ci_list){
 #' stratification within multiple groups e.g. `group_var=c(sex, study)`
 #' @param sim_data_list list of simulated dataframes returned by `sim_data()`
 #' @param special_term optional, passed to gamlssTools::sim_data()
-#' @param moment what moment to get CIs for. Currently only implemented for mu, which returns 50th percentile CIs
+#' @param moment what moment to get CIs for. `mu` returns CIs around 50th centile, `sigma` returns predicted
+#' value of sigma (with link-function applied)
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' 
 #' @returns list of dataframes containing differences in trajectories, as well as CIs calculated at each level of `factor_var`
@@ -562,15 +586,15 @@ get_median_diffs <- function(gamlssModel,
   print(paste("checking for significant differences in", factor_var, "levels"))
   sig_diff_df <- ci_diffs(ci_list)
   
-  #get median trajectory differences on OG sample
+  #get trajectory differences on OG sample
   print(paste("calculating differences in", factor_var, "levels' median trajectories"))
-  med_diff_df <- med_diff(gamlssModel, 
-                       df, 
-                       x_var, 
-                       factor_var, 
-                       sim_data_list = sim_data_list,
-                       get_derivs = FALSE,
-                       special_term = special_term)
+  med_diff_df <- trajectory_diff(gamlssModel,
+                                 df,
+                                 x_var,
+                                 factor_var,
+                                 sim_data_list = sim_data_list,
+                                 special_term = special_term,
+                                 moment = moment)
   
   #wonky merge to account for rounding differences
   stopifnot(range(sig_diff_df[[x_var]]) == range(med_diff_df[[x_var]]))
@@ -579,6 +603,14 @@ get_median_diffs <- function(gamlssModel,
   med_diff_df$sig_diff <- sig_diff_df$sig_diff
   
   out_list <- list(med_diff_df, ci_list)
-  names(out_list) <- c("median_diffs", "conf_int")
+  
+  #name outputs depending on whether you're tracking 50th centile or sigma
+  if (moment == "mu"){
+    df_name <- "median_diffs"
+  } else if (moment == "sigma"){
+    df_name <- "sigma_diffs"
+  }
+  
+  names(out_list) <- c(df_name, "conf_int")
   return(out_list)
 }

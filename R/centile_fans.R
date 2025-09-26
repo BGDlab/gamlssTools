@@ -360,7 +360,6 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   }
   
   #predict centiles
-  pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
   centile_dfs <- centile_predict(gamlssModel = gamlssModel, 
                                sim_data_list = sim_list, 
                                x_var = x_var, 
