@@ -2,18 +2,21 @@
 % Please edit documentation in R/bootstrapping.R
 \name{ci_diffs}
 \alias{ci_diffs}
-\title{Test Median Diffs across X}
+\title{Test Differences in CI}
 \usage{
 ci_diffs(ci_list)
 }
 \arguments{
-\item{ci_list}{output of gamlssTools::gamlss_ci()}
+\item{ci_list}{output of \code{gamlssTools::gamlss_ci()} or \code{gamlssTools::gamlss_ci()}}
 }
 \value{
 dataframe
 }
 \description{
-Uses bootstrapped CIs to find regions across \code{x_var} where the levels of a factor significantly differ
+Uses bootstrapped CIs to assess whether (and where along x) 2 levels of a factor differ.
+Can be used to test where along x the 50th centiles OR sigma of two factors significantly differ
+(using output from \code{gamlssTools::gamlss_ci()}), or if the values of x where the 50th centiles'
+peak differ (using output from \code{gamlssTools::peak_ci()})
 }
 \details{
 Only works for factors with 2 levels
@@ -22,7 +25,16 @@ Only works for factors with 2 levels
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 boot_out <- bootstrap_gamlss(iris_model, df=iris, type="resample", stratify=TRUE, group_var="Species")
 ci_out <- gamlss_ci(boot_out, "Sepal.Length", "Species", df=iris)
-#just pick two levels of Species to compare:
+
+#just pick two levels of Species to compare 50th centiles:
 ci_diffs(ci_out[1:2])
+
+#compare sigmas:
+ci_sigma_out <- gamlss_ci(boot_out, "Sepal.Length", "Species", df=iris, moment="sigma")
+ci_diffs(ci_sigma_out[1:2])
+
+#compare values of Sepal.Length where 50th centile peaks:
+ci_peak_out <- peak_ci(boot_out, "Sepal.Length", "Species", df=iris)
+ci_diffs(ci_peak_out[1:2])
 
 }

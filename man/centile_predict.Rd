@@ -6,7 +6,7 @@
 \usage{
 centile_predict(
   gamlssModel,
-  sim_df_list,
+  sim_data_list,
   x_var,
   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
   df = NULL,
@@ -16,9 +16,9 @@ centile_predict(
 \arguments{
 \item{gamlssModel}{gamlss model object}
 
-\item{sim_df_list}{list of simulated dataframes returned by \code{sim_data()}}
+\item{sim_data_list}{list of simulated dataframes returned by \code{sim_data()}}
 
-\item{x_var}{continuous predictor (e.g. 'age'), which \code{sim_df_list} varies over}
+\item{x_var}{continuous predictor (e.g. 'age'), which \code{sim_data_list} varies over}
 
 \item{desiredCentiles}{list of percentiles as values between 0 and 1 that will be
 calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
@@ -29,7 +29,7 @@ fix some bugs in \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}}
 
 \item{average_over}{logical indicating whether to return percentiles and
 peaks averaged across multiple levels of a factor, with each level represented as
-a dataframe in \code{sim_df_list}. Defaults to \code{FALSE}}
+a dataframe in \code{sim_data_list}. Defaults to \code{FALSE}}
 }
 \value{
 list of dataframes containing predicted centiles across range of predictors

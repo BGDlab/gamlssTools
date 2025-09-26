@@ -231,9 +231,6 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
 #' @param gamlssModel gamlss model object
 #' @param sim_data_list list of simulated dataframes returned by `sim_data()`
 #' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over
-#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
-#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
-#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
 #' @param df (optional) original dataframe from which new data will be simulated. Passing this can
 #' fix some bugs in [gamlss::predictAll()]
 #' @param average_over logical indicating whether to return sigma averaged across multiple 
@@ -368,16 +365,47 @@ sigma_predict.gamlss2 <- function(gamlssModel,
   
 }
 
-#plot sigma
-plot_sigma <- function(gamlssModel, df, x_var, 
-                             color_var=NULL,
-                             get_peaks=TRUE,
-                             x_axis = c("custom",
-                                        "lifespan", "log_lifespan", 
-                                        "lifespan_fetal", "log_lifespan_fetal"),
-                             average_over = FALSE,
-                             sim_data_list = NULL,
-                             ...){
+#' Plot sigma
+#' 
+#' Calculates and plots predicted sigma values across simulated data
+#' 
+#' This function takes a list of dataframes simulated with [sim_data()] and calculates
+#' the value of sigma (after link function is applied) as a way to visualize variability.
+#' Calls subfunction `sigma_predict()`.
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe used to fit the gamlss model
+#' @param x_var continuous predictor (e.g. 'age') that will be plotted on the x axis
+#' @param color_var (optional) categorical predictor (e.g. 'sex') that will be used to determine the color of
+#' points/centile lines. Alternatively, you can average over each level of this variable
+#' to return a single set of centile lines (see `average_over`).
+#' @param get_peaks logical to indicate whether to add a point at the median centile's peak value
+#' @param x_axis optional pre-formatted options for x-axis tick marks, labels, etc. Defaults to 'custom',
+#' which is, actually, no specific formatting. NOTE: options "lifespan" and "log_lifespan" assume that 
+#' age is formatted in days post-birth. if age is formatted in days post-conception 
+#' (i.e. age post-birth + 280 days), use options ending in "_fetal".
+#' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
+#' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
+#' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're plotting
+#' many models fit on the same dataframe 
+#' 
+#' @returns list of dataframes containing predicted sigma across range of predictors
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length + Species, data=iris, family=BCCG)
+#' plot_sigma(iris_model, iris, "Sepal.Length", "Species", average_over = TRUE)
+#' plot_sigma(iris_model, iris, "Sepal.Length", "Species", average_over = FALSE)
+#' 
+#' @export
+plot_sigma <- function(gamlssModel, df, x_var,
+                       color_var=NULL,
+                       get_peaks=TRUE,
+                       x_axis = c("custom",
+                                  "lifespan", "log_lifespan",
+                                  "lifespan_fetal", "log_lifespan_fetal"),
+                       average_over = FALSE,
+                       sim_data_list = NULL,
+                       ...){
   
   #handle args
   opt_args_list <- list(...)
@@ -406,7 +434,7 @@ plot_sigma <- function(gamlssModel, df, x_var,
   
   names(sigma_dfs) <- sub("sigma_", "", names(sigma_dfs)) #drop prefix
   
-  if (!is.null(color_var)){
+  if (average_over==FALSE){
     #merge across levels of color_var
     merged_sigma_df <- bind_rows(sigma_dfs, .id = color_var)
     # Ensure color_var matches original data type
@@ -414,20 +442,15 @@ plot_sigma <- function(gamlssModel, df, x_var,
       merged_sigma_df[[color_var]] <- factor(merged_sigma_df[[color_var]], 
                                                levels = levels(df[[color_var]]))
     }
-  } else {
-    merged_sigma_df <- sigma_dfs[["average"]] #check this
+  } else if (average_over == TRUE | is.null(color_var)) {
+    merged_sigma_df <- sigma_dfs[[1]]
     
     #change average_over to TRUE to easily skip color selection
     average_over <- TRUE
   }
   
-  #convert color_var to factor as needed
-  if (!is.null(color_var) && is.numeric(df[[color_var]])){
-    point_df[[color_var]] <- as.factor(point_df[[color_var]])
-  } 
-  
   #def base gg object (w/ or w/o points)
-  if (average_over == FALSE){
+  if (average_over == FALSE & !is.null(color_var)){
     print("plotting sigma...")
     base_plot_obj <- ggplot() +
       geom_line(data = merged_sigma_df,
@@ -442,80 +465,40 @@ plot_sigma <- function(gamlssModel, df, x_var,
   
   #add peak points as needed
   if (get_peaks == TRUE){
-    peak_dfs <- lapply(merged_sigma_df, age_at_peak, peak_from="sigma")
+    print("finding peaks...")
     
-    if (!is.null(color_var)){
-      merged_peak_df <- bind_rows(peak_dfs, .id = color_var)
+    #one level/averaged
+    if (average_over==TRUE | is.null(color_var)){
+      merged_peak_df <- age_at_peak(merged_sigma_df, peak_from="sigma")
+      
+      base_plot_obj <- base_plot_obj +
+        geom_point(aes(x=.data[[x_var]], 
+                       y=y),
+                   data=merged_peak_df,
+                   size=3)
+
+      #else list of dfs  
     } else {
-      merged_peak_df <- peak_dfs[[1]]
+      peak_dfs <- lapply(sigma_dfs, age_at_peak, peak_from="sigma")
+      merged_peak_df <- bind_rows(peak_dfs, .id = color_var)
+      
+      base_plot_obj <- base_plot_obj +
+        geom_point(aes(x=.data[[x_var]], 
+                       y=y,
+                       color=.data[[color_var]]),
+                   data=merged_peak_df,
+                   size=3)
     }
-    
-    base_plot_obj <- base_plot_obj +
-      geom_point(aes(x=.data[[x_var]], 
-                     y=y,
-                     fill=.data[[color_var]]),
-                 data=merged_peak_df,
-                 size=3)
   }
   
   #format x-axis
-  if(x_axis != "custom") {
-    
-    #add days for fetal development?
-    if (grepl("fetal", x_axis, fixed=TRUE)){
-      add_val <- 280
-      tickLabels <- c("Conception")
-      tickMarks <- c(0)
-    } else {
-      add_val <- 0
-      tickLabels<-c()
-      tickMarks <- c()
-    }
-    
-    #log scaled?
-    if (grepl("log", x_axis, fixed=TRUE)){
-      for (year in c(0, 1, 2, 5, 10, 20, 50, 100)){
-        tickMarks <- append(tickMarks, log(year*365.25 + add_val, base=10))
-        tickMarks[is.infinite(tickMarks)] <- 0
-      }
-      tickLabels <- append(tickLabels, c("Birth", "1", "2", "5", "10", "20", "50", "100"))
-      unit_lab <- "(log(years))"
-      
-    } else {
-      for (year in seq(0, 100, by=10)){
-        tickMarks <- append(tickMarks, year*365.25 + add_val)
-      }
-      tickLabels <- append(tickLabels, c("Birth", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"))
-      unit_lab <- "(years)"
-    }
-    
-    #get actual range of data points
-    xrange <- range(point_df[[x_var]], na.rm = TRUE)
-    buffer <- diff(xrange) * 0.01
-    xlims <- c(xrange[1] - buffer, xrange[2] + buffer)
-    
-    #keep only ticks w/in buffered range
-    inside <- tickMarks >= xlims[1] & tickMarks <= xlims[2]
-    valid_ticks <- tickMarks[inside]
-    valid_labels <- tickLabels[inside]
-    
-    
-    final_plot_obj <- base_plot_obj +
-      scale_x_continuous(breaks = valid_ticks,
-                         labels = valid_labels,
-                         limits = xlims
-      ) +
-      labs(title=deparse(substitute(pheno))) +
-      xlab(paste("Age at Scan", unit_lab))
-    
-  } else if (x_axis == "custom") {
-    final_plot_obj <- base_plot_obj +
+  axis_obj <- format_x_axis(x_axis, df[[x_var]])
+  
+  final_plot_obj <- base_plot_obj +
+      axis_obj +
       labs(title=deparse(substitute(pheno)))
-  }
   
   warnings()
   
   return(final_plot_obj)
 }
-
-

@@ -283,6 +283,7 @@ gamlss_ci <- function(boot_list,
     #50th centiles
     pred_boot_list <- lapply(boot_list,
                              centile_predict,
+                             x_var = x_var,
                              sim_data_list = sim_data_list,
                              desiredCentiles=0.5)
     
@@ -573,6 +574,7 @@ get_median_diffs <- function(gamlssModel,
                              interval=.95){
   #only works for 2-levels
   stopifnot(length(unique(df[[factor_var]])) == 2)
+  moment <- match.arg(moment)
   
   #bootstrap models
   print(paste("fitting", B, "bootstrap models"))
