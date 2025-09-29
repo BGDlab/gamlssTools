@@ -52,11 +52,8 @@ bootstrap_gamlss.gamlss <- function(gamlssModel, df=NULL, B=100,
   type <- match.arg(type)
   stopifnot(is.logical(stratify))
   
-  #get data provided or from gamlssModel
-  if (!is.null(df)) {
-    data <- df
-  } else {
-    data <- eval(gamlssModel$call$data)
+  if (is.null(df)) {
+    df <- eval(gamlssModel$call$data)
   }
 
   #get gamlss model to refit
@@ -145,15 +142,13 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
   stopifnot(is.logical(stratify))
   
   #get data provided or from gamlssModel
-  if (!is.null(df)) {
-    data <- df
-  } else {
-    data <- eval(gamlssModel$call$data)
+  if (is.null(df)) {
+    df <- eval(gamlssModel$call$data)
   }
   
   #get gamlss model to refit
-  mod_call <- as.call(gamlssModel$call)
-  mod_call$control <- gamlss2_control(trace = FALSE)
+  mod_formula <- gamlssModel$formula
+  mod_fam <- gamlssModel$family
   
   #def subfunction for bayesian bootstrapping - taken from gamlss.foreach::BayesianBoot()
   rFun <- function(n) {
@@ -172,7 +167,11 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
   }
   
   #attempting to parallelize, using formatting from gamlss.foreach for now
-  mod_list <- foreach::foreach(i=1:B, .packages=c("gamlss")) %dopar%
+  mod_list <- foreach::foreach(
+    i = 1:B,
+    .packages = c("gamlss2", "dplyr"),
+    .export   = c("df", "mod_formula", "mod_fam", "rFun")
+  ) %dopar%
     {
       if (type == "resample") {
         if (stratify == FALSE) {
@@ -182,23 +181,26 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
           }
           #simple bootstrapping
           bootstrap_df <- df[sample(nrow(df), nrow(df), replace = TRUE), ]
-          
+
         } else if (stratify == TRUE) {
           #bootstrap within study
           stopifnot("Please provide grouping var" = !is.null(group_var)) #make sure args provided
           bootstrap_df <- df %>%
             slice_sample(prop=1, by=!!group_var, replace=TRUE)
         }
-        
+
+        args <- list(formula = mod_formula, data = bootstrap_df, family = mod_fam)
+
       } else if (type == "bayes") {
         if (stratify == TRUE | !is.null(group_var)) {
           message("Stratified Bayesian bootstrapping not implemented, ignoring")
         }
         #bootstrap weights & pass original data
-        b_weights <- rFun(nrow(df)) * nrow(df)
-        mod_call$weights <- b_weights
+        mod_weights <- rFun(nrow(df)) * nrow(df)
         bootstrap_df <- df
-        
+
+        args <- list(formula = mod_formula, data = bootstrap_df, family = mod_fam, weights = mod_weights)
+
       } else if (type == "LOSO") {
         if (stratify == TRUE) {
           message("Stratified LOSO not implemented, ignoring")
@@ -207,22 +209,21 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
         drop_level <- unique(df[[group_var]][i])
         bootstrap_df <- df %>%
           dplyr::filter(!!group_var != drop_level)
+
+        args <- list(formula = mod_formula, data = bootstrap_df, family = mod_fam)
       }
       
-      mod_call$data <- bootstrap_df
-      
-      #now that the sample is defined, refit the model
-      refit_mod <- eval(mod_call)
+      refit_mod <- do.call(gamlss2, args)
       
     }
-  
+
   #warn about any failed models
   if (length(mod_list) < B) {
     message(paste(B - length(mod_list), "bootstraps failed"))
   }
-  
+
   return(mod_list)
-  
+
 }
 
 #' Bootstrap Confidence Intervals
@@ -293,11 +294,12 @@ gamlss_ci <- function(boot_list,
     col_name <- "cent_0.5"
 
   } else if (moment == "sigma"){
-    #50th centiles
+    #sigma predictions
     pred_boot_list <- lapply(boot_list,
                              sigma_predict,
                              sim_data_list = sim_data_list,
-                             x_var = x_var)
+                             x_var = x_var,
+                             average_over = average_over)
     
     #name of column to get ci's over
     col_name <- "sigma"
