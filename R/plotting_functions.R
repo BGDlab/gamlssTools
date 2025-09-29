@@ -502,3 +502,83 @@ plot_sigma <- function(gamlssModel, df, x_var,
   
   return(final_plot_obj)
 }
+
+#' Plot sigma with CIs
+#' 
+#' Plot sigma with confidence intervals
+#' 
+#' Wrapper function for `plot_sigma()`
+#' 
+#' @returns ggplot object
+#'
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' plot_sigma_cis(iris_model, iris, "Sepal.Length", "Species", stratify=TRUE, boot_group_var="Species")
+#' 
+#' @export
+plot_sigma_cis <- function(gamlssModel, df, x_var, 
+                           color_var,
+                           desiredCentiles = c(0.5),
+                           interval = .95,
+                           B = 100,
+                           sim_data_list = NULL,
+                           type = c("resample", "bayes", "LOSO"),
+                           stratify = FALSE,
+                           boot_group_var = NULL,
+                           special_term = NULL,
+                           boot_list = NULL,
+                           average_over = FALSE,
+                           ...){
+  opt_args_list <- list(...)
+  #bootstrap models
+  if (is.null(boot_list)){
+    print(paste("fitting", B, "bootstrap models"))
+    boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
+  }
+  #if no sim_data_list, get that once now to pass to both gamlss_ci() and make_centile_fan()
+  if (is.null(sim_data_list)){
+    print("simulating data")
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
+    sim_data_list <- sim_data(df, x_var, color_var, gamlssModel, special_term)
+  }
+  
+  #get CIs
+  print(paste("calculating", interval, "CIs"))
+  ci_list <- gamlss_ci(boot_list, 
+                       x_var, 
+                       color_var, 
+                       special_term, 
+                       moment = "sigma", 
+                       interval, 
+                       sliding_window = FALSE, 
+                       sim_data_list = sim_data_list,
+                       average_over = average_over)
+  
+  names(ci_list) <- sub("sigma_", "", names(ci_list)) #drop prefix
+  if (average_over == FALSE & !is.null(color_var)){
+    ci_df <- bind_rows(ci_list, .id=color_var)
+  } else {
+    ci_df <- ci_list[[1]]
+  }
+  
+  plot <- plot_sigma(gamlssModel, 
+                     df, 
+                     x_var,
+                     color_var = color_var,
+                     average_over = average_over,
+                     sim_data_list = sim_data_list,
+                     ...)
+  
+  if (average_over == FALSE & !is.null(color_var)){
+    plot_full <- plot +
+      geom_ribbon(data = ci_df,
+                  mapping = aes(ymin = lower, ymax = upper, x = !!sym(x_var), fill = !!sym(color_var)),
+                  alpha = 0.4)
+  } else {
+    plot_full <- plot +
+      geom_ribbon(data = ci_df,
+                  mapping = aes(ymin = lower, ymax = upper, x = !!sym(x_var)),
+                  alpha = 0.4)
+  }
+  return(plot_full)
+}

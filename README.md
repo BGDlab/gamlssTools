@@ -4,22 +4,32 @@ that will be useful for those using [gamlss()](https://cran.r-project.org/web/pa
 
 ### Plotting
 
-`make_centile_fan()` is the primary plotting function. It's designed to cleanly visualize centile fans using ggplot. It should be compatible
-with all gamlss models, regardless of the number of covariates, smooths, random factors, distribution family, etc.
+`make_centile_fan()` is the primary plotting function. It's designed to cleanly visualize centile fans using ggplot. 
+It should be compatible with all gamlss models, regardless of the number of covariates, smooths, random factors, distribution family, etc.
+
+Other plotting/visualization functions include:
+- `plot_sigma()`: visualizing sigma on the response scale
+- `wp.taki()`: an alternate version of the `gamlss::wp()` function
+- `cent_cdf()`:
+
 
 ### Bootstrapping and Confidence Intervals
+
 Several functions borrow from/adapt from the [gamlss-dev suite](https://github.com/gamlss-dev) to easily fit models to bootstrapped samples
-(`bootstrap_gamlss()`), use them to provide confidence intervals on the 50th centile curves (`gamlss_ci()`), and test differences in the median 
+(`bootstrap_gamlss()`), use them to provide confidence intervals on trajectories (i.e. 50th centile curve, sigma; `gamlss_ci()`), and test differences the 
 trajectories of different factor levels (`get_median_diffs()`).
+
 Visualization is provided in the wrapper function `plot_centile_cis()`.
 
-### Extracting Information
+### Misc.
 
-The other auxiliary functions in this package are mostly intended to interact with gamlss model objects. Some hilights include:
+The other functions in this package are mostly intended to interact with gamlss model objects. Some highlights include:
 
 - `get_coeff()`: returns beta coefficient for a specific covariate in a gamlss model
 - `list_predictors()`: lists all covariates in any moment of a gamlss model
 - `pred_og_centile()`: Returns the centile and/or z-score values for the datapoints used to fit a gamlss model
+- `age_at_peak()`:
+- `gamlss_try()`:
 
 ## Installation
 You can install the development version of gamlssTools from [GitHub](https://github.com/) with:

@@ -35,3 +35,4 @@ Imports:
 	purrr,
 	zoo
 Config/testthat/edition: 3
+VignetteBuilder: knitr
