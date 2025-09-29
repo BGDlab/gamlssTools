@@ -171,7 +171,7 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 }
 
 
-#' Plot with CIs
+#' Plot Centiles with CIs
 #' 
 #' Plot centile fan with confidence intervals on 50th centile
 #' 
@@ -192,12 +192,15 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
                               stratify=FALSE,
                               boot_group_var=NULL,
                               special_term = NULL,
+                             boot_list = NULL,
+                             average_over=FALSE,
                               ...){
   opt_args_list <- list(...)
     #bootstrap models
+  if (is.null(boot_list)){
     print(paste("fitting", B, "bootstrap models"))
     boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
-    
+  }
     #if no sim_data_list, get that once now to pass to both gamlss_ci() and make_centile_fan()
     if (is.null(sim_data_list)){
       print("simulating data")
@@ -207,7 +210,15 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
     
     #get CIs
     print(paste("calculating", interval, "CIs"))
-    ci_list <- gamlss_ci(boot_list, x_var, color_var, special_term, moment="mu", interval, sliding_window=FALSE, sim_data_list=sim_data_list)
+    ci_list <- gamlss_ci(boot_list, 
+                         x_var, 
+                         color_var, 
+                         special_term, 
+                         moment="mu", 
+                         interval, 
+                         sliding_window=FALSE, 
+                         sim_data_list=sim_data_list,
+                         average_over=average_over)
     names(ci_list) <- sub("fanCentiles_", "", names(ci_list)) #drop prefix
     ci_df <- bind_rows(ci_list, .id=color_var)
   
@@ -215,7 +226,7 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
                            color_var = color_var,
                            get_peaks = TRUE,
                            desiredCentiles = desiredCentiles,
-                           average_over = FALSE,
+                           average_over = average_over,
                            sim_data_list = sim_data_list,
                            show_points = FALSE,
                            label_centiles = "none",

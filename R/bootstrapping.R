@@ -263,7 +263,8 @@ gamlss_ci <- function(boot_list,
                       interval=.95,
                       sliding_window = FALSE,
                       df=NULL,
-                      sim_data_list=NULL){
+                      sim_data_list=NULL,
+                      average_over=FALSE){
   stopifnot(interval > 0 && interval < 1)
   moment <- match.arg(moment)
 
@@ -285,7 +286,8 @@ gamlss_ci <- function(boot_list,
                              centile_predict,
                              x_var = x_var,
                              sim_data_list = sim_data_list,
-                             desiredCentiles=0.5)
+                             desiredCentiles = 0.5,
+                             average_over=average_over)
     
     #name of column to get ci's over
     col_name <- "cent_0.5"
