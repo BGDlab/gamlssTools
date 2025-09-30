@@ -164,69 +164,6 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
   return(sim_data_list)
 }
 
-#' Predict single centile
-#' 
-#' `pred_centile` calculates the values of one centile from output of [gamlss::predictAll()].
-#' 
-#' This function predicted response values from [gamlss::predictAll()]
-#' and returns the values of y across a specified centile. Used as subfunction within
-#' [centile_predict()].
-#' 
-#' @param centile_returned numeric value indicating percentile to calculate (range 0-1)
-#' @param df dataframe containing predicted values returned from `predictAll()`
-#' @param q_func quantile function for the model's distribution family
-#' @param n_param number of parameters contained in the model's distribution family
-#' 
-#' @returns list of values for y
-#' 
-#' @examples
-#' #predict a specific centile value across simulated data
-#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
-#' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
-#' pred_df <- predictAll(iris_model, newdata = sim_df$virginica, type="response")
-#' pred_centile(0.1, pred_df, "qBCCG", 3)
-#' 
-#' #lapply to get many centiles
-#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
-#' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
-#' pred_df <- predictAll(iris_model, newdata = sim_df$virginica, type="response")
-#' desiredCentiles <- c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99)
-#' lapply(desiredCentiles, pred_centile, df = pred_df, q_func = "qBCCG", n_param = 3)
-#' 
-#' @export
-pred_centile <- function(centile_returned, df, q_func, n_param) {
-  
-  stopifnot(centile_returned <= 1 & centile_returned >= 0)
-  stopifnot(n_param <= 4 & n_param >= 1)
-  
-  #mu and sigma only
-  if (n_param == 1) {
-    x <- eval(call(q_func,
-                   centile_returned,
-                   mu=df$mu))
-  } else if (n_param == 2) {
-    x <- eval(call(q_func,
-                   centile_returned,
-                   mu=df$mu,
-                   sigma=df$sigma))
-  } else if (n_param == 3) {
-    x <- eval(call(q_func,
-                   centile_returned,
-                   mu=df$mu,
-                   sigma=df$sigma,
-                   nu=df$nu))
-  } else if (n_param == 4){
-    x <- eval(call(q_func,
-                   centile_returned,
-                   mu=df$mu,
-                   sigma=df$sigma,
-                   nu=df$nu,
-                   tau=df$tau))
-  } else {
-    stop("Error: GAMLSS model should contain 1 to 4 moments")
-  }
-}
-
 #' Residualize data
 #' 
 #' Residualize data by removing terms' location effects as estimated by gamlss model
@@ -366,194 +303,7 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
                "\nThis might be due to data structure issues or incompatible model parameters.",
                "\nTry checking that all variables in rm_terms exist and have compatible types."))
   })
-}  
-
-#' Predict centiles
-#' 
-#' `centile_predict` calculates y values for a range of centiles across simulated data
-#' 
-#' This function takes a list of dataframes simulated with [sim_data()] and calculates
-#' the values of the response variable for each precentile in a list. Users can return
-#' predicted values for each level of a factor variable or choose to average across these
-#' values. Can also calculate and return the peak median (0.5) value of y across predictor
-#' `x_var`. Calls [pred_centile()] as a subfunction.
-#' 
-#' @param gamlssModel gamlss model object
-#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
-#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over
-#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
-#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
-#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
-#' @param df (optional) original dataframe from which new data will be simulated. Passing this can
-#' fix some bugs in [gamlss::predictAll()]
-#' @param average_over logical indicating whether to return percentiles and 
-#' peaks averaged across multiple levels of a factor, with each level represented as 
-#' a dataframe in `sim_data_list`. Defaults to `FALSE`
-#' 
-#' @returns list of dataframes containing predicted centiles across range of predictors
-#' 
-#' @examples
-#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
-#' sim_df <- sim_data(iris, "Sepal.Length", "Species", iris_model)
-#' 
-#' #to average across levels of "Species"
-#' centile_predict(iris_model, sim_df, "Sepal.Length", average_over = TRUE)
-#' 
-#' # or say you just want the 25th, 50th (median), and 75th percentiles
-#' centile_predict(iris_model, sim_df, "Sepal.Length", desiredCentiles = c(0.25, 0.5, 0.75))
-#' 
-#' @export
-centile_predict <- function(gamlssModel, 
-                            sim_data_list, 
-                            x_var, 
-                            desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
-                            df = NULL,
-                            average_over = FALSE){
-  UseMethod("centile_predict")
 }
-
-#' @export
-centile_predict.gamlss <- function(gamlssModel, 
-                            sim_data_list, 
-                            x_var, 
-                            desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
-                            df = NULL,
-                            average_over = FALSE){
-  
-  #get dist type (e.g. GG, BCCG) and write out function
-  fname <- gamlssModel$family[[1]]
-  qfun <- paste0("q", fname)
-  
-  print("Returning the following centiles:")
-  print(desiredCentiles)
-  
-  #count number of parameters to model
-  n_param <- length(gamlssModel$parameters)
-  
-  #initialize empty list(s)
-  centile_result_list <- list()
-  
-  # Predict phenotype values for each simulated level of factor_var
-  for (factor_level in names(sim_data_list)) {
-    
-    #make sure variable names are correct
-    stopifnot(x_var %in% names(sim_data_list[[factor_level]]))
-    sub_df <- sim_data_list[[factor_level]]
-    
-    # Predict centiles
-    print("predicting centiles")
-    pred_df <- predictAll(gamlssModel, newdata=sub_df, type="response", data=df)
-    
-    fanCentiles <- lapply(desiredCentiles, pred_centile, df = pred_df, q_func = qfun, n_param = n_param)
-    names(fanCentiles) <- paste0("cent_", desiredCentiles)
-    centiles_df <- as.data.frame(fanCentiles)
-    
-    # check correct dim
-    stopifnot(ncol(centiles_df) == length(desiredCentiles))
-    stopifnot(nrow(centiles_df) == nrow(pred_df))
-    
-    #add x_vals, name centiles for factor_var level and append to results list
-    centiles_df[[x_var]] <- sub_df[[x_var]]
-    cent_name <- paste0("fanCentiles_", factor_level)
-    centile_result_list[[cent_name]] <- centiles_df
-
-  }
-  
-  #now that centiles are calculated for all levels (e.g., sexes) average over as needed
-  if (average_over == TRUE){
-    average_result_list <- list()
-    
-    #confirm correct number
-    stopifnot(length(centile_result_list) == length(sim_data_list))
-    
-    #stop if not all output numeric
-    df_is_numeric <- all(sapply(centile_result_list, function(df) {all(sapply(df, is.numeric))}))
-    stopifnot(df_is_numeric == TRUE)
-    
-    avg_centile_df <- Reduce("+", centile_result_list)/length(centile_result_list)
-    average_result_list[["fanCentiles_average"]] <- avg_centile_df
-    
-    return(average_result_list)
-    
-  } else if (average_over == FALSE){
-    return(centile_result_list)
-  } else{
-    stop("Do you want results to be averaged across variable levels?")
-  }
-  
-}
-
-#' @export
-centile_predict.gamlss2 <- function(gamlssModel, 
-                                   sim_data_list, 
-                                   x_var, 
-                                   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99), 
-                                   df = NULL,
-                                   average_over = FALSE){
-  
-  #get dist type (e.g. GG, BCCG) and write out function
-  fname <- gamlssModel$family[[1]]
-  qfun <- paste0("q", fname)
-  
-  print("Returning the following centiles:")
-  print(desiredCentiles)
-  
-  #count number of parameters to model
-  n_param <- length(gamlssModel$fitted.values)
-  
-  #initialize empty list(s)
-  centile_result_list <- list()
-  
-  # Predict phenotype values for each simulated level of factor_var
-  for (factor_level in names(sim_data_list)) {
-    
-    #make sure variable names are correct
-    stopifnot(x_var %in% names(sim_data_list[[factor_level]]))
-    sub_df <- sim_data_list[[factor_level]]
-    
-    # Predict centiles
-    print("predicting centiles")
-    pred_df <- predict(gamlssModel, newdata=sub_df, type="parameter", data=df)
-    
-    fanCentiles <- lapply(desiredCentiles, pred_centile, df = pred_df, q_func = qfun, n_param = n_param)
-    names(fanCentiles) <- paste0("cent_", desiredCentiles)
-    centiles_df <- as.data.frame(fanCentiles)
-    
-    # check correct dim
-    stopifnot(ncol(centiles_df) == length(desiredCentiles))
-    stopifnot(nrow(centiles_df) == nrow(pred_df))
-    
-    #add x_vals, name centiles for factor_var level and append to results list
-    centiles_df[[x_var]] <- sub_df[[x_var]]
-    cent_name <- paste0("fanCentiles_", factor_level)
-    centile_result_list[[cent_name]] <- centiles_df
-    
-  }
-  
-  #now that centiles are calculated for all levels (e.g., sexes) average over as needed
-  if (average_over == TRUE){
-    average_result_list <- list()
-    
-    #confirm correct number
-    stopifnot(length(centile_result_list) == length(sim_data_list))
-    
-    #stop if not all output numeric
-    df_is_numeric <- all(sapply(centile_result_list, function(df) {all(sapply(df, is.numeric))}))
-    stopifnot(df_is_numeric == TRUE)
-    
-    avg_centile_df <- Reduce("+", centile_result_list)/length(centile_result_list)
-    average_result_list[["fanCentiles_average"]] <- avg_centile_df
-    
-    return(average_result_list)
-    
-  } else if (average_over == FALSE){
-    return(centile_result_list)
-  } else{
-    stop("Do you want results to be averaged across variable levels?")
-  }
-  
-}
-
 
 #' Get Age of Peak
 #' 
@@ -625,9 +375,66 @@ get_derivatives <- function(cent_df){
 }
 
 #helper fun for formatting x-axes with common ticks/labels
-format_x_axis <- function(x_axis = c("custom",
-                                     "lifespan", "log_lifespan", 
-                                     "lifespan_fetal", "log_lifespan_fetal"),
+format_x_axis <- function(x_axis = c("custom", 
+                                     "lifespan", 
+                                     "log_lifespan", 
+                                     "lifespan_fetal",
+                                     "log_lifespan_fetal"),
+                          x_values) {
+  x_axis <- match.arg(x_axis)
+  
+  if (x_axis == "custom") {
+    message("no formatting required")
+    return(NULL)  # return nothing, so `+ NULL` does nothing
+  }
+  
+  # add days for fetal development?
+  if (grepl("fetal", x_axis, fixed = TRUE)) {
+    add_val <- 280
+    tickLabels <- c("Conception")
+    tickMarks <- c(0)
+  } else {
+    add_val <- 0
+    tickLabels <- c()
+    tickMarks <- c()
+  }
+  
+  # log scaled?
+  if (grepl("log", x_axis, fixed = TRUE)) {
+    for (year in c(0, 1, 2, 5, 10, 20, 50, 100)) {
+      tickMarks <- append(tickMarks, log(year*365.25 + add_val, base = 10))
+      tickMarks[is.infinite(tickMarks)] <- 0
+    }
+    tickLabels <- append(tickLabels, c("Birth", "1", "2", "5", "10", "20", "50", "100"))
+    unit_lab <- "(log years)"
+  } else {
+    for (year in seq(0, 100, by = 10)) {
+      tickMarks <- append(tickMarks, year*365.25 + add_val)
+    }
+    tickLabels <- append(tickLabels, c("Birth", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"))
+    unit_lab <- "(years)"
+  }
+  
+  # get actual range of data points
+  xrange <- range(x_values, na.rm = TRUE)
+  buffer <- diff(xrange) * 0.01
+  xlims <- c(xrange[1] - buffer, xrange[2] + buffer)
+  
+  # keep only ticks within buffered range
+  inside <- tickMarks >= xlims[1] & tickMarks <= xlims[2]
+  valid_ticks <- tickMarks[inside]
+  valid_labels <- tickLabels[inside]
+  
+  # return a list of components to add to ggplot
+  list(
+    scale_x_continuous(
+      breaks = valid_ticks,
+      labels = valid_labels,
+      limits = xlims
+    ),
+    labs(x = paste("Age at Scan", unit_lab))
+  )
+}
                           x_values){
   x_axis <- match.arg(x_axis)
   #if custom, just send null
