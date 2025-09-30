@@ -99,6 +99,7 @@ bootstrap_gamlss.gamlss <- function(gamlssModel, df=NULL, B=100,
         if (stratify == TRUE | !is.null(group_var)) {
           message("Stratified Bayesian bootstrapping not implemented, ignoring")
         }
+        warning("Unclear if/how weighting necessary for Bayesian bootstrapping will impact 'predict' functions. Use with caution!")
         #bootstrap weights & pass original data
         b_weights <- rFun(nrow(df)) * nrow(df)
         mod_call$weights <- b_weights
@@ -195,6 +196,8 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
         if (stratify == TRUE | !is.null(group_var)) {
           message("Stratified Bayesian bootstrapping not implemented, ignoring")
         }
+        warning("Unclear if/how weighting necessary for Bayesian bootstrapping will impact 'predict' functions. Use with caution!")
+        
         #bootstrap weights & pass original data
         mod_weights <- rFun(nrow(df)) * nrow(df)
         bootstrap_df <- df
