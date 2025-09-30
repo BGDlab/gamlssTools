@@ -10,7 +10,7 @@ It should be compatible with all gamlss models, regardless of the number of cova
 Other plotting/visualization functions include:
 - `plot_sigma()`: visualizing sigma on the response scale
 - `wp.taki()`: an alternate version of the `gamlss::wp()` function
-- `cent_cdf()`:
+- `cent_cdf()`: return the cumulative distribution of centiles for a set of datapoints (i.e. what percent of subjects have centile scores <= 50%?)
 
 
 ### Bootstrapping and Confidence Intervals
@@ -27,16 +27,17 @@ The other functions in this package are mostly intended to interact with gamlss 
 
 - `get_coeff()`: returns beta coefficient for a specific covariate in a gamlss model
 - `list_predictors()`: lists all covariates in any moment of a gamlss model
-- `pred_og_centile()`: Returns the centile and/or z-score values for the datapoints used to fit a gamlss model
-- `age_at_peak()`:
-- `gamlss_try()`:
+- `pred_og_centile()`: returns the centile and/or z-score values for the datapoints used to fit a gamlss model
+- `age_at_peak()`: returns the value of x (e.g. age) at which the 50th percentile trajectory peaks
+- `gamlss_try()`: a wrapper function for fitting gamlss()
+- `cohens_f2_local()`: calculate effect size (cohen's fsq) of a covariate using the difference in Rsq of full and nested models
 
 ## Installation
 You can install the development version of gamlssTools from [GitHub](https://github.com/) with:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("BGDlab/gamlssTools")
+devtools::install_github("BGDlab/gamlssTools", build_vignettes = TRUE)
 ```
 
 ## Usage
