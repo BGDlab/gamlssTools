@@ -247,6 +247,8 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
 #' Defaults to FALSE
 #' @param df true dataframe (optional, must pass this or `sim_data_list`)
 #' @param sim_data_list data simulated from true dataframe (optional, must pass this or `df`)
+#' @param average_over logical indicating whether to average predicted centiles across each level of `factor_var`.
+#' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `factor_var`.
 #' 
 #' @returns list of dataframes, with one dataframe for each level of `factor_var`
 #' 
@@ -310,7 +312,6 @@ gamlss_ci <- function(boot_list,
     stopifnot(length(boot_list) == length(pred_boot_list))
     
     #merge across each bootstrap sample, w/in factor_var as necessary
-    if (!is.null(factor_var)){
       print(paste("merging within", factor_var))
       pred_boot_list2 <- pred_boot_list %>%
         purrr:::transpose() %>%
@@ -318,9 +319,6 @@ gamlss_ci <- function(boot_list,
       
       #check number of factor levels
       stopifnot(length(pred_boot_list2) == length(pred_boot_list[[1]]))
-    } else {
-      pred_boot_list2 <- pred_boot_list
-    }
 
   #method 1: sliding window
   #subfunction with help from chatgpt
@@ -386,6 +384,8 @@ gamlss_ci <- function(boot_list,
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' @param df true dataframe (optional, must pass this or `sim_data_list`)
 #' @param sim_data_list data simulated from true dataframe (optional, must pass this or `df`)
+#' @param average_over logical indicating whether to average predicted centiles across each level of `factor_var`.
+#' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `factor_var`.
 #' 
 #' @returns list of dataframes, with one dataframe for each level of `factor_var`
 #' 
@@ -403,7 +403,8 @@ peak_ci <- function(boot_list,
                       moment=c("mu", "sigma"),
                       interval=.95,
                       df=NULL,
-                      sim_data_list=NULL){
+                      sim_data_list=NULL,
+                    average_over = FALSE){
   stopifnot(interval > 0 && interval < 1)
   moment <- match.arg(moment)
   
@@ -425,7 +426,8 @@ peak_ci <- function(boot_list,
                              centile_predict,
                              sim_data_list = sim_data_list,
                              x_var=x_var,
-                             desiredCentiles=0.5)
+                             desiredCentiles=0.5,
+                             average_over = average_over)
     
     stopifnot(length(boot_list) == length(cent_boot_list))
     
@@ -433,7 +435,6 @@ peak_ci <- function(boot_list,
     peak_list <- purrr:::map(cent_boot_list, ~ map(.x, age_at_peak))
 
     #merge across each bootstrap sample, w/in factor_var as necessary
-    if (!is.null(factor_var)){
       print(paste("merging within", factor_var))
       peak_list2 <- peak_list %>%
         purrr:::transpose() %>%
@@ -441,9 +442,6 @@ peak_ci <- function(boot_list,
       
       #check number of factor levels
       stopifnot(length(peak_list2) == length(cent_boot_list[[1]]))
-    } else {
-      peak_list2 <- peak_list
-    }
     
     #for sigma, estimate ???
   } else if (moment == "sigma"){
