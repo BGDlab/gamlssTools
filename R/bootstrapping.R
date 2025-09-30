@@ -538,11 +538,12 @@ ci_diffs <- function(ci_list){
 #' @param boot_group_var categorical/factor variable that resampling will be stratified within (when `type=resample`) 
 #' or that one level will be dropped from in each bootstraped sample (when `type=LOSO`). Can also be a list, allowing
 #' stratification within multiple groups e.g. `group_var=c(sex, study)`
-#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
+#' @param sim_data_list list of simulated dataframes returned by `sim_data()` (optional)
 #' @param special_term optional, passed to gamlssTools::sim_data()
 #' @param moment what moment to get CIs for. `mu` returns CIs around 50th centile, `sigma` returns predicted
 #' value of sigma (with link-function applied)
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
+#' @param boot_list output of gamlssTools::bootstrap_gamlss() (optional)
 #' 
 #' @returns list of dataframes containing differences in trajectories, as well as CIs calculated at each level of `factor_var`
 #' 
@@ -572,18 +573,21 @@ get_median_diffs <- function(gamlssModel,
                              B=100, 
                              type=c("resample", "bayes", "LOSO"), 
                              stratify=FALSE,
-                             boot_group_var=NULL,
-                             sim_data_list=NULL,
-                             special_term=NULL,
+                             boot_group_var = NULL,
+                             sim_data_list= NULL,
+                             special_term = NULL,
                              moment=c("mu", "sigma"),
-                             interval=.95){
+                             interval=.95,
+                             boot_list = NULL){
   #only works for 2-levels
   stopifnot(length(unique(df[[factor_var]])) == 2)
   moment <- match.arg(moment)
   
   #bootstrap models
-  print(paste("fitting", B, "bootstrap models"))
-  boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
+  if (is.null(boot_list)){
+    print(paste("fitting", B, "bootstrap models"))
+    boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
+  }
   
   #get CIs
   print(paste("calculating", interval, "CIs"))

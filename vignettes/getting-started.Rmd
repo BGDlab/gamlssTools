@@ -10,7 +10,11 @@ vignette: >
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>",
+  message = FALSE,
+  markup = FALSE,
+  fig.width = 8, 
+  fig.height = 7
 )
 ```
 
@@ -48,7 +52,7 @@ df$Pheno <- ((df$Age/ 365)^3) * (1 + 0.5 * sex_num) +      # age effect + intera
 df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
 ```
 
-##Centile Fan Plots
+## Centile Fan Plots
 
 The basic use-case for gamlssTools is plotting gamlss models. Note that while we use a model fit with the original [gamlss](https://cran.r-project.org/web/packages/gamlss/index.html) package, the functions in gamlssTools are also compatible with the newer [gamlss2](https://github.com/gamlss-dev/gamlss2).
 
@@ -84,7 +88,7 @@ make_centile_fan(pheno_model, df, "Age", "Sex")
 You can residualize out the estimated effect of a nuisance covariate (like study or site) from your data points to more cleanly display your data.
 
 ```{r}
-make_centile_fan(pheno_model, df, "Age", "Sex", remove_point_effect = "Study")
+make_centile_fan(pheno_model, df, "Age", "Sex", remove_point_effect = "Study", x_axis="lifespan")
 ```
 
 There are many other options you can use to customize/adjust your plots - see the documentation for `make_centile_fan()`.
@@ -95,13 +99,38 @@ There are also a number of wrapper functions that apply different defaults to/ot
 - `plot_centile_cis()`: Plot median with 95% confidence intervals (see Bootstrapping & Confidence Intervals vignette for more)
 
 
-##Model Diagnostics
+## Model Diagnostics
 
 There are several quantitative and qualitative checks you'll likely want to perform on your models.
 
-First, we can return BIC
+First, we can return BIC and AIC built-into the gamlss model object (note: will be different when using gamlss2 objects)
+```{r}
+pheno_model$aic #AIC
+pheno_model$sbc #BIC
+```
 
-##Calculating Centiles
+Another helpful check is the worm plot. `wp.taki()` enhances the built-in `gamlss::wp()` by allowing you to break up plots along chunks of a continuous variable (like age) or by levels of a categorical variable (like sex), so you can make sure the model fits all groups well.
+
+```{r}
+#plot by age
+wp.taki(xvar=df$Age, resid=resid(pheno_model))
+
+#plot by sex
+df$Sex <- as.factor(df$Sex)
+wp.taki(xvar=df$Sex, resid=resid(pheno_model))
+```
+
+You can also check how well the predicted centiles for each point/subject line up with the percentiles themselves - that is, about 5% of subjects' centiles should be <= 0.05.
+
+```{r}
+cent_cdf(pheno_model, df)
+
+#we can also view this by sex or age
+cent_cdf(pheno_model, df, group="Sex")
+cent_cdf(pheno_model, df, interval_var = "Age", n=4)
+```
+
+## Calculating Centiles
 
 Now let's say you want to get the centile values for each subject in your dataset or a new dataset.
 
