@@ -16,7 +16,8 @@ get_median_diffs(
   sim_data_list = NULL,
   special_term = NULL,
   moment = c("mu", "sigma"),
-  interval = 0.95
+  interval = 0.95,
+  boot_list = NULL
 )
 }
 \arguments{
@@ -42,7 +43,7 @@ weight. \code{LOSO} drops an entire subset from the sample (indicated by \code{g
 or that one level will be dropped from in each bootstraped sample (when \code{type=LOSO}). Can also be a list, allowing
 stratification within multiple groups e.g. \code{group_var=c(sex, study)}}
 
-\item{sim_data_list}{list of simulated dataframes returned by \code{sim_data()}}
+\item{sim_data_list}{list of simulated dataframes returned by \code{sim_data()} (optional)}
 
 \item{special_term}{optional, passed to gamlssTools::sim_data()}
 
@@ -50,6 +51,8 @@ stratification within multiple groups e.g. \code{group_var=c(sex, study)}}
 value of sigma (with link-function applied)}
 
 \item{interval}{size of confidence interval to calculate. Defaults to 0.95, or 95\%}
+
+\item{boot_list}{output of gamlssTools::bootstrap_gamlss() (optional)}
 }
 \value{
 list of dataframes containing differences in trajectories, as well as CIs calculated at each level of \code{factor_var}

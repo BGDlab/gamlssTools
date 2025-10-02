@@ -13,6 +13,29 @@
 #' `resid_effect` (which takes straightforward variable names) to find and residualize
 #' effects from original datapoints and centile curves, as needed.
 #' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe used to fit the gamlss model
+#' @param x_var continuous predictor (e.g. 'age') that will be plotted on the x axis
+#' @param color_var (optional) categorical predictor (e.g. 'sex') that will be used to determine the color of
+#' points/centile lines. Alternatively, you can average over each level of this variable
+#' to return a single set of centile lines (see `average_over`).
+#' @param get_peaks logical to indicate whether to add a point at the median centile's peak value
+#' @param x_axis optional pre-formatted options for x-axis tick marks, labels, etc. Defaults to 'custom',
+#' which is, actually, no specific formatting. NOTE: options "lifespan" and "log_lifespan" assume that 
+#' age is formatted in days post-birth. if age is formatted in days post-conception 
+#' (i.e. age post-birth + 280 days), use options ending in "_fetal".
+#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
+#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
+#' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
+#' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
+#' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're plotting
+#' many models fit on the same dataframe 
+#' @param show_points logical indicating whether to plot data points below centile fans. Defaults to `TRUE`
+#' @param label_centiles label the percentile corresponding to each centile line(`label`), map thickness in legend(`legend`), or neither(`none`). 
+#' Defaults to `label`.
+#' @param resid_effect lname of variable(s) who's estimated effects are to be removed from points
+#' 
 #' @returns ggplot object
 #' 
 #' @export
@@ -140,7 +163,7 @@ centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge",
 #' Plot 1st derivative of centile line
 #' 
 #' Wrapper function for [make_centile_fan()] with different defaults. Defaults
-#' to plotting only derivative of median line, but can be updated
+#' to plotting only derivative of median line, but can be updated via `desiredCentiles` arg.
 #' 
 #' @returns ggplot object
 #'
@@ -175,6 +198,32 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 #' 
 #' Plot centile fan with confidence intervals on 50th centile
 #' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe used to fit the gamlss model
+#' @param x_var continuous predictor (e.g. 'age') that will be plotted on the x axis
+#' @param color_var (optional) categorical predictor (e.g. 'sex') that will be used to determine the color of
+#' points/centile lines. Alternatively, you can average over each level of this variable
+#' to return a single set of centile lines (see `average_over`).
+#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
+#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
+#' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
+#' @param B number of samples/models to bootstrap. Defaults to 100. if `type = "LOSO"`, B will be updated to 
+#' the number of unique values of `group_var`
+#' @param sim_data_list (optional) output of `sim_data()`
+#' @param type which type of bootstrapping to perform. `resample` performs traditional bootstrapping (resample with replacement)
+#' across all groups; alternatively, it may be combined with `stratify=TRUE` and `group_var` args below to bootstrap
+#' while maintaining each group's (e.g study's) n. `bayes` keeps the original dataframe but randomizes each observation's
+#' weight. `LOSO` drops an entire subset from the sample (indicated by `group_var`) with each bootstrap.
+#' @param stratify logical. with `type=resample` will bootstrap within each level of `group_var`. 
+#' @param boot_group_var categorical/factor variable that resampling will be stratified within (when `type=resample`) 
+#' or that one level will be dropped from in each bootstraped sample (when `type=LOSO`). Can also be a list, allowing
+#' stratification within multiple groups e.g. `group_var=c(sex, study)`
+#' @param special_term optional, passed to gamlssTools::sim_data()
+#' @param boot_list (optional) output of gamlssTools::bootstrap_gamlss()
+#' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
+#' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
+#' 
 #' @returns ggplot object
 #'
 #' @examples
@@ -183,18 +232,18 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 #' 
 #' @export
 plot_centile_cis <- function(gamlssModel, df, x_var, 
-                              color_var,
-                              desiredCentiles = c(0.5),
-                              interval=.95,
-                              B=100,
-                              sim_data_list = NULL,
-                              type=c("resample", "bayes", "LOSO"), 
-                              stratify=FALSE,
-                              boot_group_var=NULL,
-                              special_term = NULL,
+                             color_var,
+                             desiredCentiles = c(0.5),
+                             interval = .95,
+                             B = 100,
+                             sim_data_list = NULL,
+                             type = c("resample", "bayes", "LOSO"), 
+                             stratify = FALSE,
+                             boot_group_var = NULL,
+                             special_term = NULL,
                              boot_list = NULL,
-                             average_over=FALSE,
-                              ...){
+                             average_over = FALSE,
+                             ...){
   opt_args_list <- list(...)
     #bootstrap models
   if (is.null(boot_list)){
@@ -214,13 +263,13 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
                          x_var, 
                          color_var, 
                          special_term, 
-                         moment="mu", 
+                         moment = "mu", 
                          interval, 
-                         sliding_window=FALSE, 
-                         sim_data_list=sim_data_list,
-                         average_over=average_over)
+                         sliding_window = FALSE, 
+                         sim_data_list = sim_data_list,
+                         average_over = average_over)
     names(ci_list) <- sub("fanCentiles_", "", names(ci_list)) #drop prefix
-    ci_df <- bind_rows(ci_list, .id=color_var)
+    ci_df <- bind_rows(ci_list, .id = color_var)
   
   plot <- make_centile_fan(gamlssModel, df, x_var, 
                            color_var = color_var,

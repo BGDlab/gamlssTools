@@ -22,7 +22,7 @@ Plot 1st derivative of centile line
 }
 \details{
 Wrapper function for \code{\link[=make_centile_fan]{make_centile_fan()}} with different defaults. Defaults
-to plotting only derivative of median line, but can be updated
+to plotting only derivative of median line, but can be updated via \code{desiredCentiles} arg.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)

@@ -13,7 +13,8 @@ gamlss_ci(
   interval = 0.95,
   sliding_window = FALSE,
   df = NULL,
-  sim_data_list = NULL
+  sim_data_list = NULL,
+  average_over = FALSE
 )
 }
 \arguments{
@@ -36,6 +37,9 @@ Defaults to FALSE}
 \item{df}{true dataframe (optional, must pass this or \code{sim_data_list})}
 
 \item{sim_data_list}{data simulated from true dataframe (optional, must pass this or \code{df})}
+
+\item{average_over}{logical indicating whether to average predicted centiles across each level of \code{factor_var}.
+Defaults to \code{FALSE}, which will plot a different colored centile fan for each level of \code{factor_var}.}
 }
 \value{
 list of dataframes, with one dataframe for each level of \code{factor_var}

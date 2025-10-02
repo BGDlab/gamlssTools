@@ -363,7 +363,29 @@ plot_sigma <- function(gamlssModel, df, x_var,
 #' 
 #' Plot sigma with confidence intervals
 #' 
-#' Wrapper function for `plot_sigma()`
+#' Wrapper function for `plot_sigma()` and `gamlss_ci()`
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe used to fit the gamlss model
+#' @param x_var continuous predictor (e.g. 'age') that will be plotted on the x axis
+#' @param color_var (optional) categorical predictor (e.g. 'sex') that will be used to determine the color of
+#' points/centile lines. Alternatively, you can average over each level of this variable
+#' to return a single set of centile lines (see `average_over`).
+#' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
+#' @param B (optional) number of samples/models to bootstrap. Defaults to 100. if `type = "LOSO"`, B will be updated to 
+#' the number of unique values of `group_var`
+#' @param sim_data_list (optional) output of `sim_data()`.
+#' @param type (optional) which type of bootstrapping to perform. `resample` performs traditional bootstrapping (resample with replacement)
+#' across all groups; alternatively, it may be combined with `stratify=TRUE` and `group_var` args below to bootstrap
+#' while maintaining each group's (e.g study's) n. `bayes` keeps the original dataframe but randomizes each observation's
+#' weight. `LOSO` drops an entire subset from the sample (indicated by `group_var`) with each bootstrap.
+#' @param stratify (optional) logical. with `type=resample` will bootstrap within each level of `group_var`. 
+#' @param boot_group_var (optional) categorical/factor variable that resampling will be stratified within (when `type=resample`) 
+#' or that one level will be dropped from in each bootstraped sample (when `type=LOSO`). Can also be a list, allowing
+#' stratification within multiple groups e.g. `group_var=c(sex, study)`
+#' @param special_term (optional) passed to `sim_data()`
+#' @param boot_list (optional) output of `bootstrap_gamlss()`
+#' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
 #' 
 #' @returns ggplot object
 #'
@@ -374,7 +396,6 @@ plot_sigma <- function(gamlssModel, df, x_var,
 #' @export
 plot_sigma_cis <- function(gamlssModel, df, x_var, 
                            color_var,
-                           desiredCentiles = c(0.5),
                            interval = .95,
                            B = 100,
                            sim_data_list = NULL,

@@ -21,6 +21,41 @@ centile_fan_resid(
   ...
 )
 }
+\arguments{
+\item{gamlssModel}{gamlss model object}
+
+\item{df}{dataframe used to fit the gamlss model}
+
+\item{x_var}{continuous predictor (e.g. 'age') that will be plotted on the x axis}
+
+\item{color_var}{(optional) categorical predictor (e.g. 'sex') that will be used to determine the color of
+points/centile lines. Alternatively, you can average over each level of this variable
+to return a single set of centile lines (see \code{average_over}).}
+
+\item{get_peaks}{logical to indicate whether to add a point at the median centile's peak value}
+
+\item{x_axis}{optional pre-formatted options for x-axis tick marks, labels, etc. Defaults to 'custom',
+which is, actually, no specific formatting. NOTE: options "lifespan" and "log_lifespan" assume that
+age is formatted in days post-birth. if age is formatted in days post-conception
+(i.e. age post-birth + 280 days), use options ending in "_fetal".}
+
+\item{desiredCentiles}{list of percentiles as values between 0 and 1 that will be
+calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+which returns the 1st percentile, 5th percentile, 10th percentile, etc.}
+
+\item{average_over}{logical indicating whether to average predicted centiles across each level of \code{color_var}.
+Defaults to \code{FALSE}, which will plot a different colored centile fan for each level of \code{color_var}.}
+
+\item{sim_data_list}{optional argument that takes the output of \code{sim_data()}. Can be useful when you're plotting
+many models fit on the same dataframe}
+
+\item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
+
+\item{label_centiles}{label the percentile corresponding to each centile line(\code{label}), map thickness in legend(\code{legend}), or neither(\code{none}).
+Defaults to \code{label}.}
+
+\item{resid_effect}{lname of variable(s) who's estimated effects are to be removed from points}
+}
 \value{
 ggplot object
 }
