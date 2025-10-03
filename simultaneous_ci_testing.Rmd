@@ -10,70 +10,17 @@ set.seed(9999)
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(gamlss, dplyr, ggplot2, gamlssTools, mgcv)
+pacman::p_load(gamlss, dplyr, ggplot2, gamlssTools, mgcv, rsample, tidyr)
 ```
 
-Attempting to develop simultaneous CIs for GAMLSS smooths. Working from Gavin Simpson's post at https://fromthebottomoftheheap.net/2016/12/15/simultaneous-interval-revisited/
+# Gao et al
 
-```{r}
-rmvn <- function(n, mu, sig) { ## MVN random deviates
-    L <- mgcv::mroot(sig)
-    m <- ncol(L)
-    t(mu + L %*% matrix(rnorm(m*n), m, n))
-}
-```
-
-First, run through with `mgcv`
-
-```{r}
-N <- 10 #reps
-gam <- gam(Sepal.Width ~ s(Sepal.Length, k = 20), data = iris, method = "REML")
-Vb <- vcov(gam)
-newd <- with(iris, data.frame(Sepal.Length = seq(min(Sepal.Length), max(Sepal.Length), length = 200)))
-pred <- predict(gam, newd, se.fit = TRUE)
-se.fit <- pred$se.fit #standard errors at each point along x
-
-BUdiff <- rmvn(N, mu = rep(0, nrow(Vb)), sig = Vb) #distribution of errors(?) at each basis fun for each simulation
-```
-
-```{r}
-Cg <- predict(gam, newd, type = "lpmatrix") #linear predictors across x for each basis fun
-simDev <- Cg %*% t(BUdiff)
-
-absDev <- abs(sweep(simDev, 1, se.fit, FUN = "/")) #abs(pred-true/se) at each point along x for each sim
-
-masd <- apply(absDev, 2L, max) #max abs std dev across x for each sim
-
-crit <- quantile(masd, prob = 0.95, type = 8)
-```
-
+playing around with code from https://github.com/xingaostat/Nonparametric-simultaneous-intervals/blob/main/heartjune212021_github.txt
+https://www.mdpi.com/2073-8994/13/7/1212#B5-symmetry-13-01212
 
 ```{r}
 iris_model <- gamlss(formula = Sepal.Width ~ pb(Sepal.Length) + Species, sigma.formula = ~ Sepal.Length, data=iris)
 ```
-
-first, try getting covariance matrix
-
-```{r}
-
-Vb <- rvcov(iris_model) #covariance matrix robust - idk if this is valid though
-BUdiff <- rmvn(N, mu = rep(0, nrow(Vb)), sig = Vb)
-```
-
-attempt getting Cg
-```{r}
-#Cg <- predict(m, newd, type = "lpmatrix")
-new_data <- sim_data(iris, "Sepal.Length")$df
-Cg <- predictAll(iris_model, newdata=new_data, data=iris, output="matrix")
-
-#trying to just play around with mu for now
-
-```
-
-
-
-playing around with code from https://github.com/xingaostat/Nonparametric-simultaneous-intervals/blob/main/heartjune212021_github.txt
-https://www.mdpi.com/2073-8994/13/7/1212#B5-symmetry-13-01212
 
 1. Generate B bootstrap samples 𝑍𝑏,𝑏=1,…,𝐵, by sampling with replacement and obtain the bootstrap estimates 𝜃̃𝑏={𝜃̃𝑏1,…,𝜃̃𝑏𝑝}
 
@@ -159,13 +106,10 @@ max_ranks_pct <- lapply(max_ranks,
 
 ```{r}
 #get the bootstraps who's max rank is <= 97.5th %
-phi_boot_dfs <- lapply(seq_along(cent_boot_dfs), function(i){
-  df <- cent_boot_dfs[[i]]
-  keep_list <- max_ranks_pct[[i]]
-  
- df <- df %>%
-   filter(boot %in% keep_list$boot)
-})
+phi_boot_dfs <- Map(function(df, keep_list) {
+  df %>%
+    filter(boot %in% keep_list$boot)
+}, cent_boot_dfs, max_ranks_pct)
 ```
 
 5. For each coordinate j, order the bootstrap estimates in set Φ. The new rank of 𝜃̃𝑏𝑗in set Φ is denoted as 𝑟′(𝑏,𝑗).
@@ -193,13 +137,10 @@ min_ranks_pct <- lapply(min_ranks,
 7. Denote the collection of bootstrap samples within Φ with the minimum sample rank above 𝑟′𝛼/(2−𝛼) as Ψ={𝑏∈Φ∣𝑟′(𝑏)≥𝑟′𝛼/(2−𝛼)}.
 ```{r}
 #keep bootstraps with min ranks >= 2.5%
-final_boot_dfs <- lapply(seq_along(phi_boot_dfs), function(i){
-  df <- phi_boot_dfs[[i]]
-  keep_list <- min_ranks_pct[[i]]
-  
- df <- df %>%
-   filter(boot %in% keep_list$boot)
-})
+final_boot_dfs <- Map(function(df, keep_list) {
+  df %>%
+    filter(boot %in% keep_list$boot)
+}, phi_boot_dfs, min_ranks_pct)
 ```
 
 8. To construct the upper and lower limits for each coordinate, calculate 𝑡𝑗=max𝑏∈Ψ𝑟(𝑏,𝑗), and 𝑤𝑗=min𝑏∈Ψ𝑟(𝑏,𝑗).
@@ -222,5 +163,194 @@ ci_list <- lapply(final_boot_dfs, function(df, xvar="Sepal.Length"){
         )
 } )
 
+ci_df <- ci_list %>%
+  bind_rows(.id = "Species") %>%
+  mutate(Species = sub("fanCentiles_", "", Species))
+
 #those are your CIs!
+```
+
+```{r}
+make_centile_fan(iris_model, iris, "Sepal.Length", "Species", desiredCentiles=0.5, 
+                 get_peaks = FALSE, label_centiles = "none")  +
+    geom_ribbon(data = ci_df, aes(ymin = lower, ymax = upper, x=Sepal.Length, fill=Species), alpha = 0.2)
+```
+
+# Test in mgcv()
+
+Working from Gavin Simpson's post at https://fromthebottomoftheheap.net/2016/12/15/simultaneous-interval-revisited/
+Going to compare "true" CIs to those from new Gao method
+
+
+```{r}
+rmvn <- function(n, mu, sig) { ## MVN random deviates
+    L <- mgcv::mroot(sig)
+    m <- ncol(L)
+    t(mu + L %*% matrix(rnorm(m*n), m, n))
+}
+```
+
+First, run through Gavin Simpson's method
+
+```{r}
+N <- 500 #reps
+gam <- gam(bmi ~ s(age, k = 20), data = dbbmi, method = "REML")
+Vb <- vcov(gam)
+newd <- with(dbbmi, data.frame(age = seq(min(age), max(age), length = 200)))
+pred <- predict(gam, newd, se.fit = TRUE)
+se.fit <- pred$se.fit #standard errors at each point along x
+
+BUdiff <- rmvn(N, mu = rep(0, nrow(Vb)), sig = Vb) #distribution of errors(?) at each basis fun for each simulation
+```
+
+```{r}
+Cg <- predict(gam, newd, type = "lpmatrix") #linear predictors across x for each basis fun
+simDev <- Cg %*% t(BUdiff)
+
+absDev <- abs(sweep(simDev, 1, se.fit, FUN = "/")) #abs(pred-true/se) at each point along x for each sim
+
+masd <- apply(absDev, 2L, max) #max abs std dev across x for each sim
+
+crit <- quantile(masd, prob = 0.95, type = 8)
+
+pred <- transform(cbind(data.frame(pred), newd),
+                  uprP = fit + (2 * se.fit),
+                  lwrP = fit - (2 * se.fit),
+                  uprS = fit + (crit * se.fit),
+                  lwrS = fit - (crit * se.fit))
+ggplot(pred, aes(x = age)) +
+    geom_ribbon(aes(ymin = lwrS, ymax = uprS), alpha = 0.2, fill = "red") +
+    geom_ribbon(aes(ymin = lwrP, ymax = uprP), alpha = 0.2, fill = "red")
+```
+
+Now trying Gao method
+
+1. Generate B bootstrap samples 𝑍𝑏,𝑏=1,…,𝐵, by sampling with replacement and obtain the bootstrap estimates 𝜃̃𝑏={𝜃̃𝑏1,…,𝜃̃𝑏𝑝}
+
+```{r}
+gam_boot <- function(df, B){
+  mod_list <- foreach::foreach(i=1:B, .packages=c("mgcv")) %dopar% {
+  bootstrap_df <- df[sample(nrow(df), nrow(df), replace = TRUE), ]
+  mod <- gam(bmi ~ s(age, k = 20), data = bootstrap_df, method = "REML")
+  }
+  return(mod_list)
+}
+
+#bootstap
+boot_gams <- gam_boot(dbbmi, B=500)
+
+#pred y values at 500 pts across x
+dbbmi_sim <- sim_data(dbbmi, "age")$df
+boot_y <- lapply(boot_gams, function(mod) {
+  y <- predict(mod, newdata=dbbmi_sim)
+  df <- data.frame("age" = dbbmi_sim$age,
+                   "cent_0.5" = y) #technically bmi
+  })
+
+boot_y_df <- bind_rows(boot_y, .id="boot")
+
+rownames(boot_y_df) <- NULL
+```
+
+```{r}
+max_ranks <- boot_ranks(boot_y_df,
+                    xvar="age",
+                    f="max")
+```
+
+3. Calculate the (1−𝛼/2) percentile 𝑟1−𝛼/2 of 𝑟(𝑏).
+
+```{r}
+#what's the 97.5th percentile of max ranks
+max_ranks_pct <- filt_rank_pct(max_ranks,
+                        pct=0.975,
+                        keep="less")
+```
+
+4. Denote the collection of bootstrap samples with the maximum sample rank equal or below the 𝑟1−𝛼/2 as Φ, i.e., 𝑏∈Φ if 𝑟(𝑏)≤𝑟1−𝛼/2.
+
+```{r}
+#get the bootstraps who's max rank is <= 97.5th %
+phi_boot_dfs <- boot_y_df %>% filter(boot %in% max_ranks_pct$boot)
+```
+
+5. For each coordinate j, order the bootstrap estimates in set Φ. The new rank of 𝜃̃𝑏𝑗in set Φ is denoted as 𝑟′(𝑏,𝑗).
+For each sample, find the minimum sample rank 𝑟′(𝑏)=min𝑗𝑟′(𝑏,𝑗) which is the smallest rank associated with the bth bootstrap sample in set Φ.
+
+```{r}
+#at each point along x, rank the remaining boostraps again, and this time find each bootstrap's minimum rank
+min_ranks <- boot_ranks(phi_boot_dfs,
+                    xvar="age",
+                    f="min")
+```
+
+6. Calculate the 𝛼/(2−𝛼) percentile the 𝑟′𝛼/(2−𝛼) of 𝑟′(𝑏).
+Note - i am a little confused that we seem to be calculating percentiles after dropping a certain number of bootstrap samples?
+
+```{r}
+#what's the 2.5% of minimum ranks
+min_ranks_pct <- filt_rank_pct(min_ranks,
+                        pct=0.025,
+                        keep="greater")
+```
+
+7. Denote the collection of bootstrap samples within Φ with the minimum sample rank above 𝑟′𝛼/(2−𝛼) as Ψ={𝑏∈Φ∣𝑟′(𝑏)≥𝑟′𝛼/(2−𝛼)}.
+```{r}
+#keep bootstraps with min ranks >= 2.5%
+final_boot_dfs <- phi_boot_dfs %>% filter(boot %in% min_ranks_pct$boot)
+```
+
+8. To construct the upper and lower limits for each coordinate, calculate 𝑡𝑗=max𝑏∈Ψ𝑟(𝑏,𝑗), and 𝑤𝑗=min𝑏∈Ψ𝑟(𝑏,𝑗).
+The simultaneous confidence interval upper limits are 𝜃̃(𝑡𝑗𝑗) and the lower limits are 𝜃̃(𝑤𝑗𝑗), 𝑗=1,…,𝑝, respectively.
+
+```{r}
+#at each point along x, get the max and min ranked bootstraps left
+ci_list <- final_boot_dfs %>%
+  #group at each x
+  arrange(age) %>%
+  mutate(x_bin = cut(age, breaks = 500)) %>%
+  group_by(x_bin) %>%
+  #calculate their y values
+  summarise(
+          lower = min(cent_0.5),
+          upper = max(cent_0.5),
+          age = mean(age),
+          .groups = "drop"
+        )
+
+#those are your CIs!
+```
+```{r}
+ggplot() +
+    geom_ribbon(data=pred, aes(ymin = lwrS, ymax = uprS, x=age), alpha = 0.2, fill = "red") +
+  geom_ribbon(data=ci_list, aes(ymin = lower, ymax = upper, x=age), alpha = 0.2, fill = "blue")
+```
+
+test coverage
+```{r}
+sims <- rmvn(N, mu = coef(gam), sig = Vb)
+fits <- Cg %*% t(sims)
+nrnd <- 30
+rnd <- sample(N, nrnd)
+stackFits <- stack(as.data.frame(fits[, rnd]))
+stackFits <- transform(stackFits, age = rep(newd$age, length(rnd)))
+
+ggplot() +
+  geom_ribbon(data=pred, aes(ymin = lwrS, ymax = uprS, x=age), alpha = 0.2, fill = "red") +
+  geom_ribbon(data=ci_list, aes(ymin = lower, ymax = upper, x=age), alpha = 0.2, fill = "blue") +
+  geom_path(lwd = 2) +
+    geom_path(data = stackFits, mapping = aes(y = values, x = age, group = ind),
+              alpha = 0.4, colour = "grey20") 
+```
+
+```{r}
+inCI <- function(x, upr, lwr) {
+    all(x >= lwr & x <= upr)
+} #doesn't work because different dimensions!
+
+fitsInSCI_gs <- apply(fits, 2L, inCI, upr = pred$uprS, lwr = pred$lwrS)
+fitsInSCI_new <- apply(fits, 2L, inCI, upr = ci_list$upper, lwr = ci_list$lower)
+
+sum(fitsInSCI_gs) / length(fitsInSCI_gs)
+sum(fitsInSCI_new) / length(fitsInSCI_new)
 ```
