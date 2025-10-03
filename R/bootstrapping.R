@@ -424,7 +424,7 @@ peak_ci <- function(boot_list,
     #50th centiles
     cent_boot_list <- lapply(boot_list,
                              centile_predict,
-                             sim_data_list = sim_data_list,
+                             sim_df_list = sim_data_list,
                              x_var=x_var,
                              desiredCentiles=0.5,
                              average_over = average_over)
