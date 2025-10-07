@@ -16,7 +16,7 @@ pacman::p_load(gamlss, dplyr, ggplot2, gamlssTools, mgcv, rsample, tidyr)
 # Gao et al
 
 playing around with code from https://github.com/xingaostat/Nonparametric-simultaneous-intervals/blob/main/heartjune212021_github.txt
-https://www.mdpi.com/2073-8994/13/7/1212#B5-symmetry-13-01212
+https://www.mdGapi.com/2073-8994/13/7/1212#B5-symmetry-13-01212
 
 ```{r}
 iris_model <- gamlss(formula = Sepal.Width ~ pb(Sepal.Length) + Species, sigma.formula = ~ Sepal.Length, data=iris)
