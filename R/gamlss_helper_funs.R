@@ -652,6 +652,7 @@ trajectory_diff <- function(gamlssModel,
                             sim_data_list = NULL,
                             moment=c("mu", "sigma"),
                             ...){
+  moment <- match.arg(moment)
   opt_args_list <- list(...)
   stopifnot(length(unique(df[[factor_var]])) == 2)
   L1 <- as.character(unique(df[[factor_var]])[1])

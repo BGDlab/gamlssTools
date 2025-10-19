@@ -455,7 +455,7 @@ simultaneous_pct_ci <- function(df, x_var, col_name, interval){
   ci_list <- final_boot_dfs %>%
     #group at each x
     arrange(!!sym(x_var)) %>%
-    mutate(x_bin = cut(!!sym(xvar), breaks = 500)) %>%
+    mutate(x_bin = cut(!!sym(x_var), breaks = 500)) %>%
     group_by(x_bin) %>%
     #calculate their y values
     summarise(
@@ -618,9 +618,9 @@ ci_diffs <- function(ci_list){
 
 #' Calculate Median Differences
 #' 
-#' Wrapper function for bootstrapping samples, refitting gamlss models, getting CIs, 
-#' testing significance of differences in two factor levels' trajectories, and calculating that
-#' difference
+#' Wrapper function for bootstrapping samples, refitting gamlss models, calculating differences in two 
+#' factor levels' trajectories, getting simultaneous CIs around that difference and finding 
+#' significant departures from zero
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe model was originally fit on
@@ -659,9 +659,11 @@ ci_diffs <- function(ci_list){
 #' diffs <- get_median_diffs(pheno_model, df, "Age", "Sex", B=10, stratify=TRUE, boot_group_var=c("Study", "Sex"))
 #' 
 #' #plot
-#' ggplot(diffs$median_diffs) +
-#'     geom_line(aes(x=Age, y=Female_minus_Male, alpha=sig_diff)) +
-#'     theme_linedraw()
+#' ggplot(diffs) +
+#'     geom_line(aes(x=Age, y=Male_minus_Female)) +
+#'     theme_linedraw() +
+#'     geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = Age),
+#'     alpha = 0.4)
 #'     
 #' @export
 get_median_diffs <- function(gamlssModel, 
@@ -676,10 +678,12 @@ get_median_diffs <- function(gamlssModel,
                              special_term = NULL,
                              moment=c("mu", "sigma"),
                              interval=.95,
+                             ci_type = c("pointwise", "sliding", "simultaneous"),
                              boot_list = NULL){
   #only works for 2-levels
   stopifnot(length(unique(df[[factor_var]])) == 2)
   moment <- match.arg(moment)
+  ci_type <- match.arg(ci_type)
   
   #bootstrap models
   if (is.null(boot_list)){
@@ -687,17 +691,37 @@ get_median_diffs <- function(gamlssModel,
     boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
   }
   
-  #get CIs
-  print(paste("calculating", interval, "CIs"))
-  ci_list <- gamlss_ci(boot_list, x_var, factor_var, special_term, moment, interval, sliding_window=FALSE, df)
+  #get differences
+  print(paste("calculating differences in", factor_var, "levels' trajectories"))
+  med_diff_list <- lapply(boot_list,
+                          trajectory_diff,
+                          df, #may need to update to bootstrapped sample
+                          x_var,
+                          factor_var,
+                          sim_data_list = sim_data_list,  #may need to update to bootstrapped sample
+                          special_term = special_term,
+                          moment = moment)
   
-  #find regions w significant diffs
-  print(paste("checking for significant differences in", factor_var, "levels"))
-  sig_diff_df <- ci_diffs(ci_list)
+  #merge across each bootstrap sample
+  med_diff_df <- bind_rows(med_diff_list, .id = "boot")
+  
+  #get CIs
+  col_name <- names(med_diff_df)[grep("minus", names(med_diff_df))]
+  print(paste("calculating", interval, "CIs for", col_name))
+  
+  if (ci_type == "pointwise"){
+    ci_df <- pointwise_pct_ci(med_diff_df, x_var, col_name, interval)
+  } else if (ci_type == "simultaneous"){
+    ci_df <- simultaneous_pct_ci(med_diff_df, x_var, col_name, interval)
+  }
+  
+  #find significant differences
+  ci_df_annot <- ci_df %>%
+    mutate(sig_diff = !(lower < 0 & upper > 0))
   
   #get trajectory differences on OG sample
-  print(paste("calculating differences in", factor_var, "levels' median trajectories"))
-  med_diff_df <- trajectory_diff(gamlssModel,
+  print(paste("calculating differences in", factor_var, "levels' trajectories"))
+  true_diff_df <- trajectory_diff(gamlssModel,
                                  df,
                                  x_var,
                                  factor_var,
@@ -705,21 +729,14 @@ get_median_diffs <- function(gamlssModel,
                                  special_term = special_term,
                                  moment = moment)
   
-  #wonky merge to account for rounding differences
-  stopifnot(range(sig_diff_df[[x_var]]) == range(med_diff_df[[x_var]]))
-  stopifnot(nrow(sig_diff_df) == nrow(med_diff_df))
+  #make sure that factor levels are being ordered consistently before merge
+  col_name2 <- names(true_diff_df)[grep("minus", names(true_diff_df))]
+  stopifnot(col_name == col_name2)
   
-  med_diff_df$sig_diff <- sig_diff_df$sig_diff
+  #merge
+  out_df <- full_join(true_diff_df, ci_df_annot) %>%
+    select(!x_bin)
   
-  out_list <- list(med_diff_df, ci_list)
-  
-  #name outputs depending on whether you're tracking 50th centile or sigma
-  if (moment == "mu"){
-    df_name <- "median_diffs"
-  } else if (moment == "sigma"){
-    df_name <- "sigma_diffs"
-  }
-  
-  names(out_list) <- c(df_name, "conf_int")
-  return(out_list)
+  stopifnot(sum(is.na(out_df)) == 0)
+  return(out_df)
 }
