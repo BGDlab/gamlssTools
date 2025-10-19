@@ -243,8 +243,9 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
 #' @param moment what moment to get CIs for. `mu` returns CIs around 50th centile, `sigma` returns predicted
 #' value of sigma (with link-function applied)
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
-#' @param sliding_window logical indicating whether to calculate CI at 500 point clusters along x or use sliding windows.
-#' Defaults to FALSE
+#' @param ci_type options for type of precentile CI to return. `pointwise` (default) calculates percentiles at 500 points
+#' along `x_var`. `sliding` does the same with a sliding window. `simultaneous` implements simultaneous CIs along `x_var`
+#' as described in Gao et al (doi: 10.3390/sym13071212).
 #' @param df true dataframe (optional, must pass this or `sim_data_list`)
 #' @param sim_data_list data simulated from true dataframe (optional, must pass this or `df`)
 #' @param average_over logical indicating whether to average predicted centiles across each level of `factor_var`.
@@ -259,20 +260,19 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
 #' 
 #' @export
 #' @importFrom purrr map transpose
-#' @importFrom zoo rollapply
-
 gamlss_ci <- function(boot_list,
                       x_var,
                       factor_var=NULL,
                       special_term=NULL,
                       moment=c("mu", "sigma"),
                       interval=.95,
-                      sliding_window = FALSE,
+                      ci_type = c("pointwise", "sliding", "simultaneous"),
                       df=NULL,
                       sim_data_list=NULL,
                       average_over=FALSE){
   stopifnot(interval > 0 && interval < 1)
   moment <- match.arg(moment)
+  ci_type <- match.arg(ci_type)
 
   #simulate SINGLE df to calculate centiles from
   ## using 1 df makes CI's calculated at the exact same x_var values, prevents weird spiking
@@ -293,7 +293,7 @@ gamlss_ci <- function(boot_list,
                              x_var = x_var,
                              sim_data_list = sim_data_list,
                              desiredCentiles = 0.5,
-                             average_over=average_over)
+                             average_over = average_over)
     
     #name of column to get ci's over
     col_name <- "cent_0.5"
@@ -315,12 +315,34 @@ gamlss_ci <- function(boot_list,
       print(paste("merging within", factor_var))
       pred_boot_list2 <- pred_boot_list %>%
         purrr:::transpose() %>%
-        purrr:::map(bind_rows)
+        purrr:::map(bind_rows, .id="boot")
       
       #check number of factor levels
       stopifnot(length(pred_boot_list2) == length(pred_boot_list[[1]]))
-
+      
   #method 1: sliding window
+  if (ci_type == "sliding"){
+    w <- 3*length(boot_list) #set width
+    ci_df_list <- lapply(pred_boot_list2, sliding_window_ci, x_var, w, interval)
+    
+    #method 2: group across xvar to get quantiles -> CIs
+    ## closer to centiles.boot() from gamlss.foreach
+  } else if (ci_type == "pointwise"){
+    ci_df_list <- lapply(pred_boot_list2, pointwise_pct_ci, x_var, col_name, interval)
+  } else if (ci_type == "simultaneous"){
+    ci_df_list <- lapply(pred_boot_list2, simultaneous_pct_ci, x_var, col_name, interval)
+  }
+
+  return(ci_df_list)
+}
+
+#' Sliding Window Confidence Intervals
+#' 
+#' Helper function for `gamlss_ci()`, `ci_type` = "sliding"
+#' 
+#' @export
+#' @importFrom zoo rollapply
+sliding_window_ci <- function(df, x_var, w, interval){
   #subfunction with help from chatgpt
   calc_ci_boot <- function(x, interval) {
     lower <- 0.5-(interval/2)
@@ -328,44 +350,120 @@ gamlss_ci <- function(boot_list,
     quantile(x, probs = c(lower, 0.5, upper), na.rm = TRUE)
   }
   
-  if (sliding_window == TRUE){
-    ci_df_list <- lapply(pred_boot_list2, function(df) {
-      df_out <- df %>%
-        arrange(!!sym(x_var)) %>%
-        zoo::rollapply(
-          width = 3*length(boot_list),
-          FUN = calc_ci_boot,
-          by = 5,
-          align = "center"
-        )
-      df_out <- df_out[,c(1:3,5)]
-      colnames(df_out) <- c("lower", "med", "upper", x_var)
-      # #add back x_var values
-      # df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
-      return(df_out)
-    })
-    
-    #method 2: group across xvar to get quantiles -> CIs
-    ## closer to centiles.boot() from gamlss.foreach
-  } else if (sliding_window == FALSE){
-    ci_df_list <- lapply(pred_boot_list2, function(df) {
-      df_out <- df %>%
-        arrange(!!sym(x_var)) %>%
-        #grouping x_var to deal with rounding
-        mutate(x_bin = cut(!!sym(x_var), breaks = 500)) %>%
-        group_by(x_bin) %>%
-        summarise(
-          lower := quantile(!!sym(col_name), probs = 0.5-(interval/2), na.rm = TRUE),
-          med := quantile(!!sym(col_name), probs = 0.5, na.rm = TRUE),
-          upper := quantile(!!sym(col_name), probs = 0.5+(interval/2), na.rm = TRUE),
-          !!sym(x_var) := mean(!!sym(x_var)),
-          .groups = "drop"
-        ) %>%
-        select(!x_bin)
-    })
-  }
+  df_out <- df %>%
+    arrange(!!sym(x_var)) %>%
+    zoo::rollapply(
+      width = w,
+      FUN = calc_ci_boot,
+      by = 5,
+      align = "center"
+    )
+  df_out <- df_out[,c(1:3,5)]
+  colnames(df_out) <- c("lower", "med", "upper", x_var)
+  # #add back x_var values
+  # df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
+  return(df_out)
+}
 
-  return(ci_df_list)
+#' Pointwise Confidence Intervals
+#' 
+#' Helper function for `gamlss_ci()`, `ci_type` = "pointwise" (default)
+#' 
+#' @export
+pointwise_pct_ci <- function(df, x_var, col_name, interval){
+  df_out <- df %>%
+    arrange(!!sym(x_var)) %>%
+    #grouping x_var to deal with rounding
+    mutate(x_bin = cut(!!sym(x_var), breaks = 500)) %>%
+    group_by(x_bin) %>%
+    summarise(
+      lower = quantile(!!sym(col_name), probs = 0.5-(interval/2), na.rm = TRUE),
+      med = quantile(!!sym(col_name), probs = 0.5, na.rm = TRUE),
+      upper = quantile(!!sym(col_name), probs = 0.5+(interval/2), na.rm = TRUE),
+      !!sym(x_var) := mean(!!sym(x_var)),
+      .groups = "drop"
+    ) %>%
+    select(!x_bin)
+}
+
+#' Simultaneous Confidence Intervals
+#' 
+#' Helper function for `gamlss_ci()`, `ci_type` = "simultaneous"
+#' Implements simultaneous CIs along `x_var` as described in Gao, Konietschke, & Li, 2021 (doi: 10.3390/sym13071212).
+#' 
+#' @export
+simultaneous_pct_ci <- function(df, x_var, col_name, interval){
+  
+  upper_pct <- 0.5+(interval/2)
+  lower_pct <- 0.5-(interval/2)
+  
+  #subfunction to get bootstrap rankings
+  boot_ranks <- function(df, xvar, f, col_name){
+    f <- match.fun(f)
+    
+    df %>%
+      #group at each x
+      arrange(!!sym(xvar)) %>%
+      mutate(x_bin = cut(!!sym(xvar), breaks = 500)) %>%
+      group_by(x_bin) %>%
+      #at each x, rank boot by cent_0.5 (or sigma, etc)
+      mutate(rank = frank(!!sym(col_name), ties.method = "random")) %>%
+      ungroup() %>%
+      #find each bootstrap's biggest rank across x
+      group_by(boot) %>%
+      summarise(
+        rank_stat = f(rank),
+        .groups="keep"
+      )
+  }
+  
+  #subfuction to filter by bootstrap percentile
+  filt_rank_pct <- function(df, pct, keep=c("less", "greater")){
+    stopifnot(pct > 0 && pct < 1)
+    cutoff <- quantile(df$rank_stat, probs=pct)
+    
+    pct_pretty <- pct*100
+    
+    keep <- match.arg(keep)
+    if(keep == "less"){
+      print(paste0("keep ranks less than or = ", cutoff, " (", pct_pretty, "%)"))
+      df <- df %>%
+        filter(rank_stat <= cutoff)
+    } else if(keep == "greater"){
+      print(paste0("keep ranks greater than or = ", cutoff, " (", pct_pretty, "%)"))
+      df <- df %>%
+        filter(rank_stat >= cutoff)
+    }
+    return(df)
+  }
+  
+  #rank bootstraps at each x
+  max_ranks <- boot_ranks(df, xvar= x_var, f="max", col_name=col_name)
+  
+  #filter by rank < upper_pct
+  max_ranks_pct <- filt_rank_pct(max_ranks, pct=upper_pct, keep="less")
+  phi <- df %>% filter(boot %in% max_ranks_pct$boot)
+  
+  #rank bootstraps again at each x
+  min_ranks <- boot_ranks(phi, xvar= x_var, f="min", col_name=col_name)
+  
+  #filter by ranks
+  min_ranks_pct <- filt_rank_pct(min_ranks, pct=lower_pct, keep="greater")
+  final_boot_dfs <- phi %>% filter(boot %in% min_ranks_pct$boot)
+  
+  #now get CIs as min and max remaining y values at each x
+  ci_list <- final_boot_dfs %>%
+    #group at each x
+    arrange(!!sym(x_var)) %>%
+    mutate(x_bin = cut(!!sym(x_var), breaks = 500)) %>%
+    group_by(x_bin) %>%
+    #calculate their y values
+    summarise(
+      lower = min(!!sym(col_name)),
+      upper = max(!!sym(col_name)),
+      !!sym(x_var) := mean(!!sym(x_var)),
+      .groups = "drop"
+    )
 }
 
 
@@ -424,7 +522,7 @@ peak_ci <- function(boot_list,
     #50th centiles
     cent_boot_list <- lapply(boot_list,
                              centile_predict,
-                             sim_data_list = sim_data_list,
+                             sim_df_list = sim_data_list,
                              x_var=x_var,
                              desiredCentiles=0.5,
                              average_over = average_over)
@@ -520,9 +618,9 @@ ci_diffs <- function(ci_list){
 
 #' Calculate Median Differences
 #' 
-#' Wrapper function for bootstrapping samples, refitting gamlss models, getting CIs, 
-#' testing significance of differences in two factor levels' trajectories, and calculating that
-#' difference
+#' Wrapper function for bootstrapping samples, refitting gamlss models, calculating differences in two 
+#' factor levels' trajectories, getting simultaneous CIs around that difference and finding 
+#' significant departures from zero
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe model was originally fit on
@@ -561,9 +659,11 @@ ci_diffs <- function(ci_list){
 #' diffs <- get_median_diffs(pheno_model, df, "Age", "Sex", B=10, stratify=TRUE, boot_group_var=c("Study", "Sex"))
 #' 
 #' #plot
-#' ggplot(diffs$median_diffs) +
-#'     geom_line(aes(x=Age, y=Female_minus_Male, alpha=sig_diff)) +
-#'     theme_linedraw()
+#' ggplot(diffs) +
+#'     geom_line(aes(x=Age, y=Male_minus_Female)) +
+#'     theme_linedraw() +
+#'     geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = Age),
+#'     alpha = 0.4)
 #'     
 #' @export
 get_median_diffs <- function(gamlssModel, 
@@ -578,10 +678,12 @@ get_median_diffs <- function(gamlssModel,
                              special_term = NULL,
                              moment=c("mu", "sigma"),
                              interval=.95,
+                             ci_type = c("pointwise", "sliding", "simultaneous"),
                              boot_list = NULL){
   #only works for 2-levels
   stopifnot(length(unique(df[[factor_var]])) == 2)
   moment <- match.arg(moment)
+  ci_type <- match.arg(ci_type)
   
   #bootstrap models
   if (is.null(boot_list)){
@@ -589,17 +691,37 @@ get_median_diffs <- function(gamlssModel,
     boot_list <- bootstrap_gamlss(gamlssModel, df, B, type, stratify, boot_group_var)
   }
   
-  #get CIs
-  print(paste("calculating", interval, "CIs"))
-  ci_list <- gamlss_ci(boot_list, x_var, factor_var, special_term, moment, interval, sliding_window=FALSE, df)
+  #get differences
+  print(paste("calculating differences in", factor_var, "levels' trajectories"))
+  med_diff_list <- lapply(boot_list,
+                          trajectory_diff,
+                          df, #may need to update to bootstrapped sample
+                          x_var,
+                          factor_var,
+                          sim_data_list = sim_data_list,  #may need to update to bootstrapped sample
+                          special_term = special_term,
+                          moment = moment)
   
-  #find regions w significant diffs
-  print(paste("checking for significant differences in", factor_var, "levels"))
-  sig_diff_df <- ci_diffs(ci_list)
+  #merge across each bootstrap sample
+  med_diff_df <- bind_rows(med_diff_list, .id = "boot")
+  
+  #get CIs
+  col_name <- names(med_diff_df)[grep("minus", names(med_diff_df))]
+  print(paste("calculating", interval, "CIs for", col_name))
+  
+  if (ci_type == "pointwise"){
+    ci_df <- pointwise_pct_ci(med_diff_df, x_var, col_name, interval)
+  } else if (ci_type == "simultaneous"){
+    ci_df <- simultaneous_pct_ci(med_diff_df, x_var, col_name, interval)
+  }
+  
+  #find significant differences
+  ci_df_annot <- ci_df %>%
+    mutate(sig_diff = !(lower < 0 & upper > 0))
   
   #get trajectory differences on OG sample
-  print(paste("calculating differences in", factor_var, "levels' median trajectories"))
-  med_diff_df <- trajectory_diff(gamlssModel,
+  print(paste("calculating differences in", factor_var, "levels' trajectories"))
+  true_diff_df <- trajectory_diff(gamlssModel,
                                  df,
                                  x_var,
                                  factor_var,
@@ -607,21 +729,14 @@ get_median_diffs <- function(gamlssModel,
                                  special_term = special_term,
                                  moment = moment)
   
-  #wonky merge to account for rounding differences
-  stopifnot(range(sig_diff_df[[x_var]]) == range(med_diff_df[[x_var]]))
-  stopifnot(nrow(sig_diff_df) == nrow(med_diff_df))
+  #make sure that factor levels are being ordered consistently before merge
+  col_name2 <- names(true_diff_df)[grep("minus", names(true_diff_df))]
+  stopifnot(col_name == col_name2)
   
-  med_diff_df$sig_diff <- sig_diff_df$sig_diff
+  #merge
+  out_df <- full_join(true_diff_df, ci_df_annot) %>%
+    select(!x_bin)
   
-  out_list <- list(med_diff_df, ci_list)
-  
-  #name outputs depending on whether you're tracking 50th centile or sigma
-  if (moment == "mu"){
-    df_name <- "median_diffs"
-  } else if (moment == "sigma"){
-    df_name <- "sigma_diffs"
-  }
-  
-  names(out_list) <- c(df_name, "conf_int")
-  return(out_list)
+  stopifnot(sum(is.na(out_df)) == 0)
+  return(out_df)
 }

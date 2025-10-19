@@ -243,7 +243,9 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
                              special_term = NULL,
                              boot_list = NULL,
                              average_over = FALSE,
+                             ci_type = c("pointwise", "sliding", "simultaneous"),
                              ...){
+  ci_type <- match.arg(ci_type)
   opt_args_list <- list(...)
     #bootstrap models
   if (is.null(boot_list)){
@@ -265,7 +267,7 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
                          special_term, 
                          moment = "mu", 
                          interval, 
-                         sliding_window = FALSE, 
+                         ci_type = ci_type,
                          sim_data_list = sim_data_list,
                          average_over = average_over)
     names(ci_list) <- sub("fanCentiles_", "", names(ci_list)) #drop prefix
