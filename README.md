@@ -2,6 +2,8 @@
 This package is intended to make interacting with and plotting GAMLSS models easier. It contains a number of auxiliary functions 
 that will be useful for those using [gamlss()](https://cran.r-project.org/web/packages/gamlss/index.html) or [gamlss2()](https://github.com/gamlss-dev/gamlss2)
 
+There are two vignettes that go over these functions in greater detail.
+
 ### Plotting
 
 `make_centile_fan()` is the primary plotting function. It's designed to cleanly visualize centile fans using ggplot. 
@@ -37,7 +39,7 @@ You can install the development version of gamlssTools from [GitHub](https://git
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("BGDlab/gamlssTools", build_vignettes = TRUE)
+devtools::install_github("BGDlab/gamlssTools", build_vignettes = TRUE) #set build_vignettes to FALSE to save time
 ```
 
 ## Usage
