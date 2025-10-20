@@ -641,6 +641,8 @@ gamlss_try <- function(...){
 #' @param sim_data_list list of simulated dataframes returned by `sim_data()`
 #' @param moment what moment to get differences for. `mu` calculates differences in 50th centile, 
 #' `sigma` calculates differences in predicted value of sigma (with link-function applied)
+#' @param factor_var_levels (optional) specify the order for factor levels. E.g., `factor_var_levels = c("A", "B")`
+#' would calculate the difference A - B. 
 #' 
 #' @returns dataframe
 #' 
@@ -651,12 +653,21 @@ trajectory_diff <- function(gamlssModel,
                             factor_var, 
                             sim_data_list = NULL,
                             moment=c("mu", "sigma"),
+                            factor_var_levels = NULL,
                             ...){
   moment <- match.arg(moment)
   opt_args_list <- list(...)
   stopifnot(length(unique(df[[factor_var]])) == 2)
-  L1 <- as.character(unique(df[[factor_var]])[1])
-  L2 <- as.character(unique(df[[factor_var]])[2])
+  
+  if (is.null(factor_var_levels)){
+    L1 <- as.character(unique(df[[factor_var]])[1])
+    L2 <- as.character(unique(df[[factor_var]])[2])
+  } else {
+    L1 <- factor_var_levels[[1]]
+    L2 <- factor_var_levels[[2]]
+  }
+  
+  
   
   ##get 50th percentiles##
   #simulate dataset(s) if not already supplied

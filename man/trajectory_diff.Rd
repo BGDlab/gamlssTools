@@ -11,6 +11,7 @@ trajectory_diff(
   factor_var,
   sim_data_list = NULL,
   moment = c("mu", "sigma"),
+  factor_var_levels = NULL,
   ...
 )
 }
@@ -27,6 +28,9 @@ trajectory_diff(
 
 \item{moment}{what moment to get differences for. \code{mu} calculates differences in 50th centile,
 \code{sigma} calculates differences in predicted value of sigma (with link-function applied)}
+
+\item{factor_var_levels}{(optional) specify the order for factor levels. E.g., \code{factor_var_levels = c("A", "B")}
+would calculate the difference A - B.}
 }
 \value{
 dataframe

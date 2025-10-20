@@ -17,8 +17,9 @@ get_median_diffs(
   special_term = NULL,
   moment = c("mu", "sigma"),
   interval = 0.95,
-  ci_type = c("pointwise", "sliding", "simultaneous"),
-  boot_list = NULL
+  ci_type = c("pointwise", "simultaneous"),
+  boot_list = NULL,
+  factor_var_levels = NULL
 )
 }
 \arguments{
@@ -54,10 +55,13 @@ value of sigma (with link-function applied)}
 \item{interval}{size of confidence interval to calculate. Defaults to 0.95, or 95\%}
 
 \item{ci_type}{options for type of precentile CI to return. \code{pointwise} (default) calculates percentiles at 500 points
-along \code{x_var}. \code{sliding} does the same with a sliding window. \code{simultaneous} implements simultaneous CIs along \code{x_var}
+along \code{x_var}. \code{simultaneous} implements simultaneous CIs along \code{x_var}
 as described in Gao et al (doi: 10.3390/sym13071212).}
 
 \item{boot_list}{output of gamlssTools::bootstrap_gamlss() (optional)}
+
+\item{factor_var_levels}{(optional) specify the order for factor levels. E.g., \code{factor_var_levels = c("A", "B")}
+would calculate the difference A - B.}
 }
 \value{
 list of dataframes containing differences in trajectories, as well as CIs calculated at each level of \code{factor_var}

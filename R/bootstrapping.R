@@ -244,7 +244,7 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
 #' value of sigma (with link-function applied)
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' @param ci_type options for type of precentile CI to return. `pointwise` (default) calculates percentiles at 500 points
-#' along `x_var`. `sliding` does the same with a sliding window. `simultaneous` implements simultaneous CIs along `x_var`
+#' along `x_var`. `simultaneous` implements simultaneous CIs along `x_var`
 #' as described in Gao et al (doi: 10.3390/sym13071212).
 #' @param df true dataframe (optional, must pass this or `sim_data_list`)
 #' @param sim_data_list data simulated from true dataframe (optional, must pass this or `df`)
@@ -266,7 +266,7 @@ gamlss_ci <- function(boot_list,
                       special_term=NULL,
                       moment=c("mu", "sigma"),
                       interval=.95,
-                      ci_type = c("pointwise", "sliding", "simultaneous"),
+                      ci_type = c("pointwise", "simultaneous"),
                       df=NULL,
                       sim_data_list=NULL,
                       average_over=FALSE){
@@ -320,49 +320,15 @@ gamlss_ci <- function(boot_list,
       #check number of factor levels
       stopifnot(length(pred_boot_list2) == length(pred_boot_list[[1]]))
       
-  #method 1: sliding window
-  if (ci_type == "sliding"){
-    w <- 3*length(boot_list) #set width
-    ci_df_list <- lapply(pred_boot_list2, sliding_window_ci, x_var, w, interval)
-    
-    #method 2: group across xvar to get quantiles -> CIs
+  # group across xvar to get quantiles -> CIs
     ## closer to centiles.boot() from gamlss.foreach
-  } else if (ci_type == "pointwise"){
+  if (ci_type == "pointwise"){
     ci_df_list <- lapply(pred_boot_list2, pointwise_pct_ci, x_var, col_name, interval)
   } else if (ci_type == "simultaneous"){
     ci_df_list <- lapply(pred_boot_list2, simultaneous_pct_ci, x_var, col_name, interval)
   }
 
   return(ci_df_list)
-}
-
-#' Sliding Window Confidence Intervals
-#' 
-#' Helper function for `gamlss_ci()`, `ci_type` = "sliding"
-#' 
-#' @export
-#' @importFrom zoo rollapply
-sliding_window_ci <- function(df, x_var, w, interval){
-  #subfunction with help from chatgpt
-  calc_ci_boot <- function(x, interval) {
-    lower <- 0.5-(interval/2)
-    upper <- 0.5+(interval/2)
-    quantile(x, probs = c(lower, 0.5, upper), na.rm = TRUE)
-  }
-  
-  df_out <- df %>%
-    arrange(!!sym(x_var)) %>%
-    zoo::rollapply(
-      width = w,
-      FUN = calc_ci_boot,
-      by = 5,
-      align = "center"
-    )
-  df_out <- df_out[,c(1:3,5)]
-  colnames(df_out) <- c("lower", "med", "upper", x_var)
-  # #add back x_var values
-  # df_out[[x_var]] <- sort(x_var_vec, decreasing=FALSE)
-  return(df_out)
 }
 
 #' Pointwise Confidence Intervals
@@ -643,8 +609,10 @@ ci_diffs <- function(ci_list){
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' @param boot_list output of gamlssTools::bootstrap_gamlss() (optional)
 #' @param ci_type options for type of precentile CI to return. `pointwise` (default) calculates percentiles at 500 points
-#' along `x_var`. `sliding` does the same with a sliding window. `simultaneous` implements simultaneous CIs along `x_var`
+#' along `x_var`. `simultaneous` implements simultaneous CIs along `x_var`
 #' as described in Gao et al (doi: 10.3390/sym13071212).
+#' @param factor_var_levels (optional) specify the order for factor levels. E.g., `factor_var_levels = c("A", "B")`
+#' would calculate the difference A - B.
 #' 
 #' @returns list of dataframes containing differences in trajectories, as well as CIs calculated at each level of `factor_var`
 #' 
@@ -682,8 +650,9 @@ get_median_diffs <- function(gamlssModel,
                              special_term = NULL,
                              moment=c("mu", "sigma"),
                              interval=.95,
-                             ci_type = c("pointwise", "sliding", "simultaneous"),
-                             boot_list = NULL){
+                             ci_type = c("pointwise", "simultaneous"),
+                             boot_list = NULL,
+                             factor_var_levels = NULL){
   #only works for 2-levels
   stopifnot(length(unique(df[[factor_var]])) == 2)
   moment <- match.arg(moment)
@@ -704,7 +673,8 @@ get_median_diffs <- function(gamlssModel,
                           factor_var,
                           sim_data_list = sim_data_list,  #may need to update to bootstrapped sample
                           special_term = special_term,
-                          moment = moment)
+                          moment = moment,
+                          factor_var_levels = factor_var_levels)
   
   #merge across each bootstrap sample
   med_diff_df <- bind_rows(med_diff_list, .id = "boot")
@@ -731,7 +701,8 @@ get_median_diffs <- function(gamlssModel,
                                  factor_var,
                                  sim_data_list = sim_data_list,
                                  special_term = special_term,
-                                 moment = moment)
+                                 moment = moment,
+                                 factor_var_levels = factor_var_levels)
   
   #make sure that factor levels are being ordered consistently before merge
   col_name2 <- names(true_diff_df)[grep("minus", names(true_diff_df))]

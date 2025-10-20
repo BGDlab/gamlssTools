@@ -243,7 +243,7 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
                              special_term = NULL,
                              boot_list = NULL,
                              average_over = FALSE,
-                             ci_type = c("pointwise", "sliding", "simultaneous"),
+                             ci_type = "simultaneous",
                              ...){
   ci_type <- match.arg(ci_type)
   opt_args_list <- list(...)
