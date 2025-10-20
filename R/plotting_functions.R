@@ -386,6 +386,9 @@ plot_sigma <- function(gamlssModel, df, x_var,
 #' @param special_term (optional) passed to `sim_data()`
 #' @param boot_list (optional) output of `bootstrap_gamlss()`
 #' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
+#' @param ci_type options for type of precentile CI to return. `pointwise` (default) calculates percentiles at 500 points
+#' along `x_var`. `sliding` does the same with a sliding window. `simultaneous` implements simultaneous CIs along `x_var`
+#' as described in Gao et al (doi: 10.3390/sym13071212).
 #' 
 #' @returns ggplot object
 #'
@@ -405,7 +408,9 @@ plot_sigma_cis <- function(gamlssModel, df, x_var,
                            special_term = NULL,
                            boot_list = NULL,
                            average_over = FALSE,
+                           ci_type = c("pointwise", "sliding", "simultaneous"),
                            ...){
+  ci_type <- match.arg(ci_type)
   opt_args_list <- list(...)
   #bootstrap models
   if (is.null(boot_list)){
@@ -427,7 +432,7 @@ plot_sigma_cis <- function(gamlssModel, df, x_var,
                        special_term, 
                        moment = "sigma", 
                        interval, 
-                       sliding_window = FALSE, 
+                       ci_type = ci_type, 
                        sim_data_list = sim_data_list,
                        average_over = average_over)
   

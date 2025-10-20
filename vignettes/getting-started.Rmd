@@ -75,7 +75,7 @@ iris_fan_plot +
   x ="Sepal Length", y = "Sepal Width",
   color = "Species", fill="Species") +
   theme_bw() +
-  paletteer::scale_color_paletteer_d("MoMAColors::Smith")
+  scale_colour_viridis_d()
 ```
 
 Note that these centile fan plots are conditional upon any other covariates in your model (i.e., any covariates beyond those shown in the x-axis or via color are held at their respective means/modes). This is very useful for visualizing a trend across age, say, without being bogged down by nuisance effects, like batch or site effects This does sometimes lead to a mismatch with the individual data points and centile lines, however, as the points still reflect differences across site that are controlled for in the centile lines. 

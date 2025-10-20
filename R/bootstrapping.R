@@ -522,7 +522,7 @@ peak_ci <- function(boot_list,
     #50th centiles
     cent_boot_list <- lapply(boot_list,
                              centile_predict,
-                             sim_df_list = sim_data_list,
+                             sim_data_list = sim_data_list,
                              x_var=x_var,
                              desiredCentiles=0.5,
                              average_over = average_over)
@@ -642,6 +642,9 @@ ci_diffs <- function(ci_list){
 #' value of sigma (with link-function applied)
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' @param boot_list output of gamlssTools::bootstrap_gamlss() (optional)
+#' @param ci_type options for type of precentile CI to return. `pointwise` (default) calculates percentiles at 500 points
+#' along `x_var`. `sliding` does the same with a sliding window. `simultaneous` implements simultaneous CIs along `x_var`
+#' as described in Gao et al (doi: 10.3390/sym13071212).
 #' 
 #' @returns list of dataframes containing differences in trajectories, as well as CIs calculated at each level of `factor_var`
 #' 
@@ -659,8 +662,9 @@ ci_diffs <- function(ci_list){
 #' diffs <- get_median_diffs(pheno_model, df, "Age", "Sex", B=10, stratify=TRUE, boot_group_var=c("Study", "Sex"))
 #' 
 #' #plot
+#' col_name <- names(diffs)[grep("minus", names(diffs))]
 #' ggplot(diffs) +
-#'     geom_line(aes(x=Age, y=Male_minus_Female)) +
+#'     geom_line(aes(x=Age, y=!!sym(col_name))) +
 #'     theme_linedraw() +
 #'     geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = Age),
 #'     alpha = 0.4)
@@ -735,7 +739,7 @@ get_median_diffs <- function(gamlssModel,
   
   #merge
   out_df <- full_join(true_diff_df, ci_df_annot) %>%
-    select(!x_bin)
+    select(-any_of(c("x_bin")))
   
   stopifnot(sum(is.na(out_df)) == 0)
   return(out_df)

@@ -18,6 +18,7 @@ plot_sigma_cis(
   special_term = NULL,
   boot_list = NULL,
   average_over = FALSE,
+  ci_type = c("pointwise", "sliding", "simultaneous"),
   ...
 )
 }
@@ -55,6 +56,10 @@ stratification within multiple groups e.g. \code{group_var=c(sex, study)}}
 \item{boot_list}{(optional) output of \code{bootstrap_gamlss()}}
 
 \item{average_over}{logical indicating whether to average predicted centiles across each level of \code{color_var}.}
+
+\item{ci_type}{options for type of precentile CI to return. \code{pointwise} (default) calculates percentiles at 500 points
+along \code{x_var}. \code{sliding} does the same with a sliding window. \code{simultaneous} implements simultaneous CIs along \code{x_var}
+as described in Gao et al (doi: 10.3390/sym13071212).}
 }
 \value{
 ggplot object

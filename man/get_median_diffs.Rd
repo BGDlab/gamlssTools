@@ -17,6 +17,7 @@ get_median_diffs(
   special_term = NULL,
   moment = c("mu", "sigma"),
   interval = 0.95,
+  ci_type = c("pointwise", "sliding", "simultaneous"),
   boot_list = NULL
 )
 }
@@ -52,15 +53,19 @@ value of sigma (with link-function applied)}
 
 \item{interval}{size of confidence interval to calculate. Defaults to 0.95, or 95\%}
 
+\item{ci_type}{options for type of precentile CI to return. \code{pointwise} (default) calculates percentiles at 500 points
+along \code{x_var}. \code{sliding} does the same with a sliding window. \code{simultaneous} implements simultaneous CIs along \code{x_var}
+as described in Gao et al (doi: 10.3390/sym13071212).}
+
 \item{boot_list}{output of gamlssTools::bootstrap_gamlss() (optional)}
 }
 \value{
 list of dataframes containing differences in trajectories, as well as CIs calculated at each level of \code{factor_var}
 }
 \description{
-Wrapper function for bootstrapping samples, refitting gamlss models, getting CIs,
-testing significance of differences in two factor levels' trajectories, and calculating that
-difference
+Wrapper function for bootstrapping samples, refitting gamlss models, calculating differences in two
+factor levels' trajectories, getting simultaneous CIs around that difference and finding
+significant departures from zero
 }
 \examples{
 df <- data.frame(
@@ -76,8 +81,11 @@ pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.for
 diffs <- get_median_diffs(pheno_model, df, "Age", "Sex", B=10, stratify=TRUE, boot_group_var=c("Study", "Sex"))
 
 #plot
-ggplot(diffs$median_diffs) +
-    geom_line(aes(x=Age, y=Female_minus_Male, alpha=sig_diff)) +
-    theme_linedraw()
+col_name <- names(diffs)[grep("minus", names(diffs))]
+ggplot(diffs) +
+    geom_line(aes(x=Age, y=!!sym(col_name))) +
+    theme_linedraw() +
+    geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = Age),
+    alpha = 0.4)
     
 }

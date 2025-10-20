@@ -19,6 +19,7 @@ plot_centile_cis(
   special_term = NULL,
   boot_list = NULL,
   average_over = FALSE,
+  ci_type = c("pointwise", "sliding", "simultaneous"),
   ...
 )
 }

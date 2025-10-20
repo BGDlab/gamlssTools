@@ -10,7 +10,7 @@ Description: This is a support package for the gamlss package. It makes informat
 License: CC BY 4.0
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2.9000
+RoxygenNote: 7.3.3
 Depends: 
     R (>= 3.5.0),
     ggplot2,
@@ -33,6 +33,9 @@ Imports:
 	boot,
 	pracma,
 	purrr,
-	zoo
+	zoo,
+	ggrepel,
+	scales,
+	gamlss2
 Config/testthat/edition: 3
 VignetteBuilder: knitr

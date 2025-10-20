@@ -11,7 +11,7 @@ gamlss_ci(
   special_term = NULL,
   moment = c("mu", "sigma"),
   interval = 0.95,
-  sliding_window = FALSE,
+  ci_type = c("pointwise", "sliding", "simultaneous"),
   df = NULL,
   sim_data_list = NULL,
   average_over = FALSE
@@ -31,8 +31,9 @@ value of sigma (with link-function applied)}
 
 \item{interval}{size of confidence interval to calculate. Defaults to 0.95, or 95\%}
 
-\item{sliding_window}{logical indicating whether to calculate CI at 500 point clusters along x or use sliding windows.
-Defaults to FALSE}
+\item{ci_type}{options for type of precentile CI to return. \code{pointwise} (default) calculates percentiles at 500 points
+along \code{x_var}. \code{sliding} does the same with a sliding window. \code{simultaneous} implements simultaneous CIs along \code{x_var}
+as described in Gao et al (doi: 10.3390/sym13071212).}
 
 \item{df}{true dataframe (optional, must pass this or \code{sim_data_list})}
 
