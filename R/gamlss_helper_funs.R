@@ -566,6 +566,25 @@ trunc_coverage <- function(df,
 #' @export
 gamlss_try <- function(...){
   
+  #adding subfun to throw errors if model=NULL or doesn't converge
+  safe_gamlss <- function(...) {
+    mod <- gamlss(...)
+    
+    # Check for NULL coefficients
+    null_mu <- is.null(coef(mod, what = "mu"))
+    null_sigma <- is.null(coef(mod, what = "sigma"))
+
+    if (null_mu && null_sigma) {
+      stop("Model fit failed: coefficients are NULL")
+    }
+    
+    if (mod$converged==FALSE) {
+      stop("Model did not converge")
+    }
+
+    return(mod)
+  }
+  
   #parse gamlss parameters
   params<-list(...)
   for (name in names(params) ) {
@@ -573,10 +592,10 @@ gamlss_try <- function(...){
   }
   
   result <- tryCatch({
-    do.call(gamlss, as.list(params))
+    do.call(safe_gamlss, as.list(params))
   } , warning = function(w) {
     message("warning")
-    do.call(gamlss, as.list(params))
+    do.call(safe_gamlss, as.list(params))
     
   } , error = function(e) {
     message(e$message, ", trying method=CG()")
@@ -602,18 +621,18 @@ gamlss_try <- function(...){
     params$tau.step <- 0.00000000001
     
     result <- tryCatch({
-      do.call(gamlss, as.list(params))
+      do.call(safe_gamlss, as.list(params))
       
     } , warning = function(w) {
       message("warning")
-      do.call(gamlss, as.list(params))
+      do.call(safe_gamlss, as.list(params))
       
     } , error = function(e) {
       message(e$message, ", trying method=CG()")
       tryCatch({
         params_tmp <- params
         params_tmp$method <- "CG()"
-        do.call(gamlss, as.list(params_tmp))
+        do.call(safe_gamlss, as.list(params_tmp))
         
         #if CG also fails, return NULL
       }, error = function(e2) {
