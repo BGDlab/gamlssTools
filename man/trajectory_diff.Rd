@@ -39,5 +39,5 @@ dataframe
 Calculate differences in 50th centile or sigma trajectories between 2 factor levels
 }
 \details{
-To test significance, see gamlssTools::ci_diffs()
+To test significance, see \code{\link[=ci_diffs]{ci_diffs()}}
 }

@@ -545,14 +545,14 @@ trunc_coverage <- function(df,
 
 #' gamlss try
 #' 
-#' Try-catch fitting gamlss with various methods, return NULL if failed
+#' Try-catch fitting [gamlss::gamlss()] with various methods, return NULL if failed
 #' 
 #' Takes any *named* gamlss model parameters. Tries quicker, default methods
 #' (e.g. mu.step=1, method=RS()) before resorting to slower methods as necessary to fit. Returns NULL model
 #' instead of giving errors, which is also useful when you need the script to continue
 #' despite nonconvergence of some models.
 #' 
-#' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in `summary()`.
+#' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in [gamlss::summary()].
 #' 
 #' @returns gamlss model object
 #' 
@@ -566,25 +566,6 @@ trunc_coverage <- function(df,
 #' @export
 gamlss_try <- function(...){
   
-  #adding subfun to throw errors if model=NULL or doesn't converge
-  safe_gamlss <- function(...) {
-    mod <- gamlss(...)
-    
-    # Check for NULL coefficients
-    null_mu <- is.null(coef(mod, what = "mu"))
-    null_sigma <- is.null(coef(mod, what = "sigma"))
-
-    if (null_mu && null_sigma) {
-      stop("Model fit failed: coefficients are NULL")
-    }
-    
-    if (mod$converged==FALSE) {
-      stop("Model did not converge")
-    }
-
-    return(mod)
-  }
-  
   #parse gamlss parameters
   params<-list(...)
   for (name in names(params) ) {
@@ -594,15 +575,18 @@ gamlss_try <- function(...){
   result <- tryCatch({
     do.call(safe_gamlss, as.list(params))
   } , warning = function(w) {
-    message("warning")
+    message(w$message)
+    if(grepl("not yet converged", w$message)){
+      #if not converged, try with higher n.cyc
+      params$control$n.cyc <- max(iris_model$control$n.cycy*2, 200)
+    }
     do.call(safe_gamlss, as.list(params))
-    
   } , error = function(e) {
     message(e$message, ", trying method=CG()")
     tryCatch({
       params_tmp <- params
       params_tmp$method <- "CG()"
-      do.call(gamlss, as.list(params_tmp))
+      do.call(safe_gamlss, as.list(params_tmp))
       
       #if CG also fails, return NULL
     }, error = function(e2) {
@@ -624,7 +608,7 @@ gamlss_try <- function(...){
       do.call(safe_gamlss, as.list(params))
       
     } , warning = function(w) {
-      message("warning")
+      message(w$message)
       do.call(safe_gamlss, as.list(params))
       
     } , error = function(e) {
@@ -647,11 +631,48 @@ gamlss_try <- function(...){
   return(result)
 }
 
+#' safe gamlss
+#' 
+#' gamlss() with more error handling
+#' 
+#' Fits model using [gamlss::gamlss()] and throws an error if model fails to converge or is null
+#' (instead of the )
+#' 
+#' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in [gamlss::summary()].
+#' 
+#' @returns gamlss model object
+#' 
+#' @examples
+#' iris_model <- gamlss_try(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' 
+#' #make sure you name any parameters you pass! unnamed formula param will fail:
+#' \dontrun{
+#' iris_model <- gamlss_try(Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' }
+#' @export
+safe_gamlss <- function(...) {
+  mod <- gamlss(...)
+  
+  # Check for NULL coefficients
+  null_mu <- is.null(coef(mod, what = "mu"))
+  null_sigma <- is.null(coef(mod, what = "sigma"))
+  
+  if (null_mu && null_sigma) {
+    stop("Model fit failed: coefficients are NULL")
+  }
+  
+  if (mod$converged==FALSE) {
+    stop("Model did not converge")
+  }
+  
+  return(mod)
+}
+
 #' Get Diffs in Trajectories
 #' 
 #' Calculate differences in 50th centile or sigma trajectories between 2 factor levels
 #' 
-#' To test significance, see gamlssTools::ci_diffs()
+#' To test significance, see [gamlssTools::ci_diffs()]
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe model was originally fit on
