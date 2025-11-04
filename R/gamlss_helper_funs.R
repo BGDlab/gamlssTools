@@ -572,32 +572,66 @@ gamlss_try <- function(...){
     assign(name, params[[name]])
   }
   
+  warn_msg <- NULL
+  err_msg <- NULL
+  
   result <- tryCatch({
     do.call(safe_gamlss, as.list(params))
   } , warning = function(w) {
     message(w$message)
-    if(grepl("not yet converged", w$message)){
-      #if not converged, try with higher n.cyc
-      params$control$n.cyc <- max(iris_model$control$n.cycy*2, 200)
-    }
-    do.call(safe_gamlss, as.list(params))
+    warn_msg <<- w$message
   } , error = function(e) {
-    message(e$message, ", trying method=CG()")
-    tryCatch({
+    message(e$message)
+    err_msg <<- e$message
+  } , finally = {
+    message("...")
+    NULL
+  } )
+  
+  #check for nonconvergence warnings and add n.cyc if needed
+  if (!is.null(err_msg) && grepl("converge", err_msg)){
+    params_tmp <- params
+    #if not converged, try with higher n.cyc
+    params_tmp$control$n.cyc <- max(params$control$n.cycy*2, 200)
+    params_tmp$call$start.from <- result
+    
+    #another round of trycatch
+    result <- tryCatch({
+      do.call(safe_gamlss, as.list(params_tmp))
+    } , warning = function(w) {
+      message(w$message)
+      warn_msg <<- w$message
+    } , error = function(e) {
+      message(e$message, ", trying method=CG()")
+      tryCatch({
+        params_tmp$method <- "CG()"
+        do.call(safe_gamlss, as.list(params_tmp))
+        
+        #if CG also fails, return NULL
+      }, error = function(e2) {
+        message(e2$message)
+        NULL
+      })
+    } , finally = {
+      message("...")
+    })
+  
+  #for all other errors, try CG() from the beginning
+  } else if (is.null(result)){
+    message(err_msg, ", trying method=CG()")
+    result <- tryCatch({
       params_tmp <- params
       params_tmp$method <- "CG()"
       do.call(safe_gamlss, as.list(params_tmp))
       
-      #if CG also fails, return NULL
-    }, error = function(e2) {
-      message(e2$message, ", returning NULL")
-      return(NULL)
-    })
-  } , finally = {
-    message("...")
-  } )
-  
-  #if needed, try again with tiny steps
+    #if also fails, return NULL
+      }, error = function(e2) {
+        message(e2$message)
+        NULL
+      })
+  }
+
+  #last attempt if needed, try again with tiny steps
   if(is.null(result)){
     params$mu.step <- 0.01
     params$sigma.step <- 0.01
@@ -625,6 +659,7 @@ gamlss_try <- function(...){
       })
     } , finally = {
       message("done")
+      return(NULL)
     } )
   }
   
@@ -651,7 +686,24 @@ gamlss_try <- function(...){
 #' }
 #' @export
 safe_gamlss <- function(...) {
-  mod <- gamlss(...)
+  warn_msg <- NULL
+  mod <- withCallingHandlers({
+    gamlss(...)
+  }, warning = function(w) {
+    # Capture the warning message
+    warn_msg <<- w$message
+    
+    # Example condition: promote warnings containing "Error" or convergence issues
+    if (grepl("Error", w$message, ignore.case = TRUE) ||
+        grepl("converge", w$message, ignore.case = TRUE)) {
+      # Turn this warning into an error
+      stop(simpleError(w$message))
+    }
+  },
+  error = function(e) {
+    stop(e)  # propagate any real errors
+  }
+  )
   
   # Check for NULL coefficients
   null_mu <- is.null(coef(mod, what = "mu"))
@@ -661,8 +713,9 @@ safe_gamlss <- function(...) {
     stop("Model fit failed: coefficients are NULL")
   }
   
+  #backup check
   if (mod$converged==FALSE) {
-    stop("Model did not converge")
+    stop("Model did not converge:", warn_msg)
   }
   
   return(mod)
@@ -706,8 +759,6 @@ trajectory_diff <- function(gamlssModel,
     L1 <- factor_var_levels[[1]]
     L2 <- factor_var_levels[[2]]
   }
-  
-  
   
   ##get 50th percentiles##
   #simulate dataset(s) if not already supplied
