@@ -451,7 +451,6 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     }
   } else {
     merged_centile_df <- line_dfs[[1]]
-    
     #change average_over to TRUE to easily skip color selection
     average_over <- TRUE
   }
@@ -523,12 +522,17 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                        color = !!sym(color_var), 
                        fill = !!sym(color_var)), alpha=0.3)
       
-    } else if (show_points == TRUE & !is.null(color_manual)){
+    } else if (show_points == TRUE){
       base_plot_obj <- ggplot() +
         geom_point(data = point_df,
                    mapping = aes(y = !!sym(pheno), x = !!sym(x_var)), 
                    color=color_manual, 
                    fill=color_manual, alpha=0.3)
+    } else if (show_points == TRUE & is.null(color_manual) & is.null(color_var)){
+      base_plot_obj <- ggplot() +
+        geom_point(data = point_df,
+                   mapping = aes(y = !!sym(pheno), x = !!sym(x_var)), 
+                   alpha=0.3)
     } else if (show_points==FALSE){
       base_plot_obj <- ggplot()
     }
@@ -542,7 +546,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                       color = !!sym(color_var),
                       linewidth = id.vars))
         
-    } else {
+    } else if (!is.null(color_var)){
       base_plot_obj <- base_plot_obj +
         geom_line(data = long_centile_df,
                   mapping = aes(x = !!sym(x_var), y = values,
@@ -550,6 +554,14 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                       linewidth = id.vars),
                   color=color_manual)
       
+    } else if (is.null(color_var)){
+      # Fallback when color_var is NULL but average_over is FALSE (shouldn't happen, but handle it)
+      base_plot_obj <- base_plot_obj +
+        geom_line(data = long_centile_df,
+                  mapping = aes(x = !!sym(x_var), y = values,
+                      group = id.vars,
+                      linewidth = id.vars),
+                  color = if(!is.null(color_manual)) color_manual else "black")
     }
     
   } else if (average_over == TRUE){
@@ -594,11 +606,19 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     #find farthest point on x axis for each centile
     x_var_s <- sym(x_var)
 
-    data_end <- long_centile_df %>%
-      dplyr::group_by(!!sym(color_var), id.vars) %>%
-      dplyr::filter(!!x_var_s == max(!!x_var_s, na.rm=TRUE)) %>%
-      ungroup() %>%
-      mutate(id.vars = as.numeric(gsub("cent_|deriv_", "", id.vars))) #make centile labels prettier
+    if (!is.null(color_var)){
+      data_end <- long_centile_df %>%
+        dplyr::group_by(!!sym(color_var), id.vars) %>%
+        dplyr::filter(!!x_var_s == max(!!x_var_s, na.rm=TRUE)) %>%
+        ungroup() %>%
+        mutate(id.vars = as.numeric(gsub("cent_|deriv_", "", id.vars))) #make centile labels prettier
+    } else {
+      data_end <- long_centile_df %>%
+        dplyr::group_by(id.vars) %>%
+        dplyr::filter(!!x_var_s == max(!!x_var_s, na.rm=TRUE)) %>%
+        ungroup() %>%
+        mutate(id.vars = as.numeric(gsub("cent_|deriv_", "", id.vars))) #make centile labels prettier
+    }
 
     base_plot_obj <- base_plot_obj +
       ggrepel::geom_text_repel(aes(x=.data[[x_var_s]], 
@@ -626,12 +646,20 @@ make_centile_fan <- function(gamlssModel, df, x_var,
       merged_peak_df[[x_var]] <- unlist(lapply(merged_peak_df[[x_var]], x_scale))
     }
     
-    base_plot_obj <- base_plot_obj +
-      geom_point(aes(x=.data[[x_var]], 
-                     y=y,
-                     fill=.data[[color_var]]),
-                 data=merged_peak_df,
-                 size=3)
+    if (!is.null(color_var)){
+      base_plot_obj <- base_plot_obj +
+        geom_point(aes(x=.data[[x_var]], 
+                       y=y,
+                       fill=.data[[color_var]]),
+                   data=merged_peak_df,
+                   size=3)
+    } else {
+      base_plot_obj <- base_plot_obj +
+        geom_point(aes(x=.data[[x_var]], 
+                       y=y),
+                   data=merged_peak_df,
+                   size=3)
+    }
   }
 
   #format x-axis
