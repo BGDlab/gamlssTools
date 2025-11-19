@@ -678,17 +678,15 @@ gamlss_try <- function(...){
 #' @returns gamlss model object
 #' 
 #' @examples
-#' iris_model <- gamlss_try(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' iris_model <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
 #' 
-#' #make sure you name any parameters you pass! unnamed formula param will fail:
-#' \dontrun{
-#' iris_model <- gamlss_try(Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
-#' }
 #' @export
 safe_gamlss <- function(...) {
   warn_msg <- NULL
+  args <- list(...)
+  
   mod <- withCallingHandlers({
-    gamlss(...)
+    do.call(gamlss, args)
   }, warning = function(w) {
     # Capture the warning message
     warn_msg <<- w$message
