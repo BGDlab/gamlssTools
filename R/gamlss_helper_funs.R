@@ -470,22 +470,22 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
 #'
 #'@examples
 #'outliers <- data.frame(
-#'Sepal.Length = sample(iris$Sepal.Length, 3),  # Randomly chosen normal values
-#'Sepal.Width = c(11, 8, 6),  
-#'Petal.Length = c(10, 12, 14),  # Extreme values
-#'Petal.Width = sample(iris$Petal.Width, 3),  
-#'Species = factor(c("setosa", "versicolor", "virginica"))  # Random species
+#' Sepal.Length = sample(iris$Sepal.Length, 3),  # Randomly chosen normal values
+#' Sepal.Width = c(11, 8, 6),  
+#' Petal.Length = c(10, 12, 14),  # Extreme values
+#' Petal.Width = sample(iris$Petal.Width, 3),  
+#' Species = factor(c("setosa", "versicolor", "virginica"))  # Random species
 #')
 #'
 #'# Combine with the original dataset
 #'iris_outlier <- rbind(iris, outliers)
 #'
-#'iris_clean <- trunc_coverage(iris_outlier, vars=c("Sepal.Width", "Petal.Length"))
+#'iris_clean <- trunc_coverage(iris_outlier, vars=c("Sepal.Width", "Petal.Length"), breaks=10)
 #'
 #'@export
-trunc_coverage <- function(df, 
+trunc_coverage <- function(df,
                         vars, 
-                        breaks = 20, 
+                        breaks = 20,
                         n_min = 5,
                         max_loops = 10) {
   n_loops <- 0
@@ -495,10 +495,10 @@ trunc_coverage <- function(df,
     mutate(across(all_of(vars), ~cut(.x, breaks = breaks, labels = FALSE), .names = "group_{.col}"))
   
   while (TRUE) {
-    # Check coverage for all varsiables
-    group_counts <- sapply(vars, function(vars) {
-      first_grp <- sum(df[[paste0("group_", vars)]] == 1, na.rm = TRUE)
-      last_grp <- sum(df[[paste0("group_", vars)]] == breaks, na.rm = TRUE)
+    # Check coverage for all variables
+    group_counts <- sapply(vars, function(var) {
+      first_grp <- sum(df[[paste0("group_", var)]] == 1, na.rm = TRUE)
+      last_grp <- sum(df[[paste0("group_", var)]] == breaks, na.rm = TRUE)
       return(c(first_grp, last_grp))
     })
     
@@ -514,17 +514,33 @@ trunc_coverage <- function(df,
     } 
     stopifnot(n_loops <= max_loops)
     
-    for (vars in to_remove) {
-      first_grp <- group_counts[1, vars]
-      last_grp <- group_counts[2, vars]
+    for (var in to_remove) {
+      grp_var <- paste0("group_", var)
+      first_grp <- group_counts[1, var]
+      last_grp <- group_counts[2, var]
       
       if (first_grp < n_min) {
-        print(paste("Removing first group for", vars))
-        df <- df %>% filter(.data[[paste0("group_", vars)]] != 1)
+        print(paste("Removing first group for", var))
+        drop_n <- ceiling(unname(first_grp)/2)
+        df <- df %>% 
+          arrange(!!sym(var)) %>%
+          mutate(id = row_number()) %>%
+          #keep all but drop_n rows or other group vars
+          filter(!(id < drop_n & !!sym(grp_var) == 1)) %>%
+          select(!id)
       }
+      
       if (last_grp < n_min) {
-        print(paste("Removing last group for", vars))
-        df <- df %>% filter(.data[[paste0("group_", vars)]] != breaks)
+        print(paste("Removing last group for", var))
+        drop_n <- ceiling(unname(last_grp)/2)
+        last_row <- nrow(df) - drop_n
+        df <- df %>% 
+          arrange(!!sym(var)) %>%
+          mutate(id = row_number()) %>%
+          #keep all but drop_n rows or other group vars
+          filter(!(id > last_row & !!sym(grp_var) == breaks)) %>%
+          select(!id)
+        
       }
     }
     

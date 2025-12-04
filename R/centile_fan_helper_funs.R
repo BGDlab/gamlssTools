@@ -374,7 +374,10 @@ get_derivatives <- function(cent_df){
   
 }
 
-#helper fun for formatting x-axes with common ticks/labels
+#' Format X-Axis
+#' 
+#' Mostly internal/helper fun for formatting x-axis in centile fan plots
+#' @export
 format_x_axis <- function(x_axis = c("custom", 
                                      "lifespan", 
                                      "log_lifespan", 
