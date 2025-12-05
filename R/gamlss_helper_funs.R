@@ -526,7 +526,7 @@ trunc_coverage <- function(df,
           arrange(!!sym(var)) %>%
           mutate(id = row_number()) %>%
           #keep all but drop_n rows or other group vars
-          filter(!(id < drop_n & !!sym(grp_var) == 1)) %>%
+          filter(!(id <= drop_n & !!sym(grp_var) == 1)) %>%
           select(!id)
       }
       
@@ -538,7 +538,7 @@ trunc_coverage <- function(df,
           arrange(!!sym(var)) %>%
           mutate(id = row_number()) %>%
           #keep all but drop_n rows or other group vars
-          filter(!(id > last_row & !!sym(grp_var) == breaks)) %>%
+          filter(!(id >= last_row & !!sym(grp_var) == breaks)) %>%
           select(!id)
         
       }
