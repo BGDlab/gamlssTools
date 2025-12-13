@@ -22,6 +22,7 @@
 #' @param gamlssModel gamlss model object that will be used to subset the columns of df such that
 #' only the model's covariates are simulated (optional)
 #' @param special_term formula defining any terms that should be calculated separately (e.g. interaction terms)
+#' @param x_range x-values for which values are estimated (e.g. seq(0, 10)). Default is 500 datapoints across range of x axis.
 #' 
 #' @returns list of dataframes of simulated data, one for each level of `color_var`
 #' 
@@ -40,7 +41,7 @@
 #' sim_data(iris2, "Sepal.Length", "Species", iris_model2, special_term="SL_int = Sepal.Length * Species")
 #' 
 #' @export
-sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL){
+sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL, x_range = NULL){
   
   #make sure variable names are correct
   stopifnot(x_var %in% names(df))
@@ -55,13 +56,24 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
     df <- subset(df, select = names(df) %in% predictor_list)
   }
   
-  # generate 500 datapoints across the range of the x axis
+  # get datapoints across x-axis
   x_min <- min(df[[x_var]])
   x_max <- max(df[[x_var]])
   
-  print(paste("simulating", x_var, "from", x_min, "to", x_max))
-  
-  x_range <- seq(x_min, x_max, length.out=500)
+  if (is.null(x_range)) {
+    print(paste("simulating", x_var, "from", x_min, "to", x_max))
+    x_range <- seq(x_min, x_max, length.out=500)
+  } else {
+    if (x_min > min(x_range)) {
+      warning("min(x_range) < min(df[[x_var]]. Truncating x_range to match data.")
+      x_range <- x_range[x_range > x_min]
+    }
+    if (x_max < max(x_range)) {
+      warning("max(x_range) > max(df[[x_var]]. Truncating x_range to match data.")
+      x_range <- x_range[x_range < x_max]
+    }
+    print(paste("simulating", x_var, "from", min(x_range), "to", max(x_range)))
+  }
   
   # get number of rows needed
   n_rows <- length(x_range)
