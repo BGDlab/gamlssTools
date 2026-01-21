@@ -89,7 +89,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
           } else if (col == x_var) {
             new_df[[col]] <- x_range
           } else if (is.numeric(df[[col]])) {
-            mean_value <- mean(df[[col]])
+            mean_value <- mean(df[[col]], na.rm=T)
             new_df[[col]] <- rep(mean_value, n_rows)
             print(paste("simulating", col, "at", mean_value))
           } else if (is.factor(df[[col]])) {
@@ -133,7 +133,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
       if (col == x_var) {
         new_df[[col]] <- x_range
       } else if (is.numeric(df[[col]])){
-        mean_value <- mean(df[[col]])
+        mean_value <- mean(df[[col]], na.rm=T)
         new_df[[col]] <- rep(mean_value, n_rows)
         print(paste("simulating", col, "at", mean_value))
       } else if (is.factor(df[[col]])) {
