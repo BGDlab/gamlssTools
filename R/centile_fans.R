@@ -323,7 +323,8 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
 #' @param label_centiles label the percentile corresponding to each centile line(`label`), map thickness in legend(`legend`), or neither(`none`). 
 #' Defaults to `label`.
 #' @param remove_point_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to `FALSE`.
-#' @param color_manual optional arg to specify color for points and centile fans. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
+#' @param color_manual optional arg to specify color for centile lines ONLY. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
+#' @param point_color_manual optional arg to specify color for points ONLY. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
 #' @param y_scale function to be applied to dependent variable (y axis)
 #' @param x_scale function to be applied to variable on x axis
@@ -577,8 +578,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     print("plotting one centile fan...")
     if (show_points == TRUE){
       base_plot_obj <- ggplot() +
-        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], color=point_color_manual), alpha=0.3)
-    } else if (show_points==FALSE){
+        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], color = if(!is.null(point_color_manual)) point_color_manual else "navy", alpha=0.3))
+    } else if (show_points==FALSE) {
       base_plot_obj <- ggplot()
     }
   
@@ -587,7 +588,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
       geom_line(aes(x = long_centile_df[[x_var]], y = long_centile_df$values,
                     group = long_centile_df$id.vars,
                     linewidth = long_centile_df$id.vars,
-                    color=color_manual)) + 
+                    color=if(!is.null(color_manual)) color_manual else "navy")) + 
       scale_color_identity()
     
   } else {
@@ -641,7 +642,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   if (get_peaks == TRUE){
     peak_dfs <- lapply(line_dfs, age_at_peak)
     
-    if (!is.null(color_var)){
+    if (!is.null(color_var) & average_over==FALSE){
       merged_peak_df <- bind_rows(peak_dfs, .id = color_var)
     } else {
       merged_peak_df <- peak_dfs[[1]]
@@ -655,7 +656,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
       merged_peak_df[[x_var]] <- unlist(lapply(merged_peak_df[[x_var]], x_scale))
     }
     
-    if (!is.null(color_var)){
+    if (!is.null(color_var) & average_over==FALSE){
       base_plot_obj <- base_plot_obj +
         geom_point(aes(x=.data[[x_var]], 
                        y=y,
@@ -670,7 +671,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                        y=y),
                    data=merged_peak_df,
                    size=5,
-                   shape=18)
+                   shape=18,
+                   color=if(!is.null(color_manual)) color_manual else "navy")
     }
   }
 

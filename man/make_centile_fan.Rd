@@ -22,6 +22,7 @@ make_centile_fan(
   get_derivs = FALSE,
   y_scale = NULL,
   x_scale = NULL,
+  point_color_manual = NULL,
   ...
 )
 }
@@ -60,13 +61,15 @@ Defaults to \code{label}.}
 
 \item{remove_point_effect}{logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to \code{FALSE}.}
 
-\item{color_manual}{optional arg to specify color for points and centile fans. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
+\item{color_manual}{optional arg to specify color for centile lines ONLY. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
 
 \item{get_derivs}{plot 1st derivative of centile lines instead of the centile lines themselves}
 
 \item{y_scale}{function to be applied to dependent variable (y axis)}
 
 \item{x_scale}{function to be applied to variable on x axis}
+
+\item{point_color_manual}{optional arg to specify color for points ONLY. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
 }
 \value{
 ggplot object

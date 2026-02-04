@@ -4,7 +4,14 @@
 \alias{sim_data}
 \title{Simulate data for plotting GAMLSS}
 \usage{
-sim_data(df, x_var, factor_var = NULL, gamlssModel = NULL, special_term = NULL)
+sim_data(
+  df,
+  x_var,
+  factor_var = NULL,
+  gamlssModel = NULL,
+  special_term = NULL,
+  x_range = NULL
+)
 }
 \arguments{
 \item{df}{original dataframe from which new data will be simulated}
@@ -18,6 +25,8 @@ as determined from the df parameter}
 only the model's covariates are simulated (optional)}
 
 \item{special_term}{formula defining any terms that should be calculated separately (e.g. interaction terms)}
+
+\item{x_range}{x-values for which values are estimated (e.g. seq(0, 10)). Default is 500 datapoints across range of x axis.}
 }
 \value{
 list of dataframes of simulated data, one for each level of \code{color_var}
