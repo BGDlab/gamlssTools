@@ -395,6 +395,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              get_derivs = FALSE,
                              y_scale = NULL,
                              x_scale = NULL,
+                             point_color_manual = NULL,
                              ...){
   
   #handle args
@@ -515,44 +516,52 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #def base gg object (w/ or w/o points)
   if (average_over == FALSE){
     print("plotting centile fans...")
-    if (show_points == TRUE & is.null(color_manual)){
+    if (show_points == TRUE & is.null(point_color_manual) & is.null(color_var)){
+      #showing points without color_var or manually-specified color
+      base_plot_obj <- ggplot() +
+        geom_point(data = point_df,
+                   mapping = aes(y = !!sym(pheno), x = !!sym(x_var)), 
+                   alpha=0.3)
+    
+    } else if (show_points == TRUE){
       base_plot_obj <- ggplot() +
         geom_point(data = point_df,
                    mapping = aes(y = !!sym(pheno), x = !!sym(x_var), 
                        color = !!sym(color_var), 
                        fill = !!sym(color_var)), alpha=0.3)
       
-    } else if (show_points == TRUE){
-      base_plot_obj <- ggplot() +
-        geom_point(data = point_df,
-                   mapping = aes(y = !!sym(pheno), x = !!sym(x_var)), 
-                   color=color_manual, 
-                   fill=color_manual, alpha=0.3)
-    } else if (show_points == TRUE & is.null(color_manual) & is.null(color_var)){
-      base_plot_obj <- ggplot() +
-        geom_point(data = point_df,
-                   mapping = aes(y = !!sym(pheno), x = !!sym(x_var)), 
-                   alpha=0.3)
-    } else if (show_points==FALSE){
+      #second level of logic to control color scale
+      if (!is.null(point_color_manual)){
+        base_plot_obj <- base_plot_obj +
+          scale_discrete_manual(
+            aesthetics = c("fill", "color"),
+            values = point_color_manual
+          ) + 
+          ggnewscale:::new_scale_fill() +
+          ggnewscale:::new_scale_color()
+      }
+
+    } else if (show_points==FALSE) {
       base_plot_obj <- ggplot()
     }
     
     #now add centile fans
-    if (is.null(color_manual)){
+    if (!is.null(color_var)) {
       base_plot_obj <- base_plot_obj +
         geom_line(data = long_centile_df,
-                  mapping = aes(x = !!sym(x_var), y = values,
-                      group = interaction(id.vars, !!sym(color_var)),
-                      color = !!sym(color_var),
-                      linewidth = id.vars))
-        
-    } else if (!is.null(color_var)){
-      base_plot_obj <- base_plot_obj +
-        geom_line(data = long_centile_df,
-                  mapping = aes(x = !!sym(x_var), y = values,
-                      group = interaction(id.vars, !!sym(color_var)),
-                      linewidth = id.vars),
-                  color=color_manual)
+                mapping = aes(x = !!sym(x_var), y = values,
+                group = interaction(id.vars, !!sym(color_var)),
+                color = !!sym(color_var),
+                linewidth = id.vars))
+      
+      #second layer of logic to manually specify color
+      if (!is.null(color_manual)){
+        base_plot_obj <- base_plot_obj +
+          scale_discrete_manual(
+            aesthetics = c("fill", "color"),
+            values = color_manual
+          )
+      }
       
     } else if (is.null(color_var)){
       # Fallback when color_var is NULL but average_over is FALSE (shouldn't happen, but handle it)
@@ -561,14 +570,14 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                   mapping = aes(x = !!sym(x_var), y = values,
                       group = id.vars,
                       linewidth = id.vars),
-                  color = if(!is.null(color_manual)) color_manual else "black")
+                      color = if(!is.null(color_manual)) color_manual else "black")
     }
     
   } else if (average_over == TRUE){
     print("plotting one centile fan...")
     if (show_points == TRUE){
       base_plot_obj <- ggplot() +
-        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], color=color_manual), alpha=0.6)
+        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], color=point_color_manual), alpha=0.3)
     } else if (show_points==FALSE){
       base_plot_obj <- ggplot()
     }
@@ -650,15 +659,18 @@ make_centile_fan <- function(gamlssModel, df, x_var,
       base_plot_obj <- base_plot_obj +
         geom_point(aes(x=.data[[x_var]], 
                        y=y,
-                       fill=.data[[color_var]]),
+                       fill=.data[[color_var]],
+                       color=.data[[color_var]]),
                    data=merged_peak_df,
-                   size=3)
+                   size=5,
+                   shape=18)
     } else {
       base_plot_obj <- base_plot_obj +
         geom_point(aes(x=.data[[x_var]], 
                        y=y),
                    data=merged_peak_df,
-                   size=3)
+                   size=5,
+                   shape=18)
     }
   }
 
