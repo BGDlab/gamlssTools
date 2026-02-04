@@ -328,6 +328,8 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
 #' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
 #' @param y_scale function to be applied to dependent variable (y axis)
 #' @param x_scale function to be applied to variable on x axis
+#' @param color_name optional arg passed to `scale_discrete_manual()` to re-title legend. Requires `color_manual` or `color_point_manual`
+#' @param color_name optional vector passed to `scale_discrete_manual()` to re-label levels of `color_var`. Requires `color_manual` or `color_point_manual`
 #' 
 #' @returns ggplot object
 #' 
@@ -397,6 +399,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              y_scale = NULL,
                              x_scale = NULL,
                              point_color_manual = NULL,
+                             color_name = waiver(),
+                             color_labels = waiver(),
                              ...){
   
   #handle args
@@ -536,7 +540,9 @@ make_centile_fan <- function(gamlssModel, df, x_var,
         base_plot_obj <- base_plot_obj +
           scale_discrete_manual(
             aesthetics = c("fill", "color"),
-            values = point_color_manual
+            values = point_color_manual,
+            name = color_name,
+            labels = color_labels
           ) + 
           ggnewscale:::new_scale_fill() +
           ggnewscale:::new_scale_color()
@@ -560,7 +566,9 @@ make_centile_fan <- function(gamlssModel, df, x_var,
         base_plot_obj <- base_plot_obj +
           scale_discrete_manual(
             aesthetics = c("fill", "color"),
-            values = color_manual
+            values = color_manual,
+            name = color_name,
+            labels = color_labels
           )
       }
       

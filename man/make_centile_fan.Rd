@@ -23,6 +23,8 @@ make_centile_fan(
   y_scale = NULL,
   x_scale = NULL,
   point_color_manual = NULL,
+  color_name = waiver(),
+  color_labels = waiver(),
   ...
 )
 }
@@ -70,6 +72,8 @@ Defaults to \code{label}.}
 \item{x_scale}{function to be applied to variable on x axis}
 
 \item{point_color_manual}{optional arg to specify color for points ONLY. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
+
+\item{color_name}{optional vector passed to \code{scale_discrete_manual()} to re-label levels of \code{color_var}. Requires \code{color_manual} or \code{color_point_manual}}
 }
 \value{
 ggplot object
