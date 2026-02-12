@@ -19,33 +19,57 @@ pacman::p_load(ggplot2, tidyverse, gamlss, gamlss.ggplots, dplyr)
 
 Using the iris dataset to simulate models with nonlinear effects of age and eTIV and random effect of site
 ```{r}
-df <- iris %>%
-  select(!Petal.Length) %>%
-  rename("site" = "Species",
-         "pheno" = "Sepal.Width",
-         "age" = "Sepal.Length",
-         "eTIV" = "Petal.Width")
+set.seed(123)  # For reproducibility
+
+# Set sample size
+n <- 100
+
+# Generate age (range: 20-80 years)
+age <- runif(n, 20, 80)
+
+# Generate sex (0 = female, 1 = male)
+# Making this independent for now
+sex <- rbinom(n, 1, 0.5)
+
+site <- sample(c("A", "B", "C"), n, replace=TRUE)
+
+# Generate eTIV (estimated Total Intracranial Volume)
+# Positively correlated with age
+# Range approximately 1200-1800 cm³
+# Males tend to have slightly larger eTIV
+eTIV <- 1400 + 0.3 * age + 100 * sex + rnorm(n, 0, 50)
+
+# Generate phenotype score (positively correlated with both age and eTIV)
+# This could represent some clinical or cognitive measure
+pheno <- 50 + 0.4 * age + 0.02 * eTIV + rnorm(n, 0, 5)
+
+# Combine into a data frame
+df <- data.frame(
+  id = 1:n,
+  sex = sex,
+  age = age,
+  eTIV = eTIV,
+  site = as.factor(site),
+  pheno = pheno
+)
 ```
 
 ```{r}
 test_model <- gamlss(formula = pheno ~ pb(age) + random(site) + pb(eTIV), 
                      sigma.formula = ~ age + eTIV, 
-                     family = GG, data = df)
-
-test_model2 <- gamlss(formula = pheno ~ pb(age) + site + eTIV, 
-                     sigma.formula = ~ age, 
-                     family = GG, data = df)
-
-test_model3 <- gamlss(formula = pheno ~ pb(age) + eTIV, 
-                     sigma.formula = ~ age, 
-                     family = NO, data = df)
+                     family = BCTo, data = df)
 ```
 
 #Test with current gamlssTools functions
 
 ```{r}
-make_centile_fan(test_model, df, x_var="age") 
+make_centile_fan(test_model, df, x_var="age", color_var="site") 
 make_centile_fan(test_model, df, x_var="age", remove_point_effect = c("site", "eTIV"))
+make_centile_fan(test_model, df, x_var="age", zero_effect = c("eTIV"))
+#sim_data(df, "age", "site", test_model, zero_effect = "eTIV")
+
+sim_df <- sim_data(df, "age", "site", test_model, zero_effect="eTIV")
+make_centile_fan(test_model, df, x_var="age", sim_data_list = sim_df)
 ```
 
 try residualizing eTIV from points

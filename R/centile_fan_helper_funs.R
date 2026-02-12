@@ -41,7 +41,7 @@
 #' sim_data(iris2, "Sepal.Length", "Species", iris_model2, special_term="SL_int = Sepal.Length * Species")
 #' 
 #' @export
-sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL, x_range = NULL){
+sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL, x_range = NULL, zero_effect = NULL){
   
   #make sure variable names are correct
   stopifnot(x_var %in% names(df))
@@ -96,7 +96,9 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
       for (col in colnames(new_df)){
         
         #add right level for factor var
-        if (col == factor_var) {
+        if (col %in% zero_effect) {
+          new_df[[col]] <- rep(0, n_rows)
+          } else if (col == factor_var) {
           new_df[[col]] <- rep(factor_level, n_rows)
           } else if (col == x_var) {
             new_df[[col]] <- x_range
@@ -142,7 +144,9 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
     #simulate each variable
     #iterate over variables
     for (col in colnames(new_df)){
-      if (col == x_var) {
+      if (col %in% zero_effect) {
+        new_df[[col]] <- rep(0, n_rows)
+      } else if (col == x_var) {
         new_df[[col]] <- x_range
       } else if (is.numeric(df[[col]])){
         mean_value <- mean(df[[col]], na.rm=T)
@@ -190,18 +194,19 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
 #' @param gamlssModel gamlss model object
 #' @param df dataframe to residualize. NOTE: gamlssModel will be refit to these data
 #' @param og_data (optional) original dataframe on which model was fit, if differs from `df`
-#' @param rm_terms list of term(s) whose effects will be residualized (removed). 
+#' @param rm_terms list of term(s) whose effects will be residualized (set to mean/mode)
+#' @param zero_terms list of NUMERIC term(s) whose effects will be removed completely (set to zero)
 #' 
 #' @returns dataframe with the outcome var of the gamlssModel residualized
 #' 
 #' @importFrom boot inv.logit
 #' @export
-resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
+resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zero_terms=NULL){
   UseMethod("resid_data")
 }
 
 #' @export
-resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
+resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zero_terms=NULL){
   if (is.null(og_data)){
     og_data <- df
   }
@@ -216,6 +221,14 @@ resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
     print("simulating residualized data")
     new_df <- df
     #update df to remove variability in rm_terms (written with help from GPT)
+    for (col in zero_terms){
+      if (is.numeric(og_data[[col]])){
+        new_df[[col]] <- 0
+      } else {
+        warning(paste("zero_terms arg only implemented for numeric cols, skipping", col))
+      }
+    }
+    
     for (col in rm_terms){
       if (is.numeric(og_data[[col]])){
         new_df[[col]] <- mean(og_data[[col]], na.rm = TRUE)
@@ -241,7 +254,7 @@ resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
 }  
 
 #' @export
-resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
+resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zero_terms=NULL){
   if (is.null(og_data)){
     og_data <- df
   }
@@ -259,6 +272,14 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
   }
   
   # Ensure data types match between df and og_data for rm_terms
+  for (col in zero_terms){
+    if (is.numeric(og_data[[col]])){
+      new_df[[col]] <- 0
+    } else {
+      warning(paste("zero_terms arg only implemented for numeric cols, skipping", col))
+    }
+  }
+  
   for (col in rm_terms) {
     if (class(df[[col]]) != class(og_data[[col]])) {
       warning(paste("Data type mismatch for column", col, "- converting df[[col]] to match og_data[[col]]"))
@@ -321,7 +342,6 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
 #' 
 #' Find age of peak of median or other specified centile estimates. 
 #' 
-#' Takes output of `centile_predict()` or `get_derivatives()` and finds age of peak centile 
 #' value (or peak change) for each factor level (using lapply). Defaults to finding the 
 #' age of the median centile's peak, but can find other specified centiles as well.
 #' 
