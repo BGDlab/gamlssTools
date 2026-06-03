@@ -24,7 +24,8 @@ as determined from the df parameter}
 \item{gamlssModel}{gamlss model object that will be used to subset the columns of df such that
 only the model's covariates are simulated (optional)}
 
-\item{special_term}{formula defining any terms that should be calculated separately (e.g. interaction terms)}
+\item{special_term}{formula (or character vector of formulas) defining any terms that should be calculated separately (e.g. interaction terms). When passing multiple, list them in dependency order — each is applied in sequence.
+Can also be used to set term to zero (i.e. \code{special_term="Sepal.Length = 0"}).}
 
 \item{x_range}{x-values for which values are estimated (e.g. seq(0, 10)). Default is 500 datapoints across range of x axis.}
 }
@@ -54,5 +55,9 @@ iris2 <- iris \%>\%
 
 iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species + SL_int, sigma.formula = ~ Sepal.Length, data=iris2)
 sim_data(iris2, "Sepal.Length", "Species", iris_model2, special_term="SL_int = Sepal.Length * Species")
+
+# multiple special terms (applied in order)
+sim_data(iris2, "Sepal.Length", "Species", iris_model2,
+         special_term=c("SL_int = Sepal.Length * Species", "SL_sq = Sepal.Length^2"))
 
 }

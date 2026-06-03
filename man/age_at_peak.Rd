@@ -19,7 +19,6 @@ dataframe
 Find age of peak of median or other specified centile estimates.
 }
 \details{
-Takes output of \code{centile_predict()} or \code{get_derivatives()} and finds age of peak centile
 value (or peak change) for each factor level (using lapply). Defaults to finding the
 age of the median centile's peak, but can find other specified centiles as well.
 }

@@ -18,6 +18,7 @@ make_centile_fan(
   show_points = TRUE,
   label_centiles = c("label", "legend", "none"),
   remove_point_effect = NULL,
+  zero_effect = NULL,
   color_manual = NULL,
   get_derivs = FALSE,
   y_scale = NULL,
@@ -61,7 +62,9 @@ many models fit on the same dataframe}
 \item{label_centiles}{label the percentile corresponding to each centile line(\code{label}), map thickness in legend(\code{legend}), or neither(\code{none}).
 Defaults to \code{label}.}
 
-\item{remove_point_effect}{logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to \code{FALSE}.}
+\item{remove_point_effect}{list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization}
+
+\item{zero_effect}{list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via \code{resid_data()}). To zero a term's contribution to the centile fan itself, use \code{special_term} instead (e.g. \code{special_term = "eTIV = 0"}).}
 
 \item{color_manual}{optional arg to specify color for centile lines ONLY. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
 

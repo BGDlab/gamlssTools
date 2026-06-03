@@ -323,7 +323,7 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
 #' @param label_centiles label the percentile corresponding to each centile line(`label`), map thickness in legend(`legend`), or neither(`none`). 
 #' Defaults to `label`.
 #' @param remove_point_effect list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization
-#' @param zero_effect list of numeric term(s) whose effects will be zeroed (set to 0) from points AND centile lines for visualization.
+#' @param zero_effect list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via `resid_data()`). To zero a term's contribution to the centile fan itself, use `special_term` instead (e.g. `special_term = "eTIV = 0"`).
 #' @param color_manual optional arg to specify color for centile lines ONLY. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' @param point_color_manual optional arg to specify color for points ONLY. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
@@ -423,11 +423,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
     print("simulating data")
-    sim_args <- c(
-      opt_args_list[names(opt_args_list) %in% c("special_term")],
-      list(zero_effect = zero_effect)
-    )
-    sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel), 
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
+    sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel),
                                     sim_args))
   } else if (!is.null(sim_data_list)) {
     sim_list <- sim_data_list

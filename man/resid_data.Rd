@@ -4,7 +4,7 @@
 \alias{resid_data}
 \title{Residualize data}
 \usage{
-resid_data(gamlssModel, df, og_data = NULL, rm_terms)
+resid_data(gamlssModel, df, og_data = NULL, rm_terms = NULL, zero_terms = NULL)
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}
@@ -13,7 +13,9 @@ resid_data(gamlssModel, df, og_data = NULL, rm_terms)
 
 \item{og_data}{(optional) original dataframe on which model was fit, if differs from \code{df}}
 
-\item{rm_terms}{list of term(s) whose effects will be residualized (removed).}
+\item{rm_terms}{list of term(s) whose effects will be residualized (set to mean/mode)}
+
+\item{zero_terms}{list of NUMERIC term(s) whose effects will be removed completely (set to zero)}
 }
 \value{
 dataframe with the outcome var of the gamlssModel residualized
