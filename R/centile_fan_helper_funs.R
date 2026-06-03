@@ -21,7 +21,8 @@
 #' @param factor_var (optional) categorical variable that will be simulated at every level
 #' @param gamlssModel gamlss model object that will be used to subset the columns of df such that
 #' only the model's covariates are simulated (optional)
-#' @param special_term formula defining any terms that should be calculated separately (e.g. interaction terms)
+#' @param special_term formula (or character vector of formulas) defining any terms that should be calculated separately (e.g. interaction terms). When passing multiple, list them in dependency order — each is applied in sequence.
+#' Can also be used to set term to zero (i.e. `special_term="Sepal.Length = 0"`).
 #' @param x_range x-values for which values are estimated (e.g. seq(0, 10)). Default is 500 datapoints across range of x axis.
 #' 
 #' @returns list of dataframes of simulated data, one for each level of `color_var`
@@ -39,9 +40,29 @@
 #'
 #' iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species + SL_int, sigma.formula = ~ Sepal.Length, data=iris2)
 #' sim_data(iris2, "Sepal.Length", "Species", iris_model2, special_term="SL_int = Sepal.Length * Species")
+#'
+#' # multiple special terms (applied in order)
+#' sim_data(iris2, "Sepal.Length", "Species", iris_model2,
+#'          special_term=c("SL_int = Sepal.Length * Species", "SL_sq = Sepal.Length^2"))
 #' 
 #' @export
 sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL, x_range = NULL){
+  
+  # Apply one or more `special_term` formulas (e.g. "SL_int = Sepal.Length * Species") to a simulated df.
+  # Terms are applied in order so later terms can depend on earlier ones.
+  apply_special_terms <- function(new_df, special_term){
+    for (term in special_term){
+      f_parts <- rlang::parse_expr(term)
+      special_col <- rlang::as_string(rlang::f_lhs(f_parts))
+      col_def <- rlang::f_rhs(f_parts)
+      
+      print(paste("updating special term", special_col))
+      
+      new_df <- new_df %>%
+        mutate(!!sym(special_col) := !!col_def)
+    }
+    new_df
+  }
   
   #make sure variable names are correct
   stopifnot(x_var %in% names(df))
@@ -96,7 +117,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
       for (col in colnames(new_df)){
         
         #add right level for factor var
-        if (col == factor_var) {
+         if (col == factor_var) {
           new_df[[col]] <- rep(factor_level, n_rows)
           } else if (col == x_var) {
             new_df[[col]] <- x_range
@@ -117,16 +138,9 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
       
       #deal with any special/interaction terms
       if(!is.null(special_term)){
-        f_parts <- rlang::parse_expr(special_term)
-        special_col <- rlang::as_string(rlang::f_lhs(f_parts))  # extract column name
-        col_def <- rlang::f_rhs(f_parts) # extract col def
-        
-        print(paste("updating special term", special_col))
-        
-        new_df <- new_df %>%
-          mutate(!!sym(special_col) := !!col_def)
+        new_df <- apply_special_terms(new_df, special_term)
       }
-      
+
       #name new df for factor_var level and append to list
       df_name <- paste0(factor_level)
       sim_data_list[[df_name]] <- new_df
@@ -161,16 +175,9 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
     
     #deal with any special/interaction terms
     if(!is.null(special_term)){
-      f_parts <- rlang::parse_expr(special_term)
-      special_col <- rlang::as_string(rlang::f_lhs(f_parts))  # extract column name
-      col_def <- rlang::f_rhs(f_parts) # extract col def
-      
-      print(paste("updating special term", special_col))
-      
-      new_df <- new_df %>%
-        mutate(!!sym(special_col) := !!col_def)
+      new_df <- apply_special_terms(new_df, special_term)
     }
-    
+
     sim_data_list[["df"]] <- new_df #append
   }
   return(sim_data_list)
@@ -190,18 +197,19 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
 #' @param gamlssModel gamlss model object
 #' @param df dataframe to residualize. NOTE: gamlssModel will be refit to these data
 #' @param og_data (optional) original dataframe on which model was fit, if differs from `df`
-#' @param rm_terms list of term(s) whose effects will be residualized (removed). 
+#' @param rm_terms list of term(s) whose effects will be residualized (set to mean/mode)
+#' @param zero_terms list of NUMERIC term(s) whose effects will be removed completely (set to zero)
 #' 
 #' @returns dataframe with the outcome var of the gamlssModel residualized
 #' 
 #' @importFrom boot inv.logit
 #' @export
-resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms){
+resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zero_terms=NULL){
   UseMethod("resid_data")
 }
 
 #' @export
-resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
+resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zero_terms=NULL){
   if (is.null(og_data)){
     og_data <- df
   }
@@ -216,6 +224,14 @@ resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
     print("simulating residualized data")
     new_df <- df
     #update df to remove variability in rm_terms (written with help from GPT)
+    for (col in zero_terms){
+      if (is.numeric(og_data[[col]])){
+        new_df[[col]] <- 0
+      } else {
+        warning(paste("zero_terms arg only implemented for numeric cols, skipping", col))
+      }
+    }
+    
     for (col in rm_terms){
       if (is.numeric(og_data[[col]])){
         new_df[[col]] <- mean(og_data[[col]], na.rm = TRUE)
@@ -241,7 +257,7 @@ resid_data.gamlss <- function(gamlssModel, df, og_data=NULL, rm_terms){
 }  
 
 #' @export
-resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
+resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zero_terms=NULL){
   if (is.null(og_data)){
     og_data <- df
   }
@@ -259,6 +275,14 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
   }
   
   # Ensure data types match between df and og_data for rm_terms
+  for (col in zero_terms){
+    if (is.numeric(og_data[[col]])){
+      new_df[[col]] <- 0
+    } else {
+      warning(paste("zero_terms arg only implemented for numeric cols, skipping", col))
+    }
+  }
+  
   for (col in rm_terms) {
     if (class(df[[col]]) != class(og_data[[col]])) {
       warning(paste("Data type mismatch for column", col, "- converting df[[col]] to match og_data[[col]]"))
@@ -321,7 +345,6 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms){
 #' 
 #' Find age of peak of median or other specified centile estimates. 
 #' 
-#' Takes output of `centile_predict()` or `get_derivatives()` and finds age of peak centile 
 #' value (or peak change) for each factor level (using lapply). Defaults to finding the 
 #' age of the median centile's peak, but can find other specified centiles as well.
 #' 

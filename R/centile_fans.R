@@ -322,7 +322,8 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
 #' @param show_points logical indicating whether to plot data points below centile fans. Defaults to `TRUE`
 #' @param label_centiles label the percentile corresponding to each centile line(`label`), map thickness in legend(`legend`), or neither(`none`). 
 #' Defaults to `label`.
-#' @param remove_point_effect logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to `FALSE`.
+#' @param remove_point_effect list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization
+#' @param zero_effect list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via `resid_data()`). To zero a term's contribution to the centile fan itself, use `special_term` instead (e.g. `special_term = "eTIV = 0"`).
 #' @param color_manual optional arg to specify color for centile lines ONLY. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' @param point_color_manual optional arg to specify color for points ONLY. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
 #' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
@@ -394,6 +395,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                              show_points = TRUE,
                              label_centiles = c("label", "legend", "none"),
                              remove_point_effect = NULL,
+                             zero_effect = NULL,
                              color_manual = NULL,
                              get_derivs = FALSE,
                              y_scale = NULL,
@@ -421,8 +423,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
     print("simulating data")
-    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
-    sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel), 
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
+    sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel),
                                     sim_args))
   } else if (!is.null(sim_data_list)) {
     sim_list <- sim_data_list
@@ -486,17 +488,12 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   names(centile_linewidth) <- unique(long_centile_df$id.vars)
   
   #remove effects from points if necessary
-  if (show_points == TRUE && !is.null(remove_point_effect)) {
+  if (show_points == TRUE && (!is.null(remove_point_effect) | !is.null(zero_effect))) {
     print(paste("Residualizing", remove_point_effect, "from data points"))
-    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect)
+    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect, zero_terms = zero_effect)
     print("success")
-  } else if (show_points == TRUE && is.null(remove_point_effect)) {
+  } else {
     point_df <- df
-  } else if (show_points == FALSE && !is.null(remove_point_effect)){
-    warning("Points not shown so no residual effects removed", call. = FALSE)
-    point_df <- df  # Still need point_df for scaling operations
-  } else if (show_points == FALSE && is.null(remove_point_effect)){
-    point_df <- df  # Still need point_df for scaling operations
   }
   
   #convert color_var to factor as needed
