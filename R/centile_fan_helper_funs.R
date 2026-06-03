@@ -287,7 +287,7 @@ resid_data.gamlss2 <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zer
     if (class(df[[col]]) != class(og_data[[col]])) {
       warning(paste("Data type mismatch for column", col, "- converting df[[col]] to match og_data[[col]]"))
       if (is.factor(og_data[[col]])) {
-        df[[col]] <- as.factor(df[[col]], levels = levels(og_data[[col]]))
+        df[[col]] <- factor(df[[col]], levels = levels(og_data[[col]]))
       } else if (is.numeric(og_data[[col]])) {
         df[[col]] <- as.numeric(df[[col]])
       } else {
