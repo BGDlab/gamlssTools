@@ -24,7 +24,7 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
                                               "lifespan_fetal", "log_lifespan_fetal"),
                                    desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
                                    average_over = FALSE,
-                                   sim_data_list = NULL,
+                                   sim_grid_list = NULL,
                                    show_points = TRUE,
                                    label_centiles = TRUE,
                                    resid_effect,
@@ -73,7 +73,7 @@ centile_fan_resid <- function(gamlssModel, df, x_var,
                            x_axis = x_axis,
                            desiredCentiles = desiredCentiles,
                            average_over = average_over,
-                           sim_data_list = sim_data_list,
+                           sim_grid_list = sim_grid_list,
                            show_points = show_points,
                            label_centiles = label_centiles,
                            remove_point_effect = remove_point_effect,
@@ -92,7 +92,7 @@ centile_fan_minimal <- function(gamlssModel, df, x_var,
                               color_var=NULL,
                               desiredCentiles = c(0.05, 0.5, 0.95),
                               average_over = FALSE,
-                              sim_data_list = NULL,
+                              sim_grid_list = NULL,
                               ...){
 
   plot <- make_centile_fan(gamlssModel, df, x_var, 
@@ -101,7 +101,7 @@ centile_fan_minimal <- function(gamlssModel, df, x_var,
                            x_axis = "custom",
                            desiredCentiles = desiredCentiles,
                            average_over = average_over,
-                           sim_data_list = sim_data_list,
+                           sim_grid_list = sim_grid_list,
                            show_points = FALSE,
                            label_centiles = FALSE,
                            remove_point_effect = NULL,
@@ -121,7 +121,7 @@ centile_fan_minimal <- function(gamlssModel, df, x_var,
 centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge", 
                                 color_var="sex",
                                 desiredCentiles = c(0.025, 0.5, 0.975),
-                                sim_data_list = NULL,
+                                sim_grid_list = NULL,
                                 ...){
   
   plot <- make_centile_fan(gamlssModel, df, x_var, 
@@ -130,7 +130,7 @@ centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge",
                            x_axis = "log_lifespan_fetal",
                            desiredCentiles = desiredCentiles,
                            average_over = FALSE,
-                           sim_data_list = sim_data_list,
+                           sim_grid_list = sim_grid_list,
                            show_points = FALSE,
                            label_centiles = FALSE,
                            remove_point_effect = NULL,
@@ -155,7 +155,7 @@ centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge",
 plot_centile_deriv <- function(gamlssModel, df, x_var, 
                                  color_var,
                                  desiredCentiles = c(0.5),
-                                 sim_data_list = NULL,
+                                 sim_grid_list = NULL,
                                  ...){
   
   plot <- make_centile_fan(gamlssModel, df, x_var, 
@@ -163,7 +163,7 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
                            get_peaks = TRUE,
                            desiredCentiles = desiredCentiles,
                            average_over = FALSE,
-                           sim_data_list = sim_data_list,
+                           sim_grid_list = sim_grid_list,
                            show_points = FALSE,
                            label_centiles = FALSE,
                            remove_point_effect = NULL,
@@ -182,7 +182,7 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 #' will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. Can also be used
 #' to plot 1st derivative of centile lines using `plot_deriv` argument. You can save 
 #' time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
-#' by first running [sim_data()] and supplying the output to arg `sim_data_list`.
+#' by first running [sim_grid()] and supplying the output to arg `sim_grid_list`.
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe used to fit the gamlss model
@@ -200,7 +200,7 @@ plot_centile_deriv <- function(gamlssModel, df, x_var,
 #' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
 #' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
 #' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
-#' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're plotting
+#' @param sim_grid_list optional argument that takes the output of [sim_grid()]. Can be useful when you're plotting
 #' many models fit on the same dataframe 
 #' @param show_points logical indicating whether to plot data points below centile fans. Defaults to `TRUE`
 #' @param label_centiles logical indicating whether to note the percentile corresponding to each centile line. Defaults to `TRUE`
@@ -266,7 +266,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                                         "lifespan_fetal", "log_lifespan_fetal"),
                              desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
                              average_over = FALSE,
-                             sim_data_list = NULL,
+                             sim_grid_list = NULL,
                              show_points = TRUE,
                              label_centiles = TRUE,
                              remove_point_effect = NULL,
@@ -278,28 +278,35 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   if ("remove_cent_effect" %in% names(opt_args_list)) {
     print("WARNING: The 'remove_cent_effect' argument is deprecated, ignoring.")
   }
+  # --- backwards compatibility for renamed argument ---
+  # (handled here rather than in the wrapper functions so a deprecated
+  # `sim_data_list` forwarded through their `...` is still caught)
+  if ("sim_data_list" %in% names(opt_args_list)) {
+    warning("`sim_data_list` is deprecated; use `sim_grid_list` instead.", call. = FALSE)
+    if (is.null(sim_grid_list)) sim_grid_list <- opt_args_list$sim_data_list
+  }
   pheno <- as.character(gamlssModel$mu.terms[[2]])
   
   #check that var names are input correctly
   stopifnot(is.character(x_var))
   
   #simulate dataset(s) if not already supplied
-  if (is.null(sim_data_list)) {
+  if (is.null(sim_grid_list)) {
     print("simulating data")
     sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
-    sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel), 
+    sim_list <- do.call(sim_grid, c(list(df, x_var, color_var, gamlssModel),
                                     sim_args))
-  } else if (!is.null(sim_data_list)) {
-    sim_list <- sim_data_list
+  } else if (!is.null(sim_grid_list)) {
+    sim_list <- sim_grid_list
   }
   
   #predict centiles
   pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
-  centile_dfs <- centile_predict(gamlssModel = gamlssModel, 
-                               sim_df_list = sim_list, 
-                               x_var = x_var, 
-                               desiredCentiles = desiredCentiles,
-                               df = df,
+  centile_dfs <- centile_fan_values(gamlssModel = gamlssModel,
+                               sim_grid_list = sim_list,
+                               x_var = x_var,
+                               centiles = desiredCentiles,
+                               ref_data = df,
                                average_over = average_over)
   
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
@@ -349,7 +356,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #remove effects from points if necessary
   if (show_points == TRUE && !is.null(remove_point_effect)) {
     print(paste("Residualizing", remove_point_effect, "from data points"))
-    point_df <- resid_data(gamlssModel, df=df, og_data=df, rm_terms=remove_point_effect)
+    point_df <- remove_effects(gamlssModel, data=df, ref_data=df, terms=remove_point_effect)
   } else if (show_points == TRUE && is.null(remove_point_effect)) {
     point_df <- df
   } else if (show_points == FALSE && !is.null(remove_point_effect)){

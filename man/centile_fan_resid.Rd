@@ -14,7 +14,7 @@ centile_fan_resid(
     "log_lifespan_fetal"),
   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
   average_over = FALSE,
-  sim_data_list = NULL,
+  sim_grid_list = NULL,
   show_points = TRUE,
   label_centiles = TRUE,
   resid_effect,

@@ -7,7 +7,7 @@
 get_derivatives(cent_df)
 }
 \arguments{
-\item{cent_df}{dataframe output by \code{centile_predict()}}
+\item{cent_df}{dataframe output by \code{centile_fan_values()}}
 }
 \value{
 dataframe
@@ -16,6 +16,6 @@ dataframe
 Find first-order derivative of any centile lines in dataframe
 }
 \details{
-Takes output of \code{centile_predict()} and finds derivatives of centile fans at each
+Takes output of \code{centile_fan_values()} and finds derivatives of centile fans at each
 factor level (using lapply).
 }

@@ -7,7 +7,7 @@
 age_at_peak(cent_df, peak_from = NULL)
 }
 \arguments{
-\item{cent_df}{dataframe output by \code{centile_predict()}}
+\item{cent_df}{dataframe output by \code{centile_fan_values()}}
 
 \item{peak_from}{optional name of colum in \code{df} that's maximum will define the peak. Otherwise,
 defaults to median centile ("cent_0.5")}
@@ -19,7 +19,7 @@ dataframe
 Find age of peak of median or other specified centile estimates.
 }
 \details{
-Takes output of \code{centile_predict()} or \code{get_derivatives()} and finds age of peak centile
+Takes output of \code{centile_fan_values()} or \code{get_derivatives()} and finds age of peak centile
 value (or peak change) for each factor level (using lapply). Defaults to finding the
 age of the median centile's peak, but can find other specified centiles as well.
 }

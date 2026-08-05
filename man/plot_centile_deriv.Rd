@@ -10,7 +10,7 @@ plot_centile_deriv(
   x_var,
   color_var,
   desiredCentiles = c(0.5),
-  sim_data_list = NULL,
+  sim_grid_list = NULL,
   ...
 )
 }

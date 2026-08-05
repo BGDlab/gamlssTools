@@ -208,49 +208,61 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
   return(term_vector_clean)
 }
 
-#' Predict original centiles
-#' 
-#' Returns the centile and/or z-score values for the original data points used to fit a gamlss model
-#' 
+#' Score centiles for observations
+#'
+#' Returns the centile and/or z-score values for observations under a fitted gamlss model
+#'
 #' Based on Jenna's function [calculatePhenotypeCentile()](https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
-#' and [gamlss::z.scores()]. Also works for new data that has the same covariates (and levels of those covariates) as the original data (e.g. new subjects
-#' from the same studies) using `new.data` argument. Returns pseudo zscores (standardized scores) calculated by running `qnorm()` on centiles - may be 
-#' more or less appropriately called "z scores" depending on distribution family of the model.
-#' 
+#' and [gamlss::z.scores()]. Scores the observations in `data`, which may be the original
+#' fitting data or any new data with the same covariates (and levels of those covariates),
+#' e.g. new subjects from the same studies. Returns pseudo zscores (standardized scores)
+#' calculated by running `qnorm()` on centiles - may be more or less appropriately called
+#' "z scores" depending on distribution family of the model.
+#'
+#' By default, centiles are computed WITHOUT re-supplying the original fitting data to
+#' [gamlss::predictAll()]: the model's parameters are reconstructed from its stored
+#' coefficients, `pb()` smooths and `random()` effects. If `ref_data` is supplied, it is used
+#' to check that `data` falls within the covariate range of the reference set. If the model
+#' contains a smoother that cannot be rebuilt data-free (`cs()`, `ps()`, `ga()`, `s()`),
+#' `predictAll()` is used with `ref_data` (or `data` itself) automatically.
+#'
 #' @param gamlssModel gamlss model object
-#' @param og.data dataframe used to fit `gamlssModel`
-#' @param get.std.scores logical indicating whether to calculate and return standardized (pseudo z-scores) from centiles
-#' @param new.data (optional) new dataframe to predict centiles for (rather than `og.data`)
-#' 
+#' @param data dataframe of observations to score
+#' @param ref_data (optional) reference dataframe (e.g. the original fitting data); if supplied,
+#' `data` is checked to fall within its covariate range
+#' @param standardize logical indicating whether to also calculate and return standardized (pseudo z-)scores
+#'
 #' @returns either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
-#' 
+#'
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
-#' pred_og_centile(iris_model, iris)
-#' 
+#' score_centiles(iris_model, iris)
+#'
 #' @export
-pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.data=NULL){
+score_centiles <- function(gamlssModel, data, ref_data = NULL, standardize = FALSE){
   pheno <- gamlssModel$mu.terms[[2]]
-  
+
   #subset df cols just to predictors from model
   predictor_list <- list_predictors(gamlssModel)
-  stopifnot("Dataframe columns and model covariates don't match" = 
-              predictor_list %in% names(og.data))
-  if (is.null(new.data)) {
-    newData <- subset(og.data, select = predictor_list)
-    predict_me <- og.data
-  } else {
-    stopifnot("Dataframe columns and model covariates don't match" = 
-                predictor_list %in% names(new.data))
-    newData <- subset(new.data, select = predictor_list)
-    predict_me <- new.data
-    #make sure all vals are within range of those originally modeled
-    check_range(subset(og.data, select = predictor_list), newData)
+  stopifnot("Dataframe columns and model covariates don't match" =
+              predictor_list %in% names(data))
+  newData <- subset(data, select = predictor_list)
+  predict_me <- data
+
+  #if a reference dataset is supplied, confirm scored data is within its covariate range
+  if (!is.null(ref_data)) {
+    stopifnot("Dataframe columns and model covariates don't match" =
+                predictor_list %in% names(ref_data))
+    check_range(subset(ref_data, select = predictor_list), newData)
   }
-  
-  #predict
-  predModel <- predictAll(gamlssModel, newdata=newData, data=og.data, type= "response")
-  
+
+  #predict. By default parameters are reconstructed WITHOUT the original data
+  #(for pb()/random()/parametric models). For models with a non-reconstructable
+  #smoother, predictAll() needs the training data: use ref_data if supplied,
+  #otherwise assume `data` is itself the reference set.
+  fallback_data <- if (!is.null(ref_data)) ref_data else data
+  predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fallback_data)
+
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
   pfun <- paste0("p", fname)
@@ -287,18 +299,34 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
     }
     
   }
-  if (get.std.scores == FALSE){
+  if (standardize == FALSE){
     return(centiles)
   } else {
     #get 'z scores' from normed centiles - how z.score() does it
     rqres <- qnorm(centiles)
-    
-    #return dataframe
-    df <- data.frame("centile" = centiles,
-                     "std_score" = rqres)
-    return(df)
-  } 
 
+    #return dataframe
+    out <- data.frame("centile" = centiles,
+                      "std_score" = rqres)
+    return(out)
+  }
+
+}
+
+#' @rdname score_centiles
+#' @details
+#' `pred_og_centile()` is a deprecated alias for `score_centiles()`. Its `og.data`/`new.data`
+#' pair maps onto `data`/`ref_data`: with `new.data = NULL` the original data is scored;
+#' otherwise `new.data` is scored and range-checked against `og.data`. `get.std.scores` maps
+#' onto `standardize`.
+#' @export
+pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.data=NULL){
+  .Deprecated("score_centiles")
+  if (is.null(new.data)) {
+    score_centiles(gamlssModel, data = og.data, ref_data = NULL, standardize = get.std.scores)
+  } else {
+    score_centiles(gamlssModel, data = new.data, ref_data = og.data, standardize = get.std.scores)
+  }
 }
 
 #' Cohen's Fsquared Local
@@ -383,28 +411,28 @@ check_range <- function(old_df, new_df) {
   
   return(TRUE)
 }
-#' Centile CDF
-#' 
+#' Centile coverage
+#'
 #' Return the probability of observations with predicted centiles that are < or = centile lines
-#' estimated from a gamlss model. 
-#' 
-#' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()]. 
-#' Calls [pred_og_centile()].
-#' 
+#' estimated from a gamlss model.
+#'
+#' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()].
+#' Calls [score_centiles()].
+#'
 #' @param gamlssModel gamlss model object
-#' @param df dataframe to assess
+#' @param data dataframe to assess
 #' @param plot whether to plot results (`TRUE`, default) or output as a tibble (`FALSE`)
 #' @param group (optional) name of grouping column
 #' @param interval_var (optional) numeric variable along which to group outputs. Uses [ggplot2::cut_interval], which
 #' requires additional args (`n` or `length`).
-#' 
+#'
 #' @returns ggplot object or tibble (if `plot==FALSE`)
-#' 
+#'
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
-#' cent_cdf(iris_model, iris)
-#' cent_cdf(iris_model, iris, group="Species")
-#' 
+#' centile_coverage(iris_model, iris)
+#' centile_coverage(iris_model, iris, group="Species")
+#'
 #' #simulate a dataframe with better group-level coverage
 #' df <- data.frame(
 #'  Age = sample(0:36525, 10000, replace = TRUE),
@@ -414,20 +442,21 @@ check_range <- function(old_df, new_df) {
 #' df$log_Age <- log(df$Age, base=10)
 #' df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
 #' df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
-#' 
+#'
 #' #fit gamlss model
 #' pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
-#' 
+#'
 #' #plot
-#' cent_cdf(pheno_model, df, group="Sex", interval_var="Age", n=4)
-#' 
+#' centile_coverage(pheno_model, df, group="Sex", interval_var="Age", n=4)
+#'
 #' #output table only
-#' cent_cdf(pheno_model, df, plot=FALSE, group="Sex", interval_var="Age", n=4)
-#' 
+#' centile_coverage(pheno_model, df, plot=FALSE, group="Sex", interval_var="Age", n=4)
+#'
 #' @export
-cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NULL, ...) {
+centile_coverage <- function(gamlssModel, data, plot=TRUE, group = NULL, interval_var = NULL, ...) {
+  df <- data  #internal alias; the summary below is built from `df`
   # Predict centiles for original data
-  df$centile <- pred_og_centile(gamlssModel, df)
+  df$centile <- score_centiles(gamlssModel, df)
   
   # Convert group variable to factor if needed
   if (!is.null(group) && is.numeric(df[[group]])) {
@@ -478,10 +507,20 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
       plt <- plt + facet_wrap(as.formula(paste("~", group)))
     }
       print(plt)
-      
+
   } else {
     return(sum_df)
   }
+}
+
+#' @rdname centile_coverage
+#' @details
+#' `cent_cdf()` is a deprecated alias for `centile_coverage()`.
+#' @export
+cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NULL, ...) {
+  .Deprecated("centile_coverage")
+  centile_coverage(gamlssModel, data = df, plot = plot, group = group,
+                   interval_var = interval_var, ...)
 }
 
 
@@ -489,65 +528,84 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
 #' 
 #' Predict the values of a phenotype (y) at each desired centile, given specified covariates
 #' 
-#' Simulates data across the range of `range_var` and at each level of `factor_var`, then uses this
-#' simulated dataset to determine what y (phenotype) is for each centile/at each combo of `range_var`
-#' `factor_var`. Holds all other covariates in the gamlss model at their mean or mode. You can save 
+#' Simulates data across the range of `x_var` and at each level of `factor_var`, then uses this
+#' simulated dataset to determine what y (phenotype) is for each centile/at each combo of `x_var`
+#' `factor_var`. Holds all other covariates in the gamlss model at their mean or mode. You can save
 #' time when predicting multiple models/phenos fit on the same data/predictors
-#' by first running [sim_data()] and supplying the output to arg `sim_data_list`.
-#' 
+#' by first running [sim_grid()] and supplying the output to arg `sim_grid_list`.
+#'
 #' @param gamlssModel gamlss model object
-#' @param df dataframe used to fit the gamlss model
-#' @param range_var continuous predictor (e.g. 'age') that y will be predicted across the range of
+#' @param data dataframe used to fit the gamlss model
+#' @param x_var continuous predictor (e.g. 'age') that y will be predicted across the range of
 #' @param factor_var (optional) categorical predictor (e.g. 'sex') that y will be predicted at each level of.
 #' Alternatively, you can average over each level of this variable (see `average_over`).
-#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
+#' @param centiles list of percentiles as values between 0 and 1 that will be
 #' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
 #' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
 #' @param average_over logical indicating whether to average predicted centiles across each level of `factor_var`.
 #' Defaults to `FALSE`, which will return a centile value for each level of `factor_var`.
-#' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're using
-#' many models fit on the same dataframe 
+#' @param sim_grid_list optional argument that takes the output of [sim_grid()]. Can be useful when you're using
+#' many models fit on the same dataframe
 #' @param remove_cent_effect logical indicating whether to correct for the effect of a variable (such as study). Defaults to `FALSE`.
-#' 
+#'
 #' @returns dataframe
-#' 
+#'
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
-#' 
+#'
 #' #for each level of 'Species', find 'Sepal.Width' values corresponding to 25th percentile across the range of 'Sepal.Length'
 #' #holding all other covariates constant at mean/mode
-#' pheno_at_centiles(iris_model, iris, "Sepal.Length", "Species", desiredCentiles=0.25)
-#' 
+#' pheno_at_centiles(iris_model, iris, "Sepal.Length", "Species", centiles=0.25)
+#'
 #' #get 'Sepal.Width' at each centile, averaging across levels of Species
 #' pheno_at_centiles(iris_model, iris, "Sepal.Length", "Species", average_over=TRUE)
-#' 
+#'
 #' @export
-pheno_at_centiles <- function(gamlssModel, df, 
-                             range_var, 
+pheno_at_centiles <- function(gamlssModel, data,
+                             x_var,
                              factor_var=NULL,
-                             desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
+                             centiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
                              average_over = FALSE,
-                             sim_data_list = NULL,
+                             sim_grid_list = NULL,
                              remove_cent_effect = NULL,
                              ...){
-  pheno <- as.character(gamlssModel$mu.terms[[2]])
-  
-  #check that var names are input correctly
-  stopifnot(is.character(range_var))
-  
-  #simulate dataset(s) if not already supplied
-  if (is.null(sim_data_list)) {
-    sim_list <- sim_data(df, range_var, factor_var, gamlssModel)
-  } else if (!is.null(sim_data_list)) {
-    sim_list <- sim_data_list
+  # --- backwards compatibility for renamed arguments ---
+  dots <- list(...)
+  if ("df" %in% names(dots)) {
+    warning("`df` is deprecated; use `data` instead.", call. = FALSE)
+    if (missing(data)) data <- dots$df
   }
-  
+  if ("range_var" %in% names(dots)) {
+    warning("`range_var` is deprecated; use `x_var` instead.", call. = FALSE)
+    if (missing(x_var)) x_var <- dots$range_var
+  }
+  if ("desiredCentiles" %in% names(dots)) {
+    warning("`desiredCentiles` is deprecated; use `centiles` instead.", call. = FALSE)
+    if (missing(centiles)) centiles <- dots$desiredCentiles
+  }
+  if ("sim_data_list" %in% names(dots)) {
+    warning("`sim_data_list` is deprecated; use `sim_grid_list` instead.", call. = FALSE)
+    if (missing(sim_grid_list)) sim_grid_list <- dots$sim_data_list
+  }
+
+  pheno <- as.character(gamlssModel$mu.terms[[2]])
+
+  #check that var names are input correctly
+  stopifnot(is.character(x_var))
+
+  #simulate dataset(s) if not already supplied
+  if (is.null(sim_grid_list)) {
+    sim_list <- sim_grid(data, x_var, factor_var, gamlssModel)
+  } else {
+    sim_list <- sim_grid_list
+  }
+
   #predict centiles
-  pred_list <- centile_predict(gamlssModel = gamlssModel, 
-                               sim_df_list = sim_list, 
-                               x_var = range_var, 
-                               desiredCentiles = desiredCentiles,
-                               df = df,
+  pred_list <- centile_fan_values(gamlssModel = gamlssModel,
+                               sim_grid_list = sim_list,
+                               x_var = x_var,
+                               centiles = centiles,
+                               ref_data = data,
                                average_over = average_over)
   
   # extract centiles and concatenate into single dataframe

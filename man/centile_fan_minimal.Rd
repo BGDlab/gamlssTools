@@ -11,7 +11,7 @@ centile_fan_minimal(
   color_var = NULL,
   desiredCentiles = c(0.05, 0.5, 0.95),
   average_over = FALSE,
-  sim_data_list = NULL,
+  sim_grid_list = NULL,
   ...
 )
 }

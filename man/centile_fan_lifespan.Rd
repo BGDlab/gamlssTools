@@ -10,7 +10,7 @@ centile_fan_lifespan(
   x_var = "logAge",
   color_var = "sex",
   desiredCentiles = c(0.025, 0.5, 0.975),
-  sim_data_list = NULL,
+  sim_grid_list = NULL,
   ...
 )
 }

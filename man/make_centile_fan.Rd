@@ -14,7 +14,7 @@ make_centile_fan(
     "log_lifespan_fetal"),
   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
   average_over = FALSE,
-  sim_data_list = NULL,
+  sim_grid_list = NULL,
   show_points = TRUE,
   label_centiles = TRUE,
   remove_point_effect = NULL,
@@ -49,7 +49,7 @@ which returns the 1st percentile, 5th percentile, 10th percentile, etc.}
 \item{average_over}{logical indicating whether to average predicted centiles across each level of \code{color_var}.
 Defaults to \code{FALSE}, which will plot a different colored centile fan for each level of \code{color_var}.}
 
-\item{sim_data_list}{optional argument that takes the output of \code{sim_data()}. Can be useful when you're plotting
+\item{sim_grid_list}{optional argument that takes the output of \code{\link[=sim_grid]{sim_grid()}}. Can be useful when you're plotting
 many models fit on the same dataframe}
 
 \item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
@@ -76,7 +76,7 @@ options for the x-axis that can be accessed using the \code{x_axis} argument. Al
 will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. Can also be used
 to plot 1st derivative of centile lines using \code{plot_deriv} argument. You can save
 time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
-by first running \code{\link[=sim_data]{sim_data()}} and supplying the output to arg \code{sim_data_list}.
+by first running \code{\link[=sim_grid]{sim_grid()}} and supplying the output to arg \code{sim_grid_list}.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
