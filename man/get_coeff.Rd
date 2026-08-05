@@ -2,7 +2,7 @@
 % Please edit documentation in R/gamlss_helper_funs.R
 \name{get_coeff}
 \alias{get_coeff}
-\title{Get Beta}
+\title{Get Coefficient}
 \usage{
 get_coeff(gamlssModel, moment, term)
 }

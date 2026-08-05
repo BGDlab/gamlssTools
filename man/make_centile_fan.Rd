@@ -16,11 +16,16 @@ make_centile_fan(
   average_over = FALSE,
   sim_grid_list = NULL,
   show_points = TRUE,
-  label_centiles = TRUE,
+  label_centiles = c("label", "legend", "none"),
   remove_point_effect = NULL,
+  zero_effect = NULL,
   color_manual = NULL,
   get_derivs = FALSE,
   y_scale = NULL,
+  x_scale = NULL,
+  point_color_manual = NULL,
+  color_name = waiver(),
+  color_labels = waiver(),
   ...
 )
 }
@@ -54,15 +59,24 @@ many models fit on the same dataframe}
 
 \item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
 
-\item{label_centiles}{logical indicating whether to note the percentile corresponding to each centile line. Defaults to \code{TRUE}}
+\item{label_centiles}{label the percentile corresponding to each centile line(\code{label}), map thickness in legend(\code{legend}), or neither(\code{none}).
+Defaults to \code{label}.}
 
-\item{remove_point_effect}{logical indicating whether to correct for the effect of a variable (such as study) in the plot. Defaults to \code{FALSE}.}
+\item{remove_point_effect}{list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization}
 
-\item{color_manual}{optional arg to specify color for points and centile fans. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
+\item{zero_effect}{list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via \code{resid_data()}). To zero a term's contribution to the centile fan itself, use \code{special_term} instead (e.g. \code{special_term = "eTIV = 0"}).}
+
+\item{color_manual}{optional arg to specify color for centile lines ONLY. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
 
 \item{get_derivs}{plot 1st derivative of centile lines instead of the centile lines themselves}
 
 \item{y_scale}{function to be applied to dependent variable (y axis)}
+
+\item{x_scale}{function to be applied to variable on x axis}
+
+\item{point_color_manual}{optional arg to specify color for points ONLY. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
+
+\item{color_name}{optional vector passed to \code{scale_discrete_manual()} to re-label levels of \code{color_var}. Requires \code{color_manual} or \code{color_point_manual}}
 }
 \value{
 ggplot object
@@ -91,6 +105,8 @@ iris_fan_plot +
  x ="Sepal Length", y = "Sepal Width",
  color = "Species", fill="Species")
  
+#add facets
+iris_fan_plot + facet_wrap(~Species)
 #################################
 #conditioning time 2 model on time 1 -> residualize point effects
 iris$Sepal.Width_t2 <- iris$Sepal.Width  + rnorm(nrow(iris), mean = 0.1, sd = 0.05)

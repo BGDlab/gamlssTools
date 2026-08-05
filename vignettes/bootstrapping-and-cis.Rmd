@@ -1,0 +1,229 @@
+---
+title: "Bootstrapping & Confidence Intervals"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Bootstrapping & Confidence Intervals}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  markup = FALSE,
+  fig.width = 8, 
+  fig.height = 7
+)
+```
+
+```{r setup}
+library(gamlssTools)
+library(gamlss2)
+```
+
+We'll start by simulating a toy dataset to use.
+
+```{r}
+df <- data.frame(
+  Age = sample(0:500, 10000, replace = TRUE),
+  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
+  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE))
+)
+
+# Encode sex as numeric for interaction
+sex_num <- ifelse(df$Sex == "Male", 0, 1)
+
+# Study effects
+study_effects <- c(Study_A = -3, Study_B = 0, Study_C = 1)
+
+# Simulate Pheno with:
+# - nonlinear effect of age
+# - main effect of sex
+# - age × sex interaction
+# - site-specific offsets
+# - noise
+df$Pheno <-  (df$Age/25)^2 * (1 + sex_num) +      # age effect + interaction with sex
+             3 * sex_num +                                  # main effect of sex
+             study_effects[df$Study] +                  # study/site effect
+             rnorm(nrow(df), mean = 0, sd = 200) #noise
+
+# Rescale to 1–500
+df$Pheno <- scales::rescale(df$Pheno, to = c(1, 500))
+```
+
+Now we'll fit a basic model. Note that this vignette uses the [gamlss2 package](https://github.com/gamlss-dev/gamlss2), since it's very fast, but all `gamlssTools` functions work with the original gamlss package as well.
+
+```{r}
+pheno_model <- gamlss2(formula = Pheno ~ pb(Age) + Sex + s(Study, bs = "re"), sigma.formula= ~ pb(Age) + Sex, data = df, family=BCCG)
+#plot
+make_centile_fan(pheno_model, df, "Age", "Sex", remove_point_effect = "Study", desiredCentiles=c(0.05, .5, 0.95)) + 
+  theme_bw()
+```
+
+## Types of Bootstraps & Confidence Intervals
+
+There are several ways you can bootstrap your sample to fit new models, and multiple kinds of confidence intervals you can calculate from those bootstrapped models.
+
+### Bootstraping Methods
+
+- Nonparametric bootstrapping: your typical resampling with replacement. In the `bootstrap_gamlss()` function, you can implement this with the argument `type="resample"`. You can also stratify the resampling so that it's done within each level of a grouping variable, like sex, so that each bootstrapped sample has the same male:female ratio as the true data.
+
+- Leave-one-study-out: This is a jackknife resampling method that excludes one study (or site, depending on the `group_var` selected) per bootstrapped sample (see [Bethlehem et al](https://doi.org/10.1038/s41586-022-04554-y)). This is implemented with the argument `type="LOSO"`.
+
+- Bayesian bootstrapping: Randomly re-weighting datapoints from the original sample can be interpreted as a Bayesian version of bootstrapping (see [this post](https://towardsdatascience.com/the-bayesian-bootstrap-6ca4a1d45148/)). It is implemented in `bootstrap_gamlss()` using `type="bayes"`, which borrows heavily from `gamlss::centiles.boot()` and `gamlss.foreach::BayesianBoot()`.
+**Warning: the 'bayes' bootstrapping option has not been extensively tested and may impact downstream analyses in unknown ways.**
+
+### Types of Confidence Interval
+
+- Pointwise: For a given parameter of interest, a pointwise, bootstrapped confidence interval is defined as the middle 1-$\alpha$ percentage of bootstrapped parameter values. For example, a 95% confidence interval around the age a phenotype peaks at would be between the 2.5% and 97.5% values of the distribution of peak ages calculated from B bootstrapped samples. This is implemented in various gamlssTools functions using the argument `ci_type = "pointwise"`. When finding the confidence interval across a range of values (for example, CIs around the median trajectory for a phenotype across a range of ages), CIs are calculated at 500 equally-spaced points along x (i.e. age).
+
+- Simultaneous: simultaneous confidence intervals are corrected such that we're getting confidence intervals for whole curves/trajectories across the range of x. You can think about this as correcting for multiple-comparisons across the 500 points along x that CIs are calculated at. [This blog post](https://fromthebottomoftheheap.net/2016/12/15/simultaneous-interval-revisited/) does a great job demonstrating this in mgcv. Here, we implement bootstrapped simultaneous confidence intervals using the algorithm described in [Gao et al](https://doi.org/10.3390/sym13071212) using `ci_type = "simultaneous"`.
+
+*Note that the default option for `ci_type` varies by function*
+
+## Visualizations
+
+In order to get nonparametric confidence intervals around our various measures of interest, we'll fit bootstrapped models using `bootstrap_gamlss()`. 
+We'll go with a simple sampling with replacement, stratified by sex to keep the Male:Female ratio constant. For time, we'll just fit 50 bootstrapped samples. 
+
+Note that the visualization functions below have many optional arguments, so you can either use `bootstrap_gamlss()` and then pass the resulting models to the different visualization functions (like we do here) or have the plotting functions do the bootstrapping for you. This obviously becomes inefficient, however, if you want to make more than one plot.
+
+
+```{r}
+boot_model_list <- bootstrap_gamlss(pheno_model, df, B=50, type="resample", stratify=TRUE, group_var = "Sex")
+```
+
+Now we'll use these models to find confidence intervals around parameters and of interest, like the 50th centile trajectory averaged across sex...
+
+```{r}
+plot_centile_cis(pheno_model, 
+                 df, 
+                 x_var="Age", 
+                 color_var="Sex", 
+                 average_over=TRUE, 
+                 boot_list=boot_model_list, 
+                 ci_type = "simultaneous")
+```
+
+sigma...
+
+```{r}
+plot_sigma_cis(pheno_model, 
+               df, 
+               x_var="Age", 
+               color_var="Sex", 
+               average_over=TRUE, 
+               boot_list=boot_model_list, 
+               ci_type = "simultaneous")
+```
+
+... and the age (or x value) at which the median trajectory peaks (though for these simulated data, that's maybe not the most interesting)
+
+```{r}
+#get true peak
+sim_df <- sim_data(df, "Age", "Sex")
+cent <- centile_predict(pheno_model, sim_df, "Age", desiredCentiles = c(0.5), average_over = TRUE)
+peak <- age_at_peak(cent[[1]])
+
+#get bootstrapped CIs
+peak_cis <- peak_ci(boot_model_list, "Age", "Sex", df=df, average_over=TRUE)[[1]]
+
+#add true peak to df
+peak_cis$peak <- peak$Age
+
+peak_cis %>%
+  mutate(Pheno="A") %>%
+  ggplot(aes(x=peak, y = Pheno)) +
+  geom_point(stat="identity") +
+  geom_errorbarh(aes(xmin = lower, xmax = upper)) 
+```
+
+This plot looks terrible because the confidence intervals are so narrow, but I promise it's working!
+
+## Significance Testing
+Since we have confidence intervals, you could use them to compare models of different phenotypes (e.g. do phenotypes A and B reach their peak at different ages?).
+
+We can also use them to test whether different aspects of the trajectories vary across factor levels, for example, between males and females, which is what the package is currently best-equipped to do.
+
+First, we'll compare the median centile trajectories between males and females:
+
+```{r}
+plot_centile_cis(pheno_model, 
+                 df, 
+                 x_var="Age", 
+                 color_var="Sex", 
+                 boot_list=boot_model_list,
+                 ci_type = "simultaneous")
+```
+
+We can see that the CIs dont overlap, but let's test it and plot the differences in trajectories anyway
+
+```{r}
+diffs <- get_median_diffs(pheno_model, 
+                          df, 
+                          "Age", 
+                          "Sex", 
+                          boot_list=boot_model_list, 
+                          ci_type = "simultaneous", 
+                          factor_var_levels = c("Female", "Male"))
+
+#note that it's not always clear which level will be subtracted from the other
+
+#plot
+ggplot(diffs) +
+  geom_line(aes(x=Age, y=Female_minus_Male, color=sig_diff)) +
+  geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = Age), alpha=.3) + 
+  theme_linedraw()
+```
+
+We can do the same with sigma... 
+
+```{r}
+plot_sigma_cis(pheno_model, df, x_var="Age", color_var="Sex", boot_list=boot_model_list, ci_type = "simultaneous")
+
+
+sigma_diffs <- get_median_diffs(pheno_model, 
+                                df, 
+                                "Age", 
+                                "Sex", 
+                                boot_list=boot_model_list, 
+                                ci_type = "simultaneous", 
+                                moment="sigma", 
+                                factor_var_levels = c("Female", "Male"))
+
+#plot
+ggplot(sigma_diffs) +
+  geom_line(aes(x=Age, y=Female_minus_Male, color=sig_diff)) +
+  geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = Age), alpha=.3) + 
+  theme_linedraw()
+```
+
+...and the ages at which the medians peak.
+
+```{r}
+#get true peak
+sim_df <- sim_data(df, "Age", "Sex")
+cent_by_sex <- centile_predict(pheno_model, sim_df, "Age", desiredCentiles = c(0.5))
+peak_by_sex <- lapply(cent_by_sex, age_at_peak) %>%
+  bind_rows(.id = "Sex") %>%
+  mutate(Sex = sub("fanCentiles_", "", Sex))
+
+
+#get bootstrapped CIs
+peak_cis <- peak_ci(boot_model_list, "Age", "Sex", df=df) %>%
+  bind_rows(.id = "Sex") %>%
+  mutate(Sex = sub("peak_", "", Sex)) %>%
+  select(!y)
+
+#combine and plot
+peak_cis_full <- full_join(peak_by_sex, peak_cis)
+
+peak_cis_full %>%
+  ggplot(aes(x=Age, y = Sex)) +
+  geom_point(stat="identity") +
+  geom_errorbarh(aes(xmin = lower, xmax = upper)) 
+```
+
+Again, these CIs are super narrow because of the shape of the simulated data

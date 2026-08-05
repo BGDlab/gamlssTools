@@ -22,7 +22,7 @@
 #' mode(study_factor) #returns "Study_B"
 #' 
 #' @export
-mode = function(x){
+mode <- function(x){
   ta = table(x)
   tam = max(ta)
  if(is.numeric(x)){
@@ -56,7 +56,7 @@ mode = function(x){
 #' @export
 un_log <- function(x){return(10^(x))}
 
-#' Get Beta
+#' Get Coefficient
 #' 
 #' Extract beta weight of a term in a gamlss model
 #' 
@@ -74,9 +74,19 @@ un_log <- function(x){return(10^(x))}
 #' 
 #' @export
 get_coeff <- function(gamlssModel, moment, term){
+  UseMethod("get_coeff")
+}
+
+#' @export
+get_coeff.gamlss <- function(gamlssModel, moment, term){
   moment_str <- paste0(moment, ".coefficients")
   return(unname(gamlssModel[[moment_str]][term]))
-  }
+}
+
+#' @export
+get_coeff.gamlss2 <- function(gamlssModel, moment, term){
+  return(unname(gamlssModel$coefficients[[moment]][term]))
+}
 
 #' GG variance
 #' 
@@ -178,7 +188,11 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), name = NA, ...){
 #' 
 #' @export
 list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "tau")){
-  
+  UseMethod("list_predictors")
+}
+
+#' @export
+list_predictors.gamlss <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "tau")){
   #list moments
   moment <- match.arg(moment)
   if (moment == "all"){
@@ -201,6 +215,8 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
   #remove dataset name
   df_name <- as.character(gamlssModel$call$data)
   cov_list <- cov_list[cov_list != df_name]
+  #remove NAs
+  cov_list <- cov_list[!is.na(cov_list)]
   
   #finally drop duplicates
   term_vector_clean <- unique(cov_list)
@@ -208,125 +224,45 @@ list_predictors <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "t
   return(term_vector_clean)
 }
 
-#' Score centiles for observations
-#'
-#' Returns the centile and/or z-score values for observations under a fitted gamlss model
-#'
-#' Based on Jenna's function [calculatePhenotypeCentile()](https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
-#' and [gamlss::z.scores()]. Scores the observations in `data`, which may be the original
-#' fitting data or any new data with the same covariates (and levels of those covariates),
-#' e.g. new subjects from the same studies. Returns pseudo zscores (standardized scores)
-#' calculated by running `qnorm()` on centiles - may be more or less appropriately called
-#' "z scores" depending on distribution family of the model.
-#'
-#' By default, centiles are computed WITHOUT re-supplying the original fitting data to
-#' [gamlss::predictAll()]: the model's parameters are reconstructed from its stored
-#' coefficients, `pb()` smooths and `random()` effects. If `ref_data` is supplied, it is used
-#' to check that `data` falls within the covariate range of the reference set. If the model
-#' contains a smoother that cannot be rebuilt data-free (`cs()`, `ps()`, `ga()`, `s()`),
-#' `predictAll()` is used with `ref_data` (or `data` itself) automatically.
-#'
-#' @param gamlssModel gamlss model object
-#' @param data dataframe of observations to score
-#' @param ref_data (optional) reference dataframe (e.g. the original fitting data); if supplied,
-#' `data` is checked to fall within its covariate range
-#' @param standardize logical indicating whether to also calculate and return standardized (pseudo z-)scores
-#'
-#' @returns either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
-#'
-#' @examples
-#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
-#' score_centiles(iris_model, iris)
-#'
 #' @export
-score_centiles <- function(gamlssModel, data, ref_data = NULL, standardize = FALSE){
-  pheno <- gamlssModel$mu.terms[[2]]
-
-  #subset df cols just to predictors from model
-  predictor_list <- list_predictors(gamlssModel)
-  stopifnot("Dataframe columns and model covariates don't match" =
-              predictor_list %in% names(data))
-  newData <- subset(data, select = predictor_list)
-  predict_me <- data
-
-  #if a reference dataset is supplied, confirm scored data is within its covariate range
-  if (!is.null(ref_data)) {
-    stopifnot("Dataframe columns and model covariates don't match" =
-                predictor_list %in% names(ref_data))
-    check_range(subset(ref_data, select = predictor_list), newData)
+list_predictors.gamlss2 <- function(gamlssModel, moment=c("all", "mu", "sigma", "nu", "tau")){
+  #list moments
+  moment <- match.arg(moment)
+  if (moment == "all"){
+    return(attributes(gamlssModel$terms)$term.labels)
+  } else if (moment == "mu") {
+    return(attributes(gamlssModel$fake_formula)$rhs[[1]])
+  } else if (moment == "sigma") {
+    return(attributes(gamlssModel$fake_formula)$rhs[[2]])
+  } else if (moment == "nu") {
+    return(attributes(gamlssModel$fake_formula)$rhs[[3]])
+  } else if (moment == "tau") {
+    return(attributes(gamlssModel$fake_formula)$rhs[[4]])
   }
-
-  #predict. By default parameters are reconstructed WITHOUT the original data
-  #(for pb()/random()/parametric models). For models with a non-reconstructable
-  #smoother, predictAll() needs the training data: use ref_data if supplied,
-  #otherwise assume `data` is itself the reference set.
-  fallback_data <- if (!is.null(ref_data)) ref_data else data
-  predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fallback_data)
-
-  #get dist type (e.g. GG, BCCG) and write out function
-  fname <- gamlssModel$family[1]
-  pfun <- paste0("p", fname)
-
-  #look for moments
-  has_sigma <- "sigma" %in% gamlssModel[[2]]
-  has_nu <- "nu" %in% gamlssModel[[2]]
-  has_tau <- "tau" %in% gamlssModel[[2]]
   
-  centiles <- c()
-  #iterate through participants
-  for (i in 1:nrow(predict_me)){
-    cent_args <- list(predict_me[[pheno]][[i]], predModel$mu[[i]])
-    
-    if (has_sigma){
-      cent_args$sigma <- predModel$sigma[[i]]
-    }
-    if (has_nu){
-      cent_args$nu <- predModel$nu[[i]]
-    } 
-    if (has_tau){
-      cent_args$tau <- predModel$tau[[i]]
-    } 
-    
-    centiles[i] <- do.call(pfun, cent_args)
-    
-    #don't let centile = 1 (for z-scores)!
-    if (centiles[i] == 1) {
-      centiles[i] <- 0.99999999999999994 #largest number i could get w/o rounding to 1 (trial & error)
-    }
-    #don't let centile = 0 (for z-scores)!
-    if (centiles[i] == 0) {
-      centiles[i] <- 0.0000000000000000000000001 #25 dec places
-    }
-    
-  }
-  if (standardize == FALSE){
-    return(centiles)
-  } else {
-    #get 'z scores' from normed centiles - how z.score() does it
-    rqres <- qnorm(centiles)
-
-    #return dataframe
-    out <- data.frame("centile" = centiles,
-                      "std_score" = rqres)
-    return(out)
-  }
-
 }
 
-#' @rdname score_centiles
-#' @details
-#' `pred_og_centile()` is a deprecated alias for `score_centiles()`. Its `og.data`/`new.data`
-#' pair maps onto `data`/`ref_data`: with `new.data = NULL` the original data is scored;
-#' otherwise `new.data` is scored and range-checked against `og.data`. `get.std.scores` maps
-#' onto `standardize`.
+#' Get y
+#' 
+#' Silly little function to extract y from gamlss model 
+#' 
+#' @param gamlssModel gamlss model object
+#' 
+#' @returns y variable name
+#' 
 #' @export
-pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.data=NULL){
-  .Deprecated("score_centiles")
-  if (is.null(new.data)) {
-    score_centiles(gamlssModel, data = og.data, ref_data = NULL, standardize = get.std.scores)
-  } else {
-    score_centiles(gamlssModel, data = new.data, ref_data = og.data, standardize = get.std.scores)
-  }
+get_y <- function(gamlssModel){
+  UseMethod("get_y")
+}
+
+#' @export
+get_y.gamlss <- function(gamlssModel){
+  return(gamlssModel$mu.terms[[2]])
+}
+
+#' @export
+get_y.gamlss2 <- function(gamlssModel){
+  return(gamlssModel$formula[[2]])
 }
 
 #' Cohen's Fsquared Local
@@ -348,8 +284,9 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #' 
 #' @export
 cohens_f2_local <- function(full_mod, null_mod){
-  full_rsq <- gamlss::Rsq(full_mod)
-  null_rsq <- gamlss::Rsq(null_mod)
+  #gamlss2 version of Rsq() has methods for both gamlss and gamlss2 objs
+  full_rsq <- gamlss2::Rsq(full_mod) 
+  null_rsq <- gamlss2::Rsq(null_mod)
   
   fsq <- (full_rsq - null_rsq)/(1-full_rsq)
   return(fsq)
@@ -414,11 +351,11 @@ check_range <- function(old_df, new_df) {
 #' Centile coverage
 #'
 #' Return the probability of observations with predicted centiles that are < or = centile lines
-#' estimated from a gamlss model.
-#'
-#' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()].
-#' Calls [score_centiles()].
-#'
+#' estimated from a gamlss model. 
+#' 
+#' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()]. 
+#' Calls [pred_og_centile()]. Already works with both gamlss and gamlss2 objs
+#' 
 #' @param gamlssModel gamlss model object
 #' @param data dataframe to assess
 #' @param plot whether to plot results (`TRUE`, default) or output as a tibble (`FALSE`)
@@ -490,17 +427,17 @@ centile_coverage <- function(gamlssModel, data, plot=TRUE, group = NULL, interva
     )
   
   if(plot == TRUE){
-    df_plt <- tidyr::pivot_longer(sum_df, cols=ends_with("%"), names_to= "empirical", values_to="fitted") %>%
-      mutate(empirical=as.numeric(sub("%", "",empirical,fixed=TRUE))/100)
+    df_plt <- tidyr::pivot_longer(sum_df, cols=ends_with("%"), names_to= "fitted", values_to="empirical") %>%
+      mutate(fitted=as.numeric(sub("%", "",fitted,fixed=TRUE))/100)
     
     plt <- ggplot(df_plt) +
       geom_abline(slope=1, intercept=0, color="gray") +
       theme_bw()
     
     if (!is.null(interval_var)) {
-      plt <- plt + geom_point(aes(x=empirical, y=fitted, color=Interval), alpha=.8)
+      plt <- plt + geom_point(aes(x=fitted, y=empirical, color=Interval), alpha=.8)
     } else {
-      plt <- plt + geom_point(aes(x=empirical, y=fitted))
+      plt <- plt + geom_point(aes(x=fitted, y=empirical))
     }
     
     if (!is.null(group)) {
@@ -524,110 +461,6 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
 }
 
 
-#' Get phenotype at centile(s)
-#' 
-#' Predict the values of a phenotype (y) at each desired centile, given specified covariates
-#' 
-#' Simulates data across the range of `x_var` and at each level of `factor_var`, then uses this
-#' simulated dataset to determine what y (phenotype) is for each centile/at each combo of `x_var`
-#' `factor_var`. Holds all other covariates in the gamlss model at their mean or mode. You can save
-#' time when predicting multiple models/phenos fit on the same data/predictors
-#' by first running [sim_grid()] and supplying the output to arg `sim_grid_list`.
-#'
-#' @param gamlssModel gamlss model object
-#' @param data dataframe used to fit the gamlss model
-#' @param x_var continuous predictor (e.g. 'age') that y will be predicted across the range of
-#' @param factor_var (optional) categorical predictor (e.g. 'sex') that y will be predicted at each level of.
-#' Alternatively, you can average over each level of this variable (see `average_over`).
-#' @param centiles list of percentiles as values between 0 and 1 that will be
-#' calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
-#' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
-#' @param average_over logical indicating whether to average predicted centiles across each level of `factor_var`.
-#' Defaults to `FALSE`, which will return a centile value for each level of `factor_var`.
-#' @param sim_grid_list optional argument that takes the output of [sim_grid()]. Can be useful when you're using
-#' many models fit on the same dataframe
-#' @param remove_cent_effect logical indicating whether to correct for the effect of a variable (such as study). Defaults to `FALSE`.
-#'
-#' @returns dataframe
-#'
-#' @examples
-#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
-#'
-#' #for each level of 'Species', find 'Sepal.Width' values corresponding to 25th percentile across the range of 'Sepal.Length'
-#' #holding all other covariates constant at mean/mode
-#' pheno_at_centiles(iris_model, iris, "Sepal.Length", "Species", centiles=0.25)
-#'
-#' #get 'Sepal.Width' at each centile, averaging across levels of Species
-#' pheno_at_centiles(iris_model, iris, "Sepal.Length", "Species", average_over=TRUE)
-#'
-#' @export
-pheno_at_centiles <- function(gamlssModel, data,
-                             x_var,
-                             factor_var=NULL,
-                             centiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
-                             average_over = FALSE,
-                             sim_grid_list = NULL,
-                             remove_cent_effect = NULL,
-                             ...){
-  # --- backwards compatibility for renamed arguments ---
-  dots <- list(...)
-  if ("df" %in% names(dots)) {
-    warning("`df` is deprecated; use `data` instead.", call. = FALSE)
-    if (missing(data)) data <- dots$df
-  }
-  if ("range_var" %in% names(dots)) {
-    warning("`range_var` is deprecated; use `x_var` instead.", call. = FALSE)
-    if (missing(x_var)) x_var <- dots$range_var
-  }
-  if ("desiredCentiles" %in% names(dots)) {
-    warning("`desiredCentiles` is deprecated; use `centiles` instead.", call. = FALSE)
-    if (missing(centiles)) centiles <- dots$desiredCentiles
-  }
-  if ("sim_data_list" %in% names(dots)) {
-    warning("`sim_data_list` is deprecated; use `sim_grid_list` instead.", call. = FALSE)
-    if (missing(sim_grid_list)) sim_grid_list <- dots$sim_data_list
-  }
-
-  pheno <- as.character(gamlssModel$mu.terms[[2]])
-
-  #check that var names are input correctly
-  stopifnot(is.character(x_var))
-
-  #simulate dataset(s) if not already supplied
-  if (is.null(sim_grid_list)) {
-    sim_list <- sim_grid(data, x_var, factor_var, gamlssModel)
-  } else {
-    sim_list <- sim_grid_list
-  }
-
-  #predict centiles
-  pred_list <- centile_fan_values(gamlssModel = gamlssModel,
-                               sim_grid_list = sim_list,
-                               x_var = x_var,
-                               centiles = centiles,
-                               ref_data = data,
-                               average_over = average_over)
-  
-  # extract centiles and concatenate into single dataframe
-  select_centile_dfs <- grep("^fanCentiles_", names(pred_list), value = TRUE)
-  centile_dfs <- pred_list[select_centile_dfs]
-  names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
-  
-  if (!is.null(factor_var)){
-    #merge across levels of factor_var
-    merged_centile_df <- bind_rows(centile_dfs, .id = factor_var)
-  } else {
-    merged_centile_df <- centile_dfs[[1]]
-  }
-  
-  #reorder so centiles are last
-  other_names <- names(merged_centile_df)[!grepl("^cent_", names(merged_centile_df))]
-  df_sorted <- merged_centile_df %>% dplyr::select(all_of(other_names), starts_with("cent_"))
-
-  return(df_sorted)
-  
-}
-
 #' Truncate by Coverage
 #' 
 #' Remove data points at either end of 1+ variable's range(s) that have sparse coverage
@@ -649,22 +482,22 @@ pheno_at_centiles <- function(gamlssModel, data,
 #'
 #'@examples
 #'outliers <- data.frame(
-#'Sepal.Length = sample(iris$Sepal.Length, 3),  # Randomly chosen normal values
-#'Sepal.Width = c(11, 8, 6),  
-#'Petal.Length = c(10, 12, 14),  # Extreme values
-#'Petal.Width = sample(iris$Petal.Width, 3),  
-#'Species = factor(c("setosa", "versicolor", "virginica"))  # Random species
+#' Sepal.Length = sample(iris$Sepal.Length, 3),  # Randomly chosen normal values
+#' Sepal.Width = c(11, 8, 6),  
+#' Petal.Length = c(10, 12, 14),  # Extreme values
+#' Petal.Width = sample(iris$Petal.Width, 3),  
+#' Species = factor(c("setosa", "versicolor", "virginica"))  # Random species
 #')
 #'
 #'# Combine with the original dataset
 #'iris_outlier <- rbind(iris, outliers)
 #'
-#'iris_clean <- trunc_coverage(iris_outlier, vars=c("Sepal.Width", "Petal.Length"))
+#'iris_clean <- trunc_coverage(iris_outlier, vars=c("Sepal.Width", "Petal.Length"), breaks=10)
 #'
 #'@export
-trunc_coverage <- function(df, 
+trunc_coverage <- function(df,
                         vars, 
-                        breaks = 20, 
+                        breaks = 20,
                         n_min = 5,
                         max_loops = 10) {
   n_loops <- 0
@@ -674,10 +507,10 @@ trunc_coverage <- function(df,
     mutate(across(all_of(vars), ~cut(.x, breaks = breaks, labels = FALSE), .names = "group_{.col}"))
   
   while (TRUE) {
-    # Check coverage for all varsiables
-    group_counts <- sapply(vars, function(vars) {
-      first_grp <- sum(df[[paste0("group_", vars)]] == 1, na.rm = TRUE)
-      last_grp <- sum(df[[paste0("group_", vars)]] == breaks, na.rm = TRUE)
+    # Check coverage for all variables
+    group_counts <- sapply(vars, function(var) {
+      first_grp <- sum(df[[paste0("group_", var)]] == 1, na.rm = TRUE)
+      last_grp <- sum(df[[paste0("group_", var)]] == breaks, na.rm = TRUE)
       return(c(first_grp, last_grp))
     })
     
@@ -693,17 +526,33 @@ trunc_coverage <- function(df,
     } 
     stopifnot(n_loops <= max_loops)
     
-    for (vars in to_remove) {
-      first_grp <- group_counts[1, vars]
-      last_grp <- group_counts[2, vars]
+    for (var in to_remove) {
+      grp_var <- paste0("group_", var)
+      first_grp <- group_counts[1, var]
+      last_grp <- group_counts[2, var]
       
       if (first_grp < n_min) {
-        print(paste("Removing first group for", vars))
-        df <- df %>% filter(.data[[paste0("group_", vars)]] != 1)
+        print(paste("Removing first group for", var))
+        drop_n <- ceiling(unname(first_grp)/2)
+        df <- df %>% 
+          arrange(!!sym(var)) %>%
+          mutate(id = row_number()) %>%
+          #keep all but drop_n rows or other group vars
+          filter(!(id <= drop_n & !!sym(grp_var) == 1)) %>%
+          select(!id)
       }
+      
       if (last_grp < n_min) {
-        print(paste("Removing last group for", vars))
-        df <- df %>% filter(.data[[paste0("group_", vars)]] != breaks)
+        print(paste("Removing last group for", var))
+        drop_n <- ceiling(unname(last_grp)/2)
+        last_row <- nrow(df) - drop_n
+        df <- df %>% 
+          arrange(!!sym(var)) %>%
+          mutate(id = row_number()) %>%
+          #keep all but drop_n rows or other group vars
+          filter(!(id >= last_row & !!sym(grp_var) == breaks)) %>%
+          select(!id)
+        
       }
     }
     
@@ -719,4 +568,264 @@ trunc_coverage <- function(df,
   df <- df %>% select(-starts_with("group_"))
   
   return(df)
+}
+
+
+#' gamlss try
+#' 
+#' Try-catch fitting [gamlss::gamlss()] with various methods, return NULL if failed
+#' 
+#' Takes any *named* gamlss model parameters. Tries quicker, default methods
+#' (e.g. mu.step=1, method=RS()) before resorting to slower methods as necessary to fit. Returns NULL model
+#' instead of giving errors, which is also useful when you need the script to continue
+#' despite nonconvergence of some models.
+#' 
+#' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in [gamlss::summary()].
+#' 
+#' @returns gamlss model object
+#' 
+#' @examples
+#' iris_model <- gamlss_try(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' 
+#' #make sure you name any parameters you pass! unnamed formula param will fail:
+#' \dontrun{
+#' iris_model <- gamlss_try(Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' }
+#' @export
+gamlss_try <- function(...){
+  
+  #parse gamlss parameters
+  params<-list(...)
+  for (name in names(params) ) {
+    assign(name, params[[name]])
+  }
+  
+  warn_msg <- NULL
+  err_msg <- NULL
+  
+  result <- tryCatch({
+    do.call(safe_gamlss, as.list(params))
+  } , warning = function(w) {
+    message(w$message)
+    warn_msg <<- w$message
+  } , error = function(e) {
+    message(e$message)
+    err_msg <<- e$message
+  } , finally = {
+    message("...")
+    NULL
+  } )
+  
+  #check for nonconvergence warnings and add n.cyc if needed
+  if (!is.null(err_msg) && grepl("converge", err_msg)){
+    params_tmp <- params
+    #if not converged, try with higher n.cyc
+    params_tmp$control$n.cyc <- max(params$control$n.cycy*2, 200)
+    params_tmp$call$start.from <- result
+    
+    #another round of trycatch
+    result <- tryCatch({
+      do.call(safe_gamlss, as.list(params_tmp))
+    } , warning = function(w) {
+      message(w$message)
+      warn_msg <<- w$message
+    } , error = function(e) {
+      message(e$message, ", trying method=CG()")
+      tryCatch({
+        params_tmp$method <- "CG()"
+        do.call(safe_gamlss, as.list(params_tmp))
+        
+        #if CG also fails, return NULL
+      }, error = function(e2) {
+        message(e2$message)
+        NULL
+      })
+    } , finally = {
+      message("...")
+    })
+  
+  #for all other errors, try CG() from the beginning
+  } else if (is.null(result)){
+    message(err_msg, ", trying method=CG()")
+    result <- tryCatch({
+      params_tmp <- params
+      params_tmp$method <- "CG()"
+      do.call(safe_gamlss, as.list(params_tmp))
+      
+    #if also fails, return NULL
+      }, error = function(e2) {
+        message(e2$message)
+        NULL
+      })
+  }
+
+  #last attempt if needed, try again with tiny steps
+  if(is.null(result)){
+    params$mu.step <- 0.01
+    params$sigma.step <- 0.01
+    params$nu.step <- 0.00000000001
+    params$tau.step <- 0.00000000001
+    
+    result <- tryCatch({
+      do.call(safe_gamlss, as.list(params))
+      
+    } , warning = function(w) {
+      message(w$message)
+      do.call(safe_gamlss, as.list(params))
+      
+    } , error = function(e) {
+      message(e$message, ", trying method=CG()")
+      tryCatch({
+        params_tmp <- params
+        params_tmp$method <- "CG()"
+        do.call(safe_gamlss, as.list(params_tmp))
+        
+        #if CG also fails, return NULL
+      }, error = function(e2) {
+        message(e2$message, ", returning NULL")
+        return(NULL)
+      })
+    } , finally = {
+      message("done")
+      return(NULL)
+    } )
+  }
+  
+  return(result)
+}
+
+#' safe gamlss
+#' 
+#' gamlss() with more error handling
+#' 
+#' Fits model using [gamlss::gamlss()] and throws an error if model fails to converge or is null
+#' (instead of the )
+#' 
+#' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in [gamlss::summary()].
+#' 
+#' @returns gamlss model object
+#' 
+#' @examples
+#' iris_model <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' 
+#' @export
+safe_gamlss <- function(...) {
+  warn_msg <- NULL
+  args <- list(...)
+  
+  mod <- withCallingHandlers({
+    do.call(gamlss, args)
+  }, warning = function(w) {
+    # Capture the warning message
+    warn_msg <<- w$message
+    
+    # Example condition: promote warnings containing "Error" or convergence issues
+    if (grepl("Error", w$message, ignore.case = TRUE) ||
+        grepl("converge", w$message, ignore.case = TRUE)) {
+      # Turn this warning into an error
+      stop(simpleError(w$message))
+    }
+  },
+  error = function(e) {
+    stop(e)  # propagate any real errors
+  }
+  )
+  
+  # Check for NULL coefficients
+  null_mu <- is.null(coef(mod, what = "mu"))
+  null_sigma <- is.null(coef(mod, what = "sigma"))
+  
+  if (null_mu && null_sigma) {
+    stop("Model fit failed: coefficients are NULL")
+  }
+  
+  #backup check
+  if (mod$converged==FALSE) {
+    stop("Model did not converge:", warn_msg)
+  }
+  
+  return(mod)
+}
+
+#' Get Diffs in Trajectories
+#' 
+#' Calculate differences in 50th centile or sigma trajectories between 2 factor levels
+#' 
+#' To test significance, see [gamlssTools::ci_diffs()]
+#' 
+#' @param gamlssModel gamlss model object
+#' @param df dataframe model was originally fit on
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over 
+#' @param factor_var categorical variable to compare levels within.
+#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
+#' @param moment what moment to get differences for. `mu` calculates differences in 50th centile, 
+#' `sigma` calculates differences in predicted value of sigma (with link-function applied)
+#' @param factor_var_levels (optional) specify the order for factor levels. E.g., `factor_var_levels = c("A", "B")`
+#' would calculate the difference A - B. 
+#' 
+#' @returns dataframe
+#' 
+#' @export
+trajectory_diff <- function(gamlssModel, 
+                            df, 
+                            x_var, 
+                            factor_var, 
+                            sim_data_list = NULL,
+                            moment=c("mu", "sigma"),
+                            factor_var_levels = NULL,
+                            ...){
+  moment <- match.arg(moment)
+  opt_args_list <- list(...)
+  stopifnot(length(unique(df[[factor_var]])) == 2)
+  
+  if (is.null(factor_var_levels)){
+    L1 <- as.character(unique(df[[factor_var]])[1])
+    L2 <- as.character(unique(df[[factor_var]])[2])
+  } else {
+    L1 <- factor_var_levels[[1]]
+    L2 <- factor_var_levels[[2]]
+  }
+  
+  ##get 50th percentiles##
+  #simulate dataset(s) if not already supplied
+  if (is.null(sim_data_list)) {
+    print("simulating data")
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
+    sim_list <- do.call(sim_data, c(list(df, x_var, factor_var, gamlssModel), 
+                                    sim_args))
+  } else if (!is.null(sim_data_list)) {
+    sim_list <- sim_data_list
+  }
+  
+  pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
+  
+  if (moment == "mu"){
+    #predict centiles
+    pred_dfs <- centile_predict(gamlssModel = gamlssModel, 
+                                sim_data_list = sim_list, 
+                                x_var = x_var, 
+                                desiredCentiles = c(0.5),
+                                df = df,
+                                average_over = FALSE)
+    val_col_name <- "cent_0.5"
+    names(pred_dfs) <- sub("fanCentiles_", "", names(pred_dfs)) #drop prefix
+  } else if (moment == "sigma"){
+    #predict sigma
+    pred_dfs <- sigma_predict(gamlssModel = gamlssModel, 
+                              sim_data_list = sim_list, 
+                              x_var = x_var, 
+                              df = df,
+                              average_over = FALSE)
+    val_col_name <- "sigma"
+    names(pred_dfs) <- sub("sigma_", "", names(pred_dfs)) #drop prefix
+  }
+  
+  diff_col_name <- paste(L1, "minus", L2, sep="_")
+  
+  ##get differences across x axis##
+  diff_df <- bind_rows(pred_dfs, .id = factor_var) %>%
+    tidyr:::pivot_wider(names_from=factor_var, values_from = c(val_col_name)) %>%
+    mutate(!!sym(diff_col_name) := !!sym(L1) - !!sym(L2))
+  
+  return(diff_df)
 }

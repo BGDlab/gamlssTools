@@ -86,8 +86,8 @@ test_that("remove_effects default (data-free) matches the ref_data-supplied path
                       sigma.formula = ~ pb(Age),
                       data = d, family = "BCCG", trace = FALSE)
 
-  free   <- suppressMessages(remove_effects(m, d, terms = "Sex"))
-  legacy <- suppressMessages(remove_effects(m, d, ref_data = d, terms = "Sex"))
+  free   <- suppressMessages(remove_effects(m, d, rm_terms = "Sex"))
+  legacy <- suppressMessages(remove_effects(m, d, ref_data = d, rm_terms = "Sex"))
   expect_equal(free$Pheno, legacy$Pheno, tolerance = 1e-6)
 })
 
@@ -111,7 +111,7 @@ test_that("deprecated aliases warn and match their renamed functions", {
     r_old <- suppressMessages(resid_data(m, d, rm_terms = "Sex")),
     regexp = "deprecated|remove_effects"
   )
-  r_new <- suppressMessages(remove_effects(m, d, terms = "Sex"))
+  r_new <- suppressMessages(remove_effects(m, d, rm_terms = "Sex"))
   expect_equal(r_old$Pheno, r_new$Pheno, tolerance = tol)
 })
 

@@ -43,6 +43,6 @@ Species = factor(c("setosa", "versicolor", "virginica"))  # Random species
 # Combine with the original dataset
 iris_outlier <- rbind(iris, outliers)
 
-iris_clean <- trunc_coverage(iris_outlier, vars=c("Sepal.Width", "Petal.Length"))
+iris_clean <- trunc_coverage(iris_outlier, vars=c("Sepal.Width", "Petal.Length"), breaks=10)
 
 }

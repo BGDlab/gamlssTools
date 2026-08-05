@@ -10,10 +10,18 @@ sim_grid(
   x_var,
   factor_var = NULL,
   gamlssModel = NULL,
-  special_term = NULL
+  special_term = NULL,
+  x_range = NULL
 )
 
-sim_data(df, x_var, factor_var = NULL, gamlssModel = NULL, special_term = NULL)
+sim_data(
+  df,
+  x_var,
+  factor_var = NULL,
+  gamlssModel = NULL,
+  special_term = NULL,
+  x_range = NULL
+)
 }
 \arguments{
 \item{data}{original dataframe from which new data will be simulated}
@@ -26,7 +34,10 @@ as determined from the \code{data} parameter}
 \item{gamlssModel}{gamlss model object that will be used to subset the columns of \code{data} such that
 only the model's covariates are simulated (optional)}
 
-\item{special_term}{formula defining any terms that should be calculated separately (e.g. interaction terms)}
+\item{special_term}{formula (or character vector of formulas) defining any terms that should be calculated separately (e.g. interaction terms). When passing multiple, list them in dependency order — each is applied in sequence.
+Can also be used to set term to zero (i.e. \code{special_term="Sepal.Length = 0"}).}
+
+\item{x_range}{x-values for which values are estimated (e.g. seq(0, 10)). Default is 500 datapoints across range of x axis.}
 }
 \value{
 list of dataframes of simulated data, one for each level of \code{factor_var}

@@ -37,7 +37,7 @@ estimated from a gamlss model.
 }
 \details{
 Results can be grouped by any variable in the original dataframe. Inspired by output of \code{\link[gamlss:centiles]{gamlss::centiles()}}.
-Calls \code{\link[=score_centiles]{score_centiles()}}.
+Calls \code{\link[=pred_og_centile]{pred_og_centile()}}. Already works with both gamlss and gamlss2 objs
 
 \code{cent_cdf()} is a deprecated alias for \code{centile_coverage()}.
 }

@@ -9,6 +9,7 @@ wp.taki(
   xvar = NULL,
   resid = NULL,
   n.inter = 4,
+  inter.breaks = NULL,
   xlim.worm = 3.5,
   ylim.worm = 12 * sqrt(n.inter/length(resid)),
   ...
@@ -28,7 +29,7 @@ wp.taki(
 \item{ylim.worm}{control plot range(s)}
 }
 \value{
-ggplot objects of worm plot(s)
+list with ggplot objects of worm plot(s) ($plot) and df of pts outside dotted CI ($outliers)
 }
 \description{
 Output more robust worm plots for assessing gamlss fit in ggplot

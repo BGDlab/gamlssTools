@@ -32,5 +32,11 @@ Imports:
 	foreach,
 	boot,
 	pracma,
-	gamlss.dist
+	gamlss.dist,
+	purrr,
+	zoo,
+	ggrepel,
+	scales,
+	gamlss2
 Config/testthat/edition: 3
+VignetteBuilder: knitr

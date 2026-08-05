@@ -5,9 +5,15 @@
 \alias{resid_data}
 \title{Remove estimated effects from data}
 \usage{
-remove_effects(gamlssModel, data, ref_data = NULL, terms)
+remove_effects(
+  gamlssModel,
+  data,
+  ref_data = NULL,
+  rm_terms = NULL,
+  zero_terms = NULL
+)
 
-resid_data(gamlssModel, df, og_data = NULL, rm_terms)
+resid_data(gamlssModel, df, og_data = NULL, rm_terms = NULL, zero_terms = NULL)
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}
@@ -16,7 +22,9 @@ resid_data(gamlssModel, df, og_data = NULL, rm_terms)
 
 \item{ref_data}{(optional) original dataframe on which model was fit.}
 
-\item{terms}{list of term(s) whose effects will be residualized (removed).}
+\item{rm_terms}{list of term(s) whose effects will be residualized (set to mean/mode)}
+
+\item{zero_terms}{list of NUMERIC term(s) whose effects will be removed completely (set to zero)}
 }
 \value{
 dataframe with the outcome var of the gamlssModel residualized
@@ -40,5 +48,5 @@ whenever possible; supplying \code{ref_data} forces prediction via
 contains a non-reconstructable smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}).
 
 \code{resid_data()} is a deprecated alias for \code{remove_effects()}. Its \code{df}, \code{og_data}
-and \code{rm_terms} arguments map onto \code{data}, \code{ref_data} and \code{terms} respectively.
+and \code{rm_terms} arguments map onto \code{data}, \code{ref_data} and \code{rm_terms} respectively.
 }
