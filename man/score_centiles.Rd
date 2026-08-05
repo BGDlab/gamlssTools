@@ -14,8 +14,8 @@ pred_og_centile(gamlssModel, og.data, get.std.scores = FALSE, new.data = NULL)
 
 \item{data}{dataframe of observations to score}
 
-\item{ref_data}{(optional) reference dataframe (e.g. the original fitting data); if supplied,
-\code{data} is checked to fall within its covariate range}
+\item{ref_data}{(optional) original fitting data. Supplying it forces prediction via
+\code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} with those data and range-checks \code{data} against them.}
 
 \item{standardize}{logical indicating whether to also calculate and return standardized (pseudo z-)scores}
 }
@@ -35,10 +35,10 @@ calculated by running \code{qnorm()} on centiles - may be more or less appropria
 
 For \link[gamlss]{gamlss} fits, by default centiles are computed WITHOUT re-supplying the
 original fitting data (parameters are reconstructed from stored coefficients, \code{pb()} smooths
-and \code{random()} effects). If \code{ref_data} is supplied it is used to check that \code{data} falls
-within the covariate range of the reference set; it is also used by \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}
-when the model contains a non-reconstructable smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}).
-\link[gamlss2]{gamlss2} fits use gamlss2's own \code{predict()}.
+and \code{random()} effects). Supplying \code{ref_data} forces the exact \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} path
+using that data (and additionally checks that \code{data} falls within its covariate range);
+\code{ref_data} is also used automatically when the model contains a non-reconstructable smoother
+(\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \link[gamlss2]{gamlss2} fits use gamlss2's own \code{predict()}.
 
 \code{pred_og_centile()} is a deprecated alias for \code{score_centiles()}. Its \code{og.data}/\code{new.data}
 pair maps onto \code{data}/\code{ref_data}: with \code{new.data = NULL} the original data is scored;

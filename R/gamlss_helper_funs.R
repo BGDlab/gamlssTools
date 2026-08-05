@@ -791,30 +791,30 @@ trajectory_diff <- function(gamlssModel,
   if (is.null(sim_data_list)) {
     print("simulating data")
     sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
-    sim_list <- do.call(sim_data, c(list(df, x_var, factor_var, gamlssModel), 
+    sim_list <- do.call(sim_grid, c(list(df, x_var, factor_var, gamlssModel),
                                     sim_args))
   } else if (!is.null(sim_data_list)) {
     sim_list <- sim_data_list
   }
-  
+
   pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
-  
+
   if (moment == "mu"){
     #predict centiles
-    pred_dfs <- centile_predict(gamlssModel = gamlssModel, 
-                                sim_data_list = sim_list, 
-                                x_var = x_var, 
-                                desiredCentiles = c(0.5),
-                                df = df,
+    pred_dfs <- centile_fan_values(gamlssModel = gamlssModel,
+                                sim_grid_list = sim_list,
+                                x_var = x_var,
+                                centiles = c(0.5),
+                                ref_data = df,
                                 average_over = FALSE)
     val_col_name <- "cent_0.5"
     names(pred_dfs) <- sub("fanCentiles_", "", names(pred_dfs)) #drop prefix
   } else if (moment == "sigma"){
     #predict sigma
-    pred_dfs <- sigma_predict(gamlssModel = gamlssModel, 
-                              sim_data_list = sim_list, 
-                              x_var = x_var, 
-                              df = df,
+    pred_dfs <- sigma_predict(gamlssModel = gamlssModel,
+                              sim_grid_list = sim_list,
+                              x_var = x_var,
+                              ref_data = df,
                               average_over = FALSE)
     val_col_name <- "sigma"
     names(pred_dfs) <- sub("sigma_", "", names(pred_dfs)) #drop prefix

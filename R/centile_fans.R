@@ -256,7 +256,7 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
     if (is.null(sim_data_list)){
       print("simulating data")
       sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
-      sim_data_list <- sim_data(df, x_var, color_var, gamlssModel, special_term)
+      sim_data_list <- sim_grid(df, x_var, color_var, gamlssModel, special_term)
     }
     
     #get CIs

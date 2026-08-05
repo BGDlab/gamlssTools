@@ -6,25 +6,27 @@
 \usage{
 sigma_predict(
   gamlssModel,
-  sim_data_list,
+  sim_grid_list,
   x_var,
-  df = NULL,
-  average_over = FALSE
+  ref_data = NULL,
+  average_over = FALSE,
+  ...
 )
 }
 \arguments{
 \item{gamlssModel}{gamlss or gamlss2 model object}
 
-\item{sim_data_list}{list of simulated dataframes returned by \code{\link[=sim_grid]{sim_grid()}}}
+\item{sim_grid_list}{list of simulated dataframes returned by \code{\link[=sim_grid]{sim_grid()}}}
 
-\item{x_var}{continuous predictor (e.g. 'age'), which \code{sim_data_list} varies over}
+\item{x_var}{continuous predictor (e.g. 'age'), which \code{sim_grid_list} varies over}
 
-\item{df}{(optional) original dataframe from which new data will be simulated. Passing this can
-fix some bugs in \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}}
+\item{ref_data}{(optional) original dataframe used to fit \code{gamlssModel}.}
 
 \item{average_over}{logical indicating whether to return sigma averaged across multiple
-levels of a factor, with each level represented as a dataframe in \code{sim_data_list}.
+levels of a factor, with each level represented as a dataframe in \code{sim_grid_list}.
 Defaults to \code{FALSE}.}
+
+\item{...}{additional arguments (also accepts the deprecated names \code{sim_data_list} and \code{df})}
 }
 \value{
 list of dataframes containing predicted sigma across range of predictors
@@ -35,6 +37,13 @@ Calculates predicted sigma values across simulated data
 \details{
 This function takes a list of dataframes simulated with \code{\link[=sim_grid]{sim_grid()}} and calculates
 the value of sigma (after link function is applied) as a way to visualize variability.
+
+For \link[gamlss]{gamlss} fits, by default (\code{ref_data = NULL}) sigma is predicted WITHOUT
+the original data by reconstructing the model's parameters from its stored coefficients,
+\code{pb()} smooths and \code{random()} effects. Supplying \code{ref_data} forces prediction via
+\code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}; it is also used automatically for a model with a non-reconstructable
+smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \link[gamlss2]{gamlss2} fits use gamlss2's own
+\code{predict()}.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)

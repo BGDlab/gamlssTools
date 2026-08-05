@@ -280,7 +280,7 @@ gamlss_ci <- function(boot_list,
     print("using simulated df provided")
   } else if (!is.null(df)){
     first_mod <- boot_list[[1]]
-    sim_data_list <- sim_data(df, x_var, factor_var, first_mod, special_term)
+    sim_data_list <- sim_grid(df, x_var, factor_var, first_mod, special_term)
   } else {
     stop("must provide either df or sim_data_list")
   }
@@ -289,10 +289,10 @@ gamlss_ci <- function(boot_list,
   if (moment == "mu"){
     #50th centiles
     pred_boot_list <- lapply(boot_list,
-                             centile_predict,
+                             centile_fan_values,
                              x_var = x_var,
-                             sim_data_list = sim_data_list,
-                             desiredCentiles = 0.5,
+                             sim_grid_list = sim_data_list,
+                             centiles = 0.5,
                              average_over = average_over)
     
     #name of column to get ci's over
@@ -302,7 +302,7 @@ gamlss_ci <- function(boot_list,
     #sigma predictions
     pred_boot_list <- lapply(boot_list,
                              sigma_predict,
-                             sim_data_list = sim_data_list,
+                             sim_grid_list = sim_data_list,
                              x_var = x_var,
                              average_over = average_over)
     
@@ -478,7 +478,7 @@ peak_ci <- function(boot_list,
     print("using simulated df provided")
   } else if (!is.null(df)){
     first_mod <- boot_list[[1]]
-    sim_data_list <- sim_data(df, x_var, factor_var, first_mod, special_term)
+    sim_data_list <- sim_grid(df, x_var, factor_var, first_mod, special_term)
   } else {
     stop("must provide either df or sim_data_list")
   }
@@ -487,10 +487,10 @@ peak_ci <- function(boot_list,
   if (moment == "mu"){
     #50th centiles
     cent_boot_list <- lapply(boot_list,
-                             centile_predict,
-                             sim_data_list = sim_data_list,
+                             centile_fan_values,
+                             sim_grid_list = sim_data_list,
                              x_var=x_var,
-                             desiredCentiles=0.5,
+                             centiles=0.5,
                              average_over = average_over)
     
     stopifnot(length(boot_list) == length(cent_boot_list))

@@ -298,15 +298,15 @@ centile_predict <- function(gamlssModel,
 #' @details
 #' For \link[gamlss]{gamlss} fits, by default centiles are computed WITHOUT re-supplying the
 #' original fitting data (parameters are reconstructed from stored coefficients, `pb()` smooths
-#' and `random()` effects). If `ref_data` is supplied it is used to check that `data` falls
-#' within the covariate range of the reference set; it is also used by [gamlss::predictAll()]
-#' when the model contains a non-reconstructable smoother (`cs()`, `ps()`, `ga()`, `s()`).
-#' \link[gamlss2]{gamlss2} fits use gamlss2's own `predict()`.
+#' and `random()` effects). Supplying `ref_data` forces the exact [gamlss::predictAll()] path
+#' using that data (and additionally checks that `data` falls within its covariate range);
+#' `ref_data` is also used automatically when the model contains a non-reconstructable smoother
+#' (`cs()`, `ps()`, `ga()`, `s()`). \link[gamlss2]{gamlss2} fits use gamlss2's own `predict()`.
 #'
 #' @param gamlssModel gamlss or gamlss2 model object
 #' @param data dataframe of observations to score
-#' @param ref_data (optional) reference dataframe (e.g. the original fitting data); if supplied,
-#' `data` is checked to fall within its covariate range
+#' @param ref_data (optional) original fitting data. Supplying it forces prediction via
+#' [gamlss::predictAll()] with those data and range-checks `data` against them.
 #' @param standardize logical indicating whether to also calculate and return standardized (pseudo z-)scores
 #'
 #' @returns either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
@@ -339,11 +339,13 @@ score_centiles.gamlss <- function(gamlssModel, data, ref_data = NULL, standardiz
   }
 
   #predict. By default parameters are reconstructed WITHOUT the original data
-  #(for pb()/random()/parametric models). For models with a non-reconstructable
-  #smoother, predictAll() needs the training data: use ref_data if supplied,
-  #otherwise assume `data` is itself the reference set.
+  #(for pb()/random()/parametric models). Supplying `ref_data` forces the exact
+  #predictAll() path using that data; it is also used automatically as the fallback
+  #frame for a model with a non-reconstructable smoother (cs/ps/ga/s). When ref_data
+  #is NULL, `data` (the scored frame) is used as the fallback source.
   fallback_data <- if (!is.null(ref_data)) ref_data else data
-  predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fallback_data)
+  predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fallback_data,
+                                      use_data = !is.null(ref_data))
 
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
@@ -474,14 +476,22 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #' This function takes a list of dataframes simulated with [sim_grid()] and calculates
 #' the value of sigma (after link function is applied) as a way to visualize variability.
 #'
+#' @details
+#' For \link[gamlss]{gamlss} fits, by default (`ref_data = NULL`) sigma is predicted WITHOUT
+#' the original data by reconstructing the model's parameters from its stored coefficients,
+#' `pb()` smooths and `random()` effects. Supplying `ref_data` forces prediction via
+#' [gamlss::predictAll()]; it is also used automatically for a model with a non-reconstructable
+#' smoother (`cs()`, `ps()`, `ga()`, `s()`). \link[gamlss2]{gamlss2} fits use gamlss2's own
+#' `predict()`.
+#'
 #' @param gamlssModel gamlss or gamlss2 model object
-#' @param sim_data_list list of simulated dataframes returned by [sim_grid()]
-#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over
-#' @param df (optional) original dataframe from which new data will be simulated. Passing this can
-#' fix some bugs in [gamlss::predictAll()]
+#' @param sim_grid_list list of simulated dataframes returned by [sim_grid()]
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_grid_list` varies over
+#' @param ref_data (optional) original dataframe used to fit `gamlssModel`.
 #' @param average_over logical indicating whether to return sigma averaged across multiple
-#' levels of a factor, with each level represented as a dataframe in `sim_data_list`.
+#' levels of a factor, with each level represented as a dataframe in `sim_grid_list`.
 #' Defaults to `FALSE`.
+#' @param ... additional arguments (also accepts the deprecated names `sim_data_list` and `df`)
 #'
 #' @returns list of dataframes containing predicted sigma across range of predictors
 #'
@@ -494,33 +504,55 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #'
 #' @export
 sigma_predict <- function(gamlssModel,
-                          sim_data_list,
+                          sim_grid_list,
                           x_var,
-                          df = NULL,
-                          average_over = FALSE){
+                          ref_data = NULL,
+                          average_over = FALSE,
+                          ...){
   UseMethod("sigma_predict")
+}
+
+# internal: map the deprecated `sim_data_list`/`df` arg names (arriving via `...`)
+# onto `sim_grid_list`/`ref_data`. Returns the resolved pair.
+.sigma_predict_depr_args <- function(dots, sim_grid_list, ref_data,
+                                     sim_grid_missing, ref_data_missing) {
+  if ("sim_data_list" %in% names(dots)) {
+    warning("`sim_data_list` is deprecated; use `sim_grid_list` instead.", call. = FALSE)
+    if (sim_grid_missing) sim_grid_list <- dots$sim_data_list
+  }
+  if ("df" %in% names(dots)) {
+    warning("`df` is deprecated; use `ref_data` instead.", call. = FALSE)
+    if (ref_data_missing) ref_data <- dots$df
+  }
+  list(sim_grid_list = sim_grid_list, ref_data = ref_data)
 }
 
 #' @export
 sigma_predict.gamlss <- function(gamlssModel,
-                                 sim_data_list,
+                                 sim_grid_list,
                                  x_var,
-                                 df = NULL,
-                                 average_over = FALSE){
+                                 ref_data = NULL,
+                                 average_over = FALSE,
+                                 ...){
+  # --- backwards compatibility for renamed arguments ---
+  .a <- .sigma_predict_depr_args(list(...), if (missing(sim_grid_list)) NULL else sim_grid_list,
+                                 ref_data, missing(sim_grid_list), missing(ref_data))
+  sim_grid_list <- .a$sim_grid_list; ref_data <- .a$ref_data
 
   #initialize empty list(s)
   sig_result_list <- list()
 
-  # Predict phenotype values for each simulated level of factor_var
-  for (factor_level in names(sim_data_list)) {
+  # Predict sigma for each simulated level of factor_var
+  for (factor_level in names(sim_grid_list)) {
 
     #make sure variable names are correct
-    stopifnot(x_var %in% names(sim_data_list[[factor_level]]))
-    sub_df <- sim_data_list[[factor_level]]
+    stopifnot(x_var %in% names(sim_grid_list[[factor_level]]))
+    sub_df <- sim_grid_list[[factor_level]]
 
-    #predict sigma response
+    #predict sigma response (data-free by default; ref_data forces predictAll path)
     print("predicting sigma")
-    sig_response <- predictAll(gamlssModel, newdata=sub_df, type="response", data=df)$sigma
+    sig_response <- .predict_params_gamlss(gamlssModel, newdata = sub_df,
+                                           data = ref_data, use_data = !is.null(ref_data))$sigma
 
     #save as df with x_var
     sig_df <- data.frame("sigma" = sig_response)
@@ -536,10 +568,10 @@ sigma_predict.gamlss <- function(gamlssModel,
     average_result_list <- list()
 
     #confirm correct number
-    stopifnot(length(sig_result_list) == length(sim_data_list))
+    stopifnot(length(sig_result_list) == length(sim_grid_list))
 
     #stop if not all output numeric
-    df_is_numeric <- all(sapply(sig_result_list, function(df) {all(sapply(df, is.numeric))}))
+    df_is_numeric <- all(sapply(sig_result_list, function(tbl) {all(sapply(tbl, is.numeric))}))
     stopifnot(df_is_numeric == TRUE)
 
     avg_sigma_df <- Reduce("+", sig_result_list)/length(sig_result_list)
@@ -557,22 +589,27 @@ sigma_predict.gamlss <- function(gamlssModel,
 
 #' @export
 sigma_predict.gamlss2 <- function(gamlssModel,
-                                  sim_data_list,
+                                  sim_grid_list,
                                   x_var,
-                                  df = NULL,
-                                  average_over = FALSE){
+                                  ref_data = NULL,
+                                  average_over = FALSE,
+                                  ...){
+  # --- backwards compatibility for renamed arguments ---
+  .a <- .sigma_predict_depr_args(list(...), if (missing(sim_grid_list)) NULL else sim_grid_list,
+                                 ref_data, missing(sim_grid_list), missing(ref_data))
+  sim_grid_list <- .a$sim_grid_list; ref_data <- .a$ref_data
 
   #initialize empty list(s)
   sig_result_list <- list()
 
-  # Predict phenotype values for each simulated level of factor_var
-  for (factor_level in names(sim_data_list)) {
+  # Predict sigma for each simulated level of factor_var
+  for (factor_level in names(sim_grid_list)) {
 
     #make sure variable names are correct
-    stopifnot(x_var %in% names(sim_data_list[[factor_level]]))
-    sub_df <- sim_data_list[[factor_level]]
+    stopifnot(x_var %in% names(sim_grid_list[[factor_level]]))
+    sub_df <- sim_grid_list[[factor_level]]
 
-    #predict sigma response
+    #predict sigma response (gamlss2 predicts its smooths natively)
     print("predicting sigma")
     sig_response <- predict(gamlssModel, newdata=sub_df, type="parameter")$sigma
 
@@ -590,10 +627,10 @@ sigma_predict.gamlss2 <- function(gamlssModel,
     average_result_list <- list()
 
     #confirm correct number
-    stopifnot(length(sig_result_list) == length(sim_data_list))
+    stopifnot(length(sig_result_list) == length(sim_grid_list))
 
     #stop if not all output numeric
-    df_is_numeric <- all(sapply(sig_result_list, function(df) {all(sapply(df, is.numeric))}))
+    df_is_numeric <- all(sapply(sig_result_list, function(tbl) {all(sapply(tbl, is.numeric))}))
     stopifnot(df_is_numeric == TRUE)
 
     avg_sigma_df <- Reduce("+", sig_result_list)/length(sig_result_list)

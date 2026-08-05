@@ -275,17 +275,17 @@ plot_sigma <- function(gamlssModel, df, x_var,
   if (is.null(sim_data_list)) {
     print("simulating data")
     sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
-    sim_list <- do.call(sim_data, c(list(df, x_var, color_var, gamlssModel), 
+    sim_list <- do.call(sim_grid, c(list(df, x_var, color_var, gamlssModel),
                                     sim_args))
   } else if (!is.null(sim_data_list)) {
     sim_list <- sim_data_list
   }
-  
+
   #predict sigma response
-  sigma_dfs <- sigma_predict(gamlssModel = gamlssModel, 
-                                 sim_data_list = sim_list, 
-                                 x_var = x_var, 
-                                 df = df,
+  sigma_dfs <- sigma_predict(gamlssModel = gamlssModel,
+                                 sim_grid_list = sim_list,
+                                 x_var = x_var,
+                                 ref_data = df,
                                  average_over = average_over)
   
   names(sigma_dfs) <- sub("sigma_", "", names(sigma_dfs)) #drop prefix
@@ -421,7 +421,7 @@ plot_sigma_cis <- function(gamlssModel, df, x_var,
   if (is.null(sim_data_list)){
     print("simulating data")
     sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
-    sim_data_list <- sim_data(df, x_var, color_var, gamlssModel, special_term)
+    sim_data_list <- sim_grid(df, x_var, color_var, gamlssModel, special_term)
   }
   
   #get CIs
