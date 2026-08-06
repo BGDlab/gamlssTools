@@ -24,7 +24,7 @@ trajectory_diff(
 
 \item{factor_var}{categorical variable to compare levels within.}
 
-\item{sim_data_list}{list of simulated dataframes returned by \code{sim_data()}}
+\item{sim_data_list}{list of simulated dataframes returned by \code{sim_grid()}}
 
 \item{moment}{what moment to get differences for. \code{mu} calculates differences in 50th centile,
 \code{sigma} calculates differences in predicted value of sigma (with link-function applied)}

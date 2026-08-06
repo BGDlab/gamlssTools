@@ -2,7 +2,7 @@
 % Please edit documentation in R/predict_funs.R
 \name{sigma_predict}
 \alias{sigma_predict}
-\title{Predict sigma}
+\title{Predict sigma - RENAME TO sigma_values}
 \usage{
 sigma_predict(
   gamlssModel,
@@ -26,7 +26,8 @@ sigma_predict(
 levels of a factor, with each level represented as a dataframe in \code{sim_grid_list}.
 Defaults to \code{FALSE}.}
 
-\item{...}{additional arguments (also accepts the deprecated names \code{sim_data_list} and \code{df})}
+\item{...}{additional arguments. Also accepts the deprecated names \code{sim_data_list}
+(now \verb{sim_grid_list)} and \code{df} (now \code{ref_data})}
 }
 \value{
 list of dataframes containing predicted sigma across range of predictors

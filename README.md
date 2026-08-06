@@ -1,6 +1,6 @@
 # gamlssTools
 This package is intended to make interacting with and plotting GAMLSS models easier. It contains a number of auxiliary functions 
-that will be useful for those using [gamlss()](https://cran.r-project.org/web/packages/gamlss/index.html) or [gamlss2()](https://github.com/gamlss-dev/gamlss2)
+that are compatible with both [gamlss()](https://cran.r-project.org/web/packages/gamlss/index.html) and [gamlss2()](https://github.com/gamlss-dev/gamlss2)
 
 There are two vignettes that go over these functions in greater detail.
 

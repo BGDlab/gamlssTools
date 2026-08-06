@@ -173,18 +173,20 @@ test_that("make_centile_fan (and wrappers) accept deprecated sim_data_list", {
   expect_s3_class(p2, "ggplot")
 })
 
-test_that("a cs() model routes to the predictAll fallback with an informative message", {
+test_that("a cs() model errors without data; with data it's exact", {
   d <- sim_datafree()
   m <- gamlss::gamlss(Pheno ~ cs(Age) + Sex, data = d, family = "NO", trace = FALSE)
   nd <- d[1:25, ]
 
-  # Non-reconstructable smooth -> the dispatcher emits the fallback message and
-  # routes to predictAll(); with the original data supplied it succeeds and
-  # matches predictAll() directly.
-  expect_message(
-    free <- .predict_params_gamlss(m, newdata = nd, data = d),
+  # Non-reconstructable smooth AND no data supplied -> dispatcher errors, telling
+  # the user to supply the original fitting data.
+  expect_error(
+    .predict_params_gamlss(m, newdata = nd),
     regexp = "cs/ps/ga/s"
   )
+
+  # With the original data supplied it uses predictAll and matches predictAll() directly.
+  free <- .predict_params_gamlss(m, newdata = nd, data = d)
   gold <- gamlss::predictAll(m, newdata = nd, data = d, type = "response")
   expect_equal(free$mu, gold$mu, tolerance = tol)
 

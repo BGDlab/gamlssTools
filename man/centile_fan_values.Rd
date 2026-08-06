@@ -55,10 +55,11 @@ values. Can also calculate and return the peak median (0.5) value of y across pr
 
 For \link[gamlss]{gamlss} fits, by default (\code{ref_data = NULL}) centiles are predicted
 WITHOUT the original data by reconstructing the model's parameters from its stored
-coefficients, \code{pb()} smooths and \code{random()} effects. Supplying \code{ref_data} instead forces
-prediction via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} using the original data. The original data is required
+coefficients, \code{pb()} smooths and \code{random()} effects. Supplying \code{ref_data} forces
+prediction via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} using the original data and is required
 if the model contains a smoother that cannot be rebuilt data-free (\code{cs()}, \code{ps()}, \code{ga()},
-\code{s()}). For \link[gamlss2]{gamlss2} fits, prediction uses gamlss2's own \code{predict()}.
+\code{s()}). For \link[gamlss2]{gamlss2} fits, prediction uses gamlss2's own \code{predict()}
+so no \code{ref_data} is necessary.
 
 \code{centile_predict()} is a deprecated alias for \code{centile_fan_values()}, kept for
 backwards compatibility. Its \code{sim_data_list}, \code{desiredCentiles} and \code{df} arguments
@@ -66,12 +67,12 @@ map onto \code{sim_grid_list}, \code{centiles} and \code{ref_data} respectively.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
-sim_df <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
+sim_df_list <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
 
-#to average across levels of "Species"
-centile_fan_values(iris_model, sim_df, "Sepal.Length", average_over = TRUE)
+# to average across levels of "Species"
+centile_fan_values(iris_model, sim_df_list, "Sepal.Length", average_over = TRUE)
 
 # or say you just want the 25th, 50th (median), and 75th percentiles
-centile_fan_values(iris_model, sim_df, "Sepal.Length", centiles = c(0.25, 0.5, 0.75))
+centile_fan_values(iris_model, sim_df_list, "Sepal.Length", centiles = c(0.25, 0.5, 0.75))
 
 }

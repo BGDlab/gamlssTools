@@ -26,19 +26,21 @@ either vector listing centiles for every datapoint OR dataframe with centiles an
 Returns the centile and/or z-score values for observations under a fitted gamlss model
 }
 \details{
-Based on Jenna's function \href{https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67}{calculatePhenotypeCentile()}
-and \code{\link[gamlss:z.scores]{gamlss::z.scores()}}. Scores the observations in \code{data}, which may be the original
+Scores the observations in \code{data}, which may be the original
 fitting data or any new data with the same covariates (and levels of those covariates),
 e.g. new subjects from the same studies. Returns pseudo zscores (standardized scores)
 calculated by running \code{qnorm()} on centiles - may be more or less appropriately called
 "z scores" depending on distribution family of the model.
 
-For \link[gamlss]{gamlss} fits, by default centiles are computed WITHOUT re-supplying the
-original fitting data (parameters are reconstructed from stored coefficients, \code{pb()} smooths
-and \code{random()} effects). Supplying \code{ref_data} forces the exact \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} path
-using that data (and additionally checks that \code{data} falls within its covariate range);
-\code{ref_data} is also used automatically when the model contains a non-reconstructable smoother
+For \link[gamlss]{gamlss} fits, by default (\code{ref_data=NULL}) centiles are computed by reconstructing
+parameters from stored coefficients, \code{pb()} smooths and \code{random()} effects.
+Supplying \code{ref_data} (original fitting data) forces the exact \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} path
+(and additionally checks that \code{data} falls within its covariate range);
+\code{ref_data} is necessary when the model contains a non-reconstructable smoother
 (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \link[gamlss2]{gamlss2} fits use gamlss2's own \code{predict()}.
+
+Based on Jenna's function \code{\link[=calculatePhenotypeCentile]{calculatePhenotypeCentile()}} (https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
+and \code{\link[gamlss:z.scores]{gamlss::z.scores()}}.
 
 \code{pred_og_centile()} is a deprecated alias for \code{score_centiles()}. Its \code{og.data}/\code{new.data}
 pair maps onto \code{data}/\code{ref_data}: with \code{new.data = NULL} the original data is scored;

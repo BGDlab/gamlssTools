@@ -2,11 +2,6 @@
 
 # functions to predict centiles / reference scores from models
 
-# This is the single home for the centile/score prediction functions. The
-# gamlss methods reconstruct model parameters WITHOUT the original fitting data
-# where possible (see datafree_predict.R); the gamlss2 methods use gamlss2's own
-# predict(), which handles its smooths natively.
-
 ################################################
 
 # ---- internal: value of the response at a single centile ---------------------
@@ -82,10 +77,11 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
 #' @details
 #' For \link[gamlss]{gamlss} fits, by default (`ref_data = NULL`) centiles are predicted
 #' WITHOUT the original data by reconstructing the model's parameters from its stored
-#' coefficients, `pb()` smooths and `random()` effects. Supplying `ref_data` instead forces
-#' prediction via [gamlss::predictAll()] using the original data. The original data is required
+#' coefficients, `pb()` smooths and `random()` effects. Supplying `ref_data` forces
+#' prediction via [gamlss::predictAll()] using the original data and is required
 #' if the model contains a smoother that cannot be rebuilt data-free (`cs()`, `ps()`, `ga()`,
-#' `s()`). For \link[gamlss2]{gamlss2} fits, prediction uses gamlss2's own `predict()`.
+#' `s()`). For \link[gamlss2]{gamlss2} fits, prediction uses gamlss2's own `predict()`
+#' so no `ref_data` is necessary.
 #'
 #' @param gamlssModel gamlss or gamlss2 model object
 #' @param sim_grid_list list of simulated dataframes returned by [sim_grid()]
@@ -102,14 +98,14 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
 #'
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
-#' sim_df <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
+#' sim_df_list <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
 #'
-#' #to average across levels of "Species"
-#' centile_fan_values(iris_model, sim_df, "Sepal.Length", average_over = TRUE)
+#' # to average across levels of "Species"
+#' centile_fan_values(iris_model, sim_df_list, "Sepal.Length", average_over = TRUE)
 #'
 #' # or say you just want the 25th, 50th (median), and 75th percentiles
-#' centile_fan_values(iris_model, sim_df, "Sepal.Length", centiles = c(0.25, 0.5, 0.75))
-#'
+#' centile_fan_values(iris_model, sim_df_list, "Sepal.Length", centiles = c(0.25, 0.5, 0.75))
+#' 
 #' @export
 centile_fan_values <- function(gamlssModel,
                                sim_grid_list,
@@ -150,8 +146,7 @@ centile_fan_values.gamlss <- function(gamlssModel,
 
     # Predict centiles (data-free by default; ref_data forces predictAll path)
     print("predicting centiles")
-    pred_df <- .predict_params_gamlss(gamlssModel, newdata = sub_df,
-                                      data = ref_data, use_data = !is.null(ref_data))
+    pred_df <- .predict_params_gamlss(gamlssModel, newdata = sub_df, data = ref_data)
 
     fanCentiles <- lapply(centiles, .centile_value, params = pred_df, q_func = qfun, n_param = n_param)
     names(fanCentiles) <- paste0("cent_", centiles)
@@ -288,20 +283,22 @@ centile_predict <- function(gamlssModel,
 #'
 #' Returns the centile and/or z-score values for observations under a fitted gamlss model
 #'
-#' Based on Jenna's function [calculatePhenotypeCentile()](https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
-#' and [gamlss::z.scores()]. Scores the observations in `data`, which may be the original
+#' Scores the observations in `data`, which may be the original
 #' fitting data or any new data with the same covariates (and levels of those covariates),
 #' e.g. new subjects from the same studies. Returns pseudo zscores (standardized scores)
 #' calculated by running `qnorm()` on centiles - may be more or less appropriately called
 #' "z scores" depending on distribution family of the model.
 #'
 #' @details
-#' For \link[gamlss]{gamlss} fits, by default centiles are computed WITHOUT re-supplying the
-#' original fitting data (parameters are reconstructed from stored coefficients, `pb()` smooths
-#' and `random()` effects). Supplying `ref_data` forces the exact [gamlss::predictAll()] path
-#' using that data (and additionally checks that `data` falls within its covariate range);
-#' `ref_data` is also used automatically when the model contains a non-reconstructable smoother
+#' For \link[gamlss]{gamlss} fits, by default (`ref_data=NULL`) centiles are computed by reconstructing
+#' parameters from stored coefficients, `pb()` smooths and `random()` effects.
+#' Supplying `ref_data` (original fitting data) forces the exact [gamlss::predictAll()] path
+#' (and additionally checks that `data` falls within its covariate range);
+#' `ref_data` is necessary when the model contains a non-reconstructable smoother
 #' (`cs()`, `ps()`, `ga()`, `s()`). \link[gamlss2]{gamlss2} fits use gamlss2's own `predict()`.
+#' 
+#' Based on Jenna's function [calculatePhenotypeCentile()] (https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
+#' and [gamlss::z.scores()].
 #'
 #' @param gamlssModel gamlss or gamlss2 model object
 #' @param data dataframe of observations to score
@@ -329,7 +326,7 @@ score_centiles.gamlss <- function(gamlssModel, data, ref_data = NULL, standardiz
   stopifnot("Dataframe columns and model covariates don't match" =
               predictor_list %in% names(data))
   newData <- subset(data, select = predictor_list)
-  predict_me <- data
+  predict_me <- data[[pheno]]
 
   #if a reference dataset is supplied, confirm scored data is within its covariate range
   if (!is.null(ref_data)) {
@@ -338,14 +335,8 @@ score_centiles.gamlss <- function(gamlssModel, data, ref_data = NULL, standardiz
     check_range(subset(ref_data, select = predictor_list), newData)
   }
 
-  #predict. By default parameters are reconstructed WITHOUT the original data
-  #(for pb()/random()/parametric models). Supplying `ref_data` forces the exact
-  #predictAll() path using that data; it is also used automatically as the fallback
-  #frame for a model with a non-reconstructable smoother (cs/ps/ga/s). When ref_data
-  #is NULL, `data` (the scored frame) is used as the fallback source.
-  fallback_data <- if (!is.null(ref_data)) ref_data else data
-  predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fallback_data,
-                                      use_data = !is.null(ref_data))
+  #predict, using ref_data if supplied
+  predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=ref_data)
 
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
@@ -358,8 +349,8 @@ score_centiles.gamlss <- function(gamlssModel, data, ref_data = NULL, standardiz
 
   centiles <- c()
   #iterate through participants
-  for (i in 1:nrow(predict_me)){
-    cent_args <- list(predict_me[[pheno]][[i]], predModel$mu[[i]])
+  for (i in 1:length(predict_me)){
+    cent_args <- list(predict_me[[i]], predModel$mu[[i]])
 
     if (has_sigma){
       cent_args$sigma <- predModel$sigma[[i]]
@@ -406,7 +397,6 @@ score_centiles.gamlss2 <- function(gamlssModel, data, ref_data = NULL, standardi
   stopifnot("Dataframe columns and model covariates don't match" =
               predictor_list %in% names(data))
   newData <- subset(data, select = predictor_list)
-  predict_me <- data
 
   #if a reference dataset is supplied, confirm scored data is within its covariate range
   if (!is.null(ref_data)) {
@@ -415,15 +405,14 @@ score_centiles.gamlss2 <- function(gamlssModel, data, ref_data = NULL, standardi
     check_range(subset(ref_data, select = predictor_list), newData)
   }
 
-  fallback_data <- if (!is.null(ref_data)) ref_data else data
-  predModel <- predict(gamlssModel, newdata=newData, data=fallback_data, type="parameter")
+  predModel <- predict(gamlssModel, newdata=newData, data=ref_data, type="parameter")
 
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[[1]]
   pfun <- paste0("p", fname)
 
   #iterate through participants
-  predModel$q <- predict_me[[pheno]]
+  predModel$q <- data[[pheno]]
   arg_order <- c("q", "mu", "sigma", "nu", "tau")
 
   centiles_df <- predModel %>%
@@ -469,7 +458,7 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
   }
 }
 
-#' Predict sigma
+#' Predict sigma - RENAME TO sigma_values
 #'
 #' Calculates predicted sigma values across simulated data
 #'
@@ -491,7 +480,8 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #' @param average_over logical indicating whether to return sigma averaged across multiple
 #' levels of a factor, with each level represented as a dataframe in `sim_grid_list`.
 #' Defaults to `FALSE`.
-#' @param ... additional arguments (also accepts the deprecated names `sim_data_list` and `df`)
+#' @param ... additional arguments. Also accepts the deprecated names `sim_data_list`
+#' (now `sim_grid_list)` and `df` (now `ref_data`)
 #'
 #' @returns list of dataframes containing predicted sigma across range of predictors
 #'
@@ -551,8 +541,7 @@ sigma_predict.gamlss <- function(gamlssModel,
 
     #predict sigma response (data-free by default; ref_data forces predictAll path)
     print("predicting sigma")
-    sig_response <- .predict_params_gamlss(gamlssModel, newdata = sub_df,
-                                           data = ref_data, use_data = !is.null(ref_data))$sigma
+    sig_response <- .predict_params_gamlss(gamlssModel, newdata = sub_df, data = ref_data)$sigma
 
     #save as df with x_var
     sig_df <- data.frame("sigma" = sig_response)

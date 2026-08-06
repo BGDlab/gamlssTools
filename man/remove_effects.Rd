@@ -16,37 +16,38 @@ remove_effects(
 resid_data(gamlssModel, df, og_data = NULL, rm_terms = NULL, zero_terms = NULL)
 }
 \arguments{
-\item{gamlssModel}{gamlss model object}
+\item{gamlssModel}{gamlss (or gamlss2) model object}
 
-\item{data}{dataframe to residualize. NOTE: gamlssModel will be refit to these data}
+\item{data}{dataframe to residualize (must contain the model's response and any \code{rm_terms}/\code{zero_terms} columns)}
 
-\item{ref_data}{(optional) original dataframe on which model was fit.}
+\item{ref_data}{(optional) original dataframe on which the model was fit}
 
-\item{rm_terms}{list of term(s) whose effects will be residualized (set to mean/mode)}
+\item{rm_terms}{(optional) list of term(s) whose effects will be residualized (set to mean/mode)}
 
-\item{zero_terms}{list of NUMERIC term(s) whose effects will be removed completely (set to zero)}
+\item{zero_terms}{(optional) list of NUMERIC term(s) whose effects will be removed completely (set to zero)}
 }
 \value{
 dataframe with the outcome var of the gamlssModel residualized
 }
 \description{
-Residualize data by removing terms' location effects as estimated by a gamlss model
+Residualize data by setting terms' location effects in mu to either: those of the data's mean/mode
+as estimated by a gamlss model(\code{rm_terms}) or to zero (\code{zero_terms}).
 }
 \details{
-Works by running \code{predict.gamlss()} with type="terms" to estimate effects of specified terms/covariates on mu,
-applying the inverse of the link function to convert into response scale, then subtracting from known y value.
+For each term in \code{rm_terms}, the estimated effect is removed by predicting mu (on the response
+scale) twice -- once on the supplied data and once on a copy with that term held at its mean
+(numeric) or mode (factor/character) -- and subtracting the difference from the response. Terms in
+\code{zero_terms} (numeric only) are instead held at 0, removing their entire contribution; use with
+caution, as 0 is often outside the term's range in the training data and estimates can be unstable.
+Because the adjustment is applied on the response scale, for non-identity mu links it removes a
+back-transformed mean difference (the standard approximation).
 
-IMPORTANT: Will not work if dataset has no variability (e.g. data with values simulated to hold constant). To remove
-estimated covariate effects from simulated data, use \code{\link[=pred_residualized]{pred_residualized()}}.
+By default (\code{ref_data = NULL}) mu is reconstructed WITHOUT the original fitting data whenever
+possible (from the model's stored coefficients, \code{pb()} smooths and \code{random()} effects). Supplying
+\code{ref_data} forces prediction via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} with those data, and is required when the
+model contains a non-reconstructable smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \code{ref_data} is also
+the reference distribution used to compute the mean/mode each \code{rm_terms} value is held at.
 
-Works with random effects, smooths, etc, but might have trouble correctly identifying terms
-if they are not listed as they appear in \code{coefficients(gamlssModel)}.
-
-By default (\code{ref_data=NULL}) the model's location effects are reconstructed WITHOUT the original data
-whenever possible; supplying \code{ref_data} forces prediction via
-\code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} with those data, which is also done automatically when the model
-contains a non-reconstructable smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}).
-
-\code{resid_data()} is a deprecated alias for \code{remove_effects()}. Its \code{df}, \code{og_data}
-and \code{rm_terms} arguments map onto \code{data}, \code{ref_data} and \code{rm_terms} respectively.
+\code{resid_data()} is a deprecated alias for \code{remove_effects()}. Its \code{df} and \code{og_data}
+arguments map onto \code{data} and \code{ref_data}; \code{rm_terms} and \code{zero_terms} are passed through unchanged.
 }

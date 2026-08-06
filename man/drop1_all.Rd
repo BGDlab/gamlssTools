@@ -4,15 +4,19 @@
 \alias{drop1_all}
 \title{drop1 across all terms and moments}
 \usage{
-drop1_all(gamlssModel, list = c("mu", "sigma"), name = NA, ...)
+drop1_all(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA, ...)
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}
 
-\item{list}{list of moments that \code{drop1()} will be applied across. defaults to mu and sigma}
+\item{list}{list of moments that \code{drop1()} will be applied across. Defaults to mu and sigma}
+
+\item{ref_data}{dataframe used to fit \code{gamlssModel}}
 
 \item{name}{(optional) name to label output with. stored in 'Model' column. Defaults to the name
 of the \code{gamlssModel} object}
+
+\item{...}{additional arguments}
 }
 \value{
 dataframe with outputs of \code{drop1()} for each moment and term
@@ -25,13 +29,10 @@ Should be used with caution depending on the smooths included in the model. From
 Regression and Smoothing using GAMLSS in R": " "in the presence of smoothing terms...
 drop1() could be used as a rough guide to the significance of each of the parametric terms,
 with the smoothing degrees of freedom fixed at their values chosen from the model prior to drop1()".
-Can optionally pass the original dataset that the model was fit on using \verb{data = } (helpful on HPCs)
-and/or name your model with a string (useful if applying across many models).
+Can optionally pass name your model with a string (useful if applying across many models).
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 drop1_all(iris_model)
-
-drop1_all(iris_model, data=iris)
 
 }

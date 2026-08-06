@@ -1,6 +1,6 @@
 ################################################
 
-# Data-free prediction for gamlss models.
+# Helper functions for data-free prediction for gamlss models.
 #
 # These helpers reproduce the fitted parameters (mu, sigma, nu, tau) of a gamlss
 # model on new data WITHOUT the original fitting data being in scope. This mirrors
@@ -40,8 +40,7 @@
 # is unsafe). Each kept pb() term adds its linear coefficient * x plus the stored
 # interpolation function getSmo(...)$fun(x); each kept random() effect adds the
 # stored per-level BLUP getSmo(...)$coef[level] (unseen levels -> 0, the population
-# value). Only valid when the model is data-free eligible (see
-# .datafree_eligible_gamlss()).
+# value). Only valid when the model is data-free eligible (see .datafree_eligible_gamlss()).
 #' @keywords internal
 #' @noRd
 .lp_nodata_gamlss <- function(object, p, newdata, drop.term = NULL) {
@@ -128,29 +127,20 @@
 
 # ---- internal: dispatcher used by the centile/scoring functions --------------
 # Returns response-scale fitted parameters (predictAll-shaped named list) for
-# `newdata`. By default reconstructs them WITHOUT the original fitting data
-# whenever the model is data-free eligible; otherwise (a kept cs/ps/ga/s smooth)
-# falls back to predictAll(object, newdata, data = data, type = "response"),
-# which needs the original `data`. Set `use_data = TRUE` to force the predictAll
-# path (e.g. to reproduce legacy behaviour). `drop.term` sets that term to its
-# baseline in the data-free path (unused by the predictAll fallback).
+# `newdata`. Whether the original fitting data is used is decided solely by
+# `data`: when `data` is NULL the parameters are reconstructed WITHOUT it
+# (data-free); when `data` is supplied it is passed straight to
+# predictAll(), giving the exact data-based prediction. `drop.term` sets that
+# term to its baseline in the data-free path (unused by the predictAll path).
 #' @keywords internal
 #' @noRd
-.predict_params_gamlss <- function(object, newdata, data = NULL,
-                                   drop.term = NULL, use_data = FALSE) {
-  if (!use_data && .datafree_eligible_gamlss(object, drop.term = drop.term)) {
+.predict_params_gamlss <- function(object, newdata, data = NULL, drop.term = NULL) {
+  if (is.null(data) && .datafree_eligible_gamlss(object, drop.term = drop.term)) {
     return(.predictAll_nodata_gamlss(object, newdata, drop.term = drop.term))
   }
-  if (!use_data) {
-    if (is.null(data)) {
-      message("Model contains a smoother that can't be reconstructed without the ",
-              "original data (cs/ps/ga/s). Falling back to predictAll(); supply the ",
-              "original fitting data (e.g. `df`/`og.data`) if prediction fails.")
-    } else {
-      message("Model contains a smoother that can't be reconstructed without the ",
-              "original data (cs/ps/ga/s); predicting with predictAll() and the ",
-              "supplied data instead.")
-    }
+  if (is.null(data)) {
+    stop("Model contains a smoother that can't be reconstructed without the original",
+        " data (cs/ps/ga/s); supply the original fitting data (e.g. `ref_data`)")
   }
   predictAll(object, newdata = newdata, data = data, type = "response")
 }

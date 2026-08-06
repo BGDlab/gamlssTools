@@ -14,7 +14,6 @@ gamlss() with more error handling
 }
 \details{
 Fits model using \code{\link[gamlss:gamlss]{gamlss::gamlss()}} and throws an error if model fails to converge or is null
-(instead of the )
 
 NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in \code{\link[gamlss:summary]{gamlss::summary()}}.
 }

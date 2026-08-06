@@ -15,12 +15,12 @@ check_range(old_df, new_df)
 logical TRUE/FALSE with explanation
 }
 \description{
-See whether column names/value ranges are encompased by another dataframe
+See whether column names/value ranges are encompassed by another dataframe
 }
 \details{
 Check to make sure that the column names and values in a new dataframe are included in an original
 dataframe. Checks that numeric values are within expected range and that no new levels have been introduced
-for charater/factor variables. Written with help from ChatGPT.
+for character/factor variables. Written with help from ChatGPT.
 }
 \examples{
 iris_new_species <- iris \%>\% sample_n(10) \%>\% mutate(Species = "Undiscovered")

@@ -294,12 +294,19 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
 #' 
 #' `make_centile_fan` takes a gamlss model and creates a basic centile fan for it in ggplot
 #' 
+#' @details
 #' The resulting ggplot object can be further modified as needed (see example). There are several built-in formatting
 #' options for the x-axis that can be accessed using the `x_axis` argument. Alternatively, the default value of 'custom'
 #' will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. Can also be used
 #' to plot 1st derivative of centile lines using `plot_deriv` argument. You can save 
 #' time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
 #' by first running [sim_grid()] and supplying the output to arg `sim_grid_list`.
+#' 
+#' There are multiple ways to "residualize" certain effects from your visualization. If you want to remove estimated effects
+#' from the datapoints themselves, you can use `remove_point_effect` (set effects to their population mean/mode) or 
+#' `zero_effect` (set numeric effects to 0). To zero a numeric term's contribution to the centile line(s) itself, use `special_term` instead 
+#' (e.g. `special_term = "eTIV = 0"`). These last two should be used with caution, as 0 is often outside the range of the data 
+#' the model was trained on an thus estimates can be unstable. 
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe used to fit the gamlss model
@@ -317,20 +324,28 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
 #' which returns the 1st percentile, 5th percentile, 10th percentile, etc.
 #' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
 #' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
-#' @param sim_grid_list optional argument that takes the output of [sim_grid()]. Can be useful when you're plotting
-#' many models fit on the same dataframe 
+#' @param datafree logical controlling how the centile lines and residualized points are predicted.
+#' `TRUE` (default) reconstructs them WITHOUT the original data (from the model's stored coefficients,
+#' `pb()` smooths and `random()` effects); `FALSE` uses `df` as the reference data and predicts via
+#' [gamlss::predictAll()] (the exact path). Data-free is required for `cs()`/`ps()`/`ga()`/`s()`-free
+#' models; a model with such a smoother is predicted with `df` regardless.
+#' @param sim_grid_list (optional) output of [sim_grid()]
 #' @param show_points logical indicating whether to plot data points below centile fans. Defaults to `TRUE`
 #' @param label_centiles label the percentile corresponding to each centile line(`label`), map thickness in legend(`legend`), or neither(`none`). 
 #' Defaults to `label`.
 #' @param remove_point_effect list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization
-#' @param zero_effect list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via `resid_data()`). To zero a term's contribution to the centile fan itself, use `special_term` instead (e.g. `special_term = "eTIV = 0"`).
-#' @param color_manual optional arg to specify color for centile lines ONLY. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
-#' @param point_color_manual optional arg to specify color for points ONLY. Will override `color_var`. Takes hex color codes or color names (e.g. "red")
+#' @param zero_effect list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via `resid_data()`). 
+#' @param color_manual (optional) arg to specify color for centile lines ONLY. Will override `color_var`. 
+#' Takes hex color codes or color names (e.g. "red")
+#' @param point_color_manual (optional) arg to specify color for points ONLY. Will override `color_var`. 
+#' Takes hex color codes or color names (e.g. "red")
 #' @param get_derivs plot 1st derivative of centile lines instead of the centile lines themselves
-#' @param y_scale function to be applied to dependent variable (y axis)
-#' @param x_scale function to be applied to variable on x axis
-#' @param color_name optional arg passed to `scale_discrete_manual()` to re-title legend. Requires `color_manual` or `color_point_manual`
-#' @param color_name optional vector passed to `scale_discrete_manual()` to re-label levels of `color_var`. Requires `color_manual` or `color_point_manual`
+#' @param y_scale function to be applied to rescale dependent variable (y axis)
+#' @param x_scale function to be applied to rescale variable on x axis
+#' @param color_name (optional) passed to `scale_discrete_manual()` to re-title legend. 
+#' Requires `color_manual` or `color_point_manual`
+#' @param color_name (optional) vector passed to `scale_discrete_manual()` to re-label levels of `color_var`. 
+#' Requires `color_manual` or `color_point_manual`
 #' 
 #' @returns ggplot object
 #' 
@@ -391,6 +406,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                                         "lifespan_fetal", "log_lifespan_fetal"),
                              desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
                              average_over = FALSE,
+                             datafree = TRUE,
                              sim_grid_list = NULL,
                              show_points = TRUE,
                              label_centiles = c("label", "legend", "none"),
@@ -423,7 +439,22 @@ make_centile_fan <- function(gamlssModel, df, x_var,
 
   #check that var names are input correctly
   stopifnot(is.character(x_var))
-  
+
+  # prediction data for the centile lines / point residualization: data-free by
+  # default (datafree = TRUE), otherwise use `df` as the reference data so the
+  # predictions go through the exact predictAll path. If not eligible, switch with
+  # warning
+  if (isTRUE(datafree)) {
+    if (.datafree_eligible_gamlss(gamlssModel)){
+      pred_ref <- NULL
+    } else{
+      warning("Re-fitting on original data required, setting datafree=FALSE")
+      pred_ref <- df
+    }
+  } else {
+    pred_ref <- df
+  }
+
   pheno <- as.character(get_y(gamlssModel))
   
   #simulate dataset(s) if not already supplied
@@ -442,7 +473,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                                sim_grid_list = sim_list,
                                x_var = x_var,
                                centiles = desiredCentiles_reord,
-                               ref_data = df,
+                               ref_data = pred_ref,
                                average_over = average_over)
   
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
@@ -497,7 +528,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #remove effects from points if necessary
   if (show_points == TRUE && (!is.null(remove_point_effect) | !is.null(zero_effect))) {
     print(paste("Residualizing", remove_point_effect, "from data points"))
-    point_df <- remove_effects(gamlssModel, data=df, ref_data=df, rm_terms=remove_point_effect, zero_terms = zero_effect)
+    point_df <- remove_effects(gamlssModel, data=df, ref_data=pred_ref, rm_terms=remove_point_effect, zero_terms = zero_effect)
     print("success")
   } else {
     point_df <- df
@@ -590,7 +621,8 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     print("plotting one centile fan...")
     if (show_points == TRUE){
       base_plot_obj <- ggplot() +
-        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], color = if(!is.null(point_color_manual)) point_color_manual else "navy", alpha=0.3))
+        geom_point(aes(y = point_df[[pheno]], x = point_df[[x_var]], color = if(!is.null(point_color_manual)) point_color_manual 
+                       else "navy"), alpha=0.3)
     } else if (show_points==FALSE) {
       base_plot_obj <- ggplot()
     }

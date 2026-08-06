@@ -14,6 +14,7 @@ make_centile_fan(
     "log_lifespan_fetal"),
   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
   average_over = FALSE,
+  datafree = TRUE,
   sim_grid_list = NULL,
   show_points = TRUE,
   label_centiles = c("label", "legend", "none"),
@@ -54,8 +55,13 @@ which returns the 1st percentile, 5th percentile, 10th percentile, etc.}
 \item{average_over}{logical indicating whether to average predicted centiles across each level of \code{color_var}.
 Defaults to \code{FALSE}, which will plot a different colored centile fan for each level of \code{color_var}.}
 
-\item{sim_grid_list}{optional argument that takes the output of \code{\link[=sim_grid]{sim_grid()}}. Can be useful when you're plotting
-many models fit on the same dataframe}
+\item{datafree}{logical controlling how the centile lines and residualized points are predicted.
+\code{TRUE} (default) reconstructs them WITHOUT the original data (from the model's stored coefficients,
+\code{pb()} smooths and \code{random()} effects); \code{FALSE} uses \code{df} as the reference data and predicts via
+\code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} (the exact path). Data-free is required for \code{cs()}/\code{ps()}/\code{ga()}/\code{s()}-free
+models; a model with such a smoother is predicted with \code{df} regardless.}
+
+\item{sim_grid_list}{(optional) output of \code{\link[=sim_grid]{sim_grid()}}}
 
 \item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
 
@@ -64,19 +70,22 @@ Defaults to \code{label}.}
 
 \item{remove_point_effect}{list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization}
 
-\item{zero_effect}{list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via \code{resid_data()}). To zero a term's contribution to the centile fan itself, use \code{special_term} instead (e.g. \code{special_term = "eTIV = 0"}).}
+\item{zero_effect}{list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via \code{resid_data()}).}
 
-\item{color_manual}{optional arg to specify color for centile lines ONLY. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
+\item{color_manual}{(optional) arg to specify color for centile lines ONLY. Will override \code{color_var}.
+Takes hex color codes or color names (e.g. "red")}
 
 \item{get_derivs}{plot 1st derivative of centile lines instead of the centile lines themselves}
 
-\item{y_scale}{function to be applied to dependent variable (y axis)}
+\item{y_scale}{function to be applied to rescale dependent variable (y axis)}
 
-\item{x_scale}{function to be applied to variable on x axis}
+\item{x_scale}{function to be applied to rescale variable on x axis}
 
-\item{point_color_manual}{optional arg to specify color for points ONLY. Will override \code{color_var}. Takes hex color codes or color names (e.g. "red")}
+\item{point_color_manual}{(optional) arg to specify color for points ONLY. Will override \code{color_var}.
+Takes hex color codes or color names (e.g. "red")}
 
-\item{color_name}{optional vector passed to \code{scale_discrete_manual()} to re-label levels of \code{color_var}. Requires \code{color_manual} or \code{color_point_manual}}
+\item{color_name}{(optional) vector passed to \code{scale_discrete_manual()} to re-label levels of \code{color_var}.
+Requires \code{color_manual} or \code{color_point_manual}}
 }
 \value{
 ggplot object
@@ -91,6 +100,12 @@ will allow you to further adjust the formatting of the resulting ggplot object y
 to plot 1st derivative of centile lines using \code{plot_deriv} argument. You can save
 time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
 by first running \code{\link[=sim_grid]{sim_grid()}} and supplying the output to arg \code{sim_grid_list}.
+
+There are multiple ways to "residualize" certain effects from your visualization. If you want to remove estimated effects
+from the datapoints themselves, you can use \code{remove_point_effect} (set effects to their population mean/mode) or
+\code{zero_effect} (set numeric effects to 0). To zero a numeric term's contribution to the centile line(s) itself, use \code{special_term} instead
+(e.g. \code{special_term = "eTIV = 0"}). These last two should be used with caution, as 0 is often outside the range of the data
+the model was trained on an thus estimates can be unstable.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)

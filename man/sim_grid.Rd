@@ -6,7 +6,7 @@
 \title{Simulate a covariate grid for plotting GAMLSS}
 \usage{
 sim_grid(
-  data,
+  ref_data,
   x_var,
   factor_var = NULL,
   gamlssModel = NULL,
@@ -24,17 +24,18 @@ sim_data(
 )
 }
 \arguments{
-\item{data}{original dataframe from which new data will be simulated}
+\item{ref_data}{original dataframe from which grid will be simulated}
 
 \item{x_var}{continuous variable whose value will be simulated across it's full range,
-as determined from the \code{data} parameter}
+as determined from the \code{ref_data} parameter}
 
 \item{factor_var}{(optional) categorical variable that will be simulated at every level}
 
-\item{gamlssModel}{gamlss model object that will be used to subset the columns of \code{data} such that
-only the model's covariates are simulated (optional)}
+\item{gamlssModel}{(optional) gamlss model object that will be used to remove any extra columns
+in \code{ref_data} such that only the model's covariates are simulated across}
 
-\item{special_term}{formula (or character vector of formulas) defining any terms that should be calculated separately (e.g. interaction terms). When passing multiple, list them in dependency order — each is applied in sequence.
+\item{special_term}{formula (or character vector of formulas) defining any terms that should be calculated separately
+(e.g. interaction terms). When passing multiple, list them in dependency order — each is applied in sequence.
 Can also be used to set term to zero (i.e. \code{special_term="Sepal.Length = 0"}).}
 
 \item{x_range}{x-values for which values are estimated (e.g. seq(0, 10)). Default is 500 datapoints across range of x axis.}
@@ -43,10 +44,10 @@ Can also be used to set term to zero (i.e. \code{special_term="Sepal.Length = 0"
 list of dataframes of simulated data, one for each level of \code{factor_var}
 }
 \description{
-\code{sim_grid()} creates a dataset from which you can cleanly plot centiles.
+\code{sim_grid()} creates a data grid from which you can cleanly plot centiles.
 }
 \details{
-This function takes a dataset and transforms it such that covariates of interest are
+This function takes a dataset and transforms it such that covariate(s) of interest are
 allowed to vary across their full range of values, while all other covariates are held
 constant at their reference (mode or mean) value. This enables clean visualization of
 centiles across, for example, age, while holding freesurfer version constant. Can be

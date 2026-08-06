@@ -9,7 +9,7 @@ age_at_peak(cent_df, peak_from = NULL)
 \arguments{
 \item{cent_df}{dataframe output by \code{centile_fan_values()}}
 
-\item{peak_from}{optional name of colum in \code{df} that's maximum will define the peak. Otherwise,
+\item{peak_from}{(optional) name of column in \code{df} that's maximum will define the peak. Otherwise,
 defaults to median centile ("cent_0.5")}
 }
 \value{

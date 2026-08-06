@@ -1,3 +1,9 @@
+################################################
+
+# misc. helper functions
+
+################################################
+
 #' Mode
 #' 
 #' `mode()` returns the mode of a vector
@@ -119,17 +125,19 @@ GGalt.variance <- function(mu, sigma, nu){
 #' 
 #' Performs [stats::drop1()]	function across all specified moments
 #' 
+#' @details
 #' Should be used with caution depending on the smooths included in the model. From "Flexible
 #' Regression and Smoothing using GAMLSS in R": " "in the presence of smoothing terms... 
 #' drop1() could be used as a rough guide to the significance of each of the parametric terms,
 #' with the smoothing degrees of freedom fixed at their values chosen from the model prior to drop1()".
-#' Can optionally pass the original dataset that the model was fit on using `data = ` (helpful on HPCs) 
-#' and/or name your model with a string (useful if applying across many models).
+#' Can optionally pass name your model with a string (useful if applying across many models).
 #' 
 #' @param gamlssModel gamlss model object
-#' @param list list of moments that `drop1()` will be applied across. defaults to mu and sigma
+#' @param list list of moments that `drop1()` will be applied across. Defaults to mu and sigma
+#' @param ref_data dataframe used to fit `gamlssModel`
 #' @param name (optional) name to label output with. stored in 'Model' column. Defaults to the name
 #' of the `gamlssModel` object
+#' @param ... additional arguments
 #' 
 #' @returns dataframe with outputs of `drop1()` for each moment and term
 #' 
@@ -137,12 +145,10 @@ GGalt.variance <- function(mu, sigma, nu){
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 #' drop1_all(iris_model)
 #' 
-#' drop1_all(iris_model, data=iris)
-#' 
 #' @importFrom tibble rownames_to_column
 #' 
 #' @export
-drop1_all <- function(gamlssModel, list = c("mu", "sigma"), name = NA, ...){
+drop1_all <- function(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA, ...){
   if (is.na(name)){
     n <- deparse(substitute(gamlssModel))
   } else {
@@ -294,11 +300,11 @@ cohens_f2_local <- function(full_mod, null_mod){
 
 #' Check Range
 #' 
-#' See whether column names/value ranges are encompased by another dataframe
+#' See whether column names/value ranges are encompassed by another dataframe
 #' 
 #' Check to make sure that the column names and values in a new dataframe are included in an original
 #' dataframe. Checks that numeric values are within expected range and that no new levels have been introduced
-#' for charater/factor variables. Written with help from ChatGPT.
+#' for character/factor variables. Written with help from ChatGPT.
 #' 
 #' @param old_df original dataframe (base of comparison)
 #' @param new_df new dataframe
@@ -348,118 +354,6 @@ check_range <- function(old_df, new_df) {
   
   return(TRUE)
 }
-#' Centile coverage
-#'
-#' Return the probability of observations with predicted centiles that are < or = centile lines
-#' estimated from a gamlss model. 
-#' 
-#' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()]. 
-#' Calls [pred_og_centile()]. Already works with both gamlss and gamlss2 objs
-#' 
-#' @param gamlssModel gamlss model object
-#' @param data dataframe to assess
-#' @param plot whether to plot results (`TRUE`, default) or output as a tibble (`FALSE`)
-#' @param group (optional) name of grouping column
-#' @param interval_var (optional) numeric variable along which to group outputs. Uses [ggplot2::cut_interval], which
-#' requires additional args (`n` or `length`).
-#'
-#' @returns ggplot object or tibble (if `plot==FALSE`)
-#'
-#' @examples
-#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
-#' centile_coverage(iris_model, iris)
-#' centile_coverage(iris_model, iris, group="Species")
-#'
-#' #simulate a dataframe with better group-level coverage
-#' df <- data.frame(
-#'  Age = sample(0:36525, 10000, replace = TRUE),
-#'  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
-#'  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
-#'
-#' df$log_Age <- log(df$Age, base=10)
-#' df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
-#' df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
-#'
-#' #fit gamlss model
-#' pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
-#'
-#' #plot
-#' centile_coverage(pheno_model, df, group="Sex", interval_var="Age", n=4)
-#'
-#' #output table only
-#' centile_coverage(pheno_model, df, plot=FALSE, group="Sex", interval_var="Age", n=4)
-#'
-#' @export
-centile_coverage <- function(gamlssModel, data, plot=TRUE, group = NULL, interval_var = NULL, ...) {
-  df <- data  #internal alias; the summary below is built from `df`
-  # Predict centiles for original data
-  df$centile <- score_centiles(gamlssModel, df)
-  
-  # Convert group variable to factor if needed
-  if (!is.null(group) && is.numeric(df[[group]])) {
-    df[[group]] <- as.factor(df[[group]])
-  }
-  
-  # Add Interval column if interval_var is provided
-  if (!is.null(interval_var)) {
-    df$Interval <- cut_interval(df[[interval_var]], ...)
-  }
-  
-  # Determine grouping variables (updated with help from GPT)
-  group_vars <- c()
-  if (!is.null(group)) group_vars <- c(group_vars, group)
-  if (!is.null(interval_var)) group_vars <- c(group_vars, "Interval")
-  
-  # Group and summarize
-  sum_df <- df %>%
-    group_by(across(all_of(group_vars))) %>%
-    summarise(
-      "1%" = round(sum(centile <= 0.01) / n(), digits = 3),
-      "5%" = round(sum(centile <= 0.05) / n(), digits = 3),
-      "10%" = round(sum(centile <= 0.1) / n(), digits = 3),
-      "25%" = round(sum(centile <= 0.25) / n(), digits = 3),
-      "50%" = round(sum(centile <= 0.5) / n(), digits = 3),
-      "75%" = round(sum(centile <= 0.75) / n(), digits = 3),
-      "90%" = round(sum(centile <= 0.90) / n(), digits = 3),
-      "95%" = round(sum(centile <= 0.95) / n(), digits = 3),
-      "99%" = round(sum(centile <= 0.99) / n(), digits = 3),
-      .groups = "drop" # To avoid grouped output
-    )
-  
-  if(plot == TRUE){
-    df_plt <- tidyr::pivot_longer(sum_df, cols=ends_with("%"), names_to= "fitted", values_to="empirical") %>%
-      mutate(fitted=as.numeric(sub("%", "",fitted,fixed=TRUE))/100)
-    
-    plt <- ggplot(df_plt) +
-      geom_abline(slope=1, intercept=0, color="gray") +
-      theme_bw()
-    
-    if (!is.null(interval_var)) {
-      plt <- plt + geom_point(aes(x=fitted, y=empirical, color=Interval), alpha=.8)
-    } else {
-      plt <- plt + geom_point(aes(x=fitted, y=empirical))
-    }
-    
-    if (!is.null(group)) {
-      plt <- plt + facet_wrap(as.formula(paste("~", group)))
-    }
-      print(plt)
-
-  } else {
-    return(sum_df)
-  }
-}
-
-#' @rdname centile_coverage
-#' @details
-#' `cent_cdf()` is a deprecated alias for `centile_coverage()`.
-#' @export
-cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NULL, ...) {
-  .Deprecated("centile_coverage")
-  centile_coverage(gamlssModel, data = df, plot = plot, group = group,
-                   interval_var = interval_var, ...)
-}
-
 
 #' Truncate by Coverage
 #' 
@@ -699,7 +593,6 @@ gamlss_try <- function(...){
 #' gamlss() with more error handling
 #' 
 #' Fits model using [gamlss::gamlss()] and throws an error if model fails to converge or is null
-#' (instead of the )
 #' 
 #' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in [gamlss::summary()].
 #' 
@@ -757,7 +650,7 @@ safe_gamlss <- function(...) {
 #' @param df dataframe model was originally fit on
 #' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over 
 #' @param factor_var categorical variable to compare levels within.
-#' @param sim_data_list list of simulated dataframes returned by `sim_data()`
+#' @param sim_data_list list of simulated dataframes returned by `sim_grid()`
 #' @param moment what moment to get differences for. `mu` calculates differences in 50th centile, 
 #' `sigma` calculates differences in predicted value of sigma (with link-function applied)
 #' @param factor_var_levels (optional) specify the order for factor levels. E.g., `factor_var_levels = c("A", "B")`
