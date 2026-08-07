@@ -129,32 +129,71 @@ centile_fan_minimal <- function(gamlssModel, df, x_var,
   return(plot)
 }
 
-#' Plot lifespan centile fan
+#' Plot brain chart
 #' 
-#' Plot centiles in the style of Bethlehem, Seidletz & White et al, Nature 2020.
+#' Plot centiles in the style of Bethlehem, Seidletz & White et al's 2022 Nature paper.
 #' 
-#' Wrapper function for [make_centile_fan()] with different defaults.
+#' @details
+#' Wrapper function for [make_centile_fan()] with different defaults. Assumes age is 
+#' log-scaled and in days post-conception (birth + 280).
+#' 
+#' Bethlehem RAI, Seidlitz J, White SR, et al. Brain charts for the human lifespan.
+#' Nature 2022 604:7906. 2022;604(7906):525-533. doi:10.1038/s41586-022-04554-y
 #' 
 #' @returns ggplot object
-#' 
+#'
+#' @examples
+#' #simulate a lifespan dataframe
+#' n <- 1000
+#' df <- data.frame(
+#'  Age = sample(-280:36525, n, replace = TRUE),
+#'  Sex = sample(c("Male", "Female"), n, replace = TRUE),
+#'  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), n, replace = TRUE)))
+#'
+#' #log-age in days post-conception (birth = 280 days), matching the fetal log x-axis
+#' df$logAge <- log(df$Age + 280, base = 10)
+#' df$Pheno <- 6 + 4 * (df$logAge - 2.4) - 1.6 * (df$logAge - 3.6)^2 +
+#'   ifelse(df$Sex == "Male", 0.6, 0) + rnorm(n, mean = 0, sd = 0.4)
+#' df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
+#'
+#' #fit a model on log-age and plot a lifespan-style centile fan
+#' pheno_model <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), sigma.formula= ~ pb(logAge), data = df, family=BCCG)
+#' centile_fan_brainchart(pheno_model, df, color_var="Sex")
+#'
 #' @export
-centile_fan_lifespan <- function(gamlssModel, df, x_var ="logAge", 
+centile_fan_brainchart <- function(gamlssModel, df, x_var ="logAge",
                                 color_var="sex",
                                 desiredCentiles = c(0.025, 0.5, 0.975),
                                 sim_grid_list = NULL,
                                 ...){
-  
-  plot <- make_centile_fan(gamlssModel, df, x_var, 
+  pheno <- get_y(gamlssModel)
+  birth <- log(280, base=10)
+  eighteen <- log(280+18*365.25, base=10)
+  tickMarks <-c()
+  for (year in c(0, 1, 2, 18, 35, 80)) {
+    tickMarks <- append(tickMarks, log(year * 365.25 + 280, base = 10))
+  }
+  tickLabels <- c("Birth", "1", "2", "18", "35", "80")
+
+  plot <- make_centile_fan(gamlssModel, df, x_var,
                            color_var = color_var,
                            get_peaks = FALSE,
-                           x_axis = "log_lifespan_fetal",
+                           x_axis = "custom",
                            desiredCentiles = desiredCentiles,
                            average_over = FALSE,
                            sim_grid_list = sim_grid_list,
                            show_points = FALSE,
                            label_centiles = "none",
                            remove_point_effect = NULL,
-                           ...)
+                           ...) +
+    theme_classic() +
+    labs(title=pheno) +
+    theme(axis.title.x=element_blank(), 
+          axis.title.y=element_blank(), 
+          legend.position = "bottom") +
+    scale_x_continuous(breaks = tickMarks, labels = tickLabels) + 
+    geom_vline(xintercept=birth, color="lightgray", linetype = "dashed") +
+    geom_vline(xintercept=eighteen, color="lightgray", linetype = "dashed")
   return(plot)
 }
 
@@ -376,21 +415,21 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
 #' make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", remove_point_effect = "Sepal.Width", desiredCentiles=c(0.05, .5, 0.95), datafree=FALSE)
 #' 
 #' #################################
-#' #simulate a dataframe to use x_axis options
+#' #simulate a lifespan dataframe to use x_axis options
 #' df <- data.frame(
 #'  Age = sample(0:36525, 10000, replace = TRUE),
 #'  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
 #'  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
 #'
-#' df$log_Age <- log(df$Age, base=10)
-#' df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
-#' df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
-#' 
-#' #fit gamlss model
+#' df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000) 
+#' df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10)) +
+#'   ifelse(df$Sex == "Male", 0.6, 0)
+#'
+#' #fit gamlss model on raw age
 #' pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
-#' 
+#'
 #' make_centile_fan(pheno_model, df, "Age", "Sex", x_axis="lifespan")
-#' 
+#'
 #' #average over each sex and choose color
 #' make_centile_fan(pheno_model, df, "Age", "Sex", average_over=TRUE, x_axis="lifespan", color_manual="#4B644BFF")
 #' 
@@ -678,7 +717,9 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                                    y=values, 
                                    label=scales::percent(id.vars)),
                                data = data_end,
-                               nudge_x=(data_end[[x_var_s]]*.03), box.padding=0.15, size=3)
+                               nudge_x=(data_end[[x_var_s]]*.05), 
+                               box.padding=0.15,
+                               size=3)
   }
   
   #add peak points as needed
@@ -719,13 +760,14 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     }
   }
 
-  #format x-axis
-  axis_obj <- format_x_axis(x_axis, point_df[[x_var]])
+  #format x-axis (pad the right only when centile labels are drawn there)
+  axis_obj <- format_x_axis(x_axis, point_df[[x_var]],
+                            pad_right = (label_centiles == "label"))
   
   final_plot_obj <- base_plot_obj +
     axis_obj +
     labs(title=deparse(substitute(gamlssModel))) +
-    ylab(deparse(substitute(pheno)))
+    ylab(pheno)
   
   warnings()
   

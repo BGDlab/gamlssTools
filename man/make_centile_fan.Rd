@@ -52,14 +52,13 @@ Defaults to \code{FALSE}, which will plot a different colored centile fan for ea
 
 \item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
 
-\item{remove_point_effect}{list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization}
+\item{remove_point_effect}{list of term(s) whose effects are to be residualized (set to mean/mode) from points
+for visualization}
 
-\item{zero_effect}{list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via \code{remove_effects()}).}
+\item{zero_effect}{list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization
+(via \code{remove_effects()}).}
 
-\item{datafree}{logical controlling how the centile lines and residualized points are predicted.
-\code{TRUE} (default) reconstructs them WITHOUT the original data (from the model's stored coefficients,
-\code{pb()} smooths and \code{random()} effects); \code{FALSE} uses \code{df} as the reference data and predicts via
-\code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} (the exact path).}
+\item{datafree}{logical controlling how the centile lines and residualized points are predicted (see details above)}
 
 \item{sim_grid_list}{(optional) output of \code{\link[=sim_grid]{sim_grid()}}}
 
@@ -70,8 +69,8 @@ which is, actually, no specific formatting. NOTE: options "lifespan" and "log_li
 age is formatted in days post-birth. if age is formatted in days post-conception
 (i.e. age post-birth + 280 days), use options ending in "_fetal".}
 
-\item{label_centiles}{label the percentile corresponding to each centile line(\code{label}), map thickness in legend(\code{legend}), or neither(\code{none}).
-Defaults to \code{label}.}
+\item{label_centiles}{label the percentile corresponding to each centile line(\code{label}), map thickness in legend(\code{legend}),
+or neither(\code{none}). Defaults to \code{label}.}
 
 \item{color_manual}{(optional) arg to specify color for centile lines ONLY. Will override \code{color_var}.
 Takes hex color codes or color names (e.g. "red")}
@@ -79,7 +78,7 @@ Takes hex color codes or color names (e.g. "red")}
 \item{point_color_manual}{(optional) arg to specify color for points ONLY. Will override \code{color_var}.
 Takes hex color codes or color names (e.g. "red")}
 
-\item{color_name}{(optional) color variable name as it will appear in the legend.
+\item{color_name}{(optional) passed to \code{scale_discrete_manual()} to re-title legend.
 Requires \code{color_manual} or \code{point_color_manual}}
 
 \item{color_labels}{(optional) vector passed to \code{scale_discrete_manual()} to re-label levels of \code{color_var}.
@@ -107,9 +106,9 @@ by first running \code{\link[=sim_grid]{sim_grid()}} and supplying the output to
 
 There are multiple ways to "residualize" certain effects from your visualization. If you want to remove estimated effects
 from the datapoints themselves, you can use \code{remove_point_effect} (set effects to their population mean/mode) or
-\code{zero_effect} (set numeric effects to 0). To zero a numeric term's contribution to the centile line(s) itself, use \code{special_term} instead
-(e.g. \code{special_term = "eTIV = 0"}). These last two should be used with caution, as 0 is often outside the range of the data
-the model was trained on an thus estimates can be unstable.
+\code{zero_effect} (set numeric effects to 0). To zero a numeric term's contribution to the centile line(s) itself,
+use \code{special_term} instead (e.g. \code{special_term = "eTIV = 0"}). These last two should be used with caution, as 0 is often
+outside the range of the data the model was trained on an thus estimates can be unstable.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
@@ -139,17 +138,17 @@ make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", desiredCentil
 make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", remove_point_effect = "Sepal.Width", desiredCentiles=c(0.05, .5, 0.95), datafree=FALSE)
 
 #################################
-#simulate a dataframe to use x_axis options
+#simulate a lifespan dataframe to use x_axis options
 df <- data.frame(
  Age = sample(0:36525, 10000, replace = TRUE),
  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE)))
 
-df$log_Age <- log(df$Age, base=10)
-df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000)
-df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10))
+df$Pheno <- ((df$Age)/365)^3 + rnorm(10000, mean = 0, sd = 100000) 
+df$Pheno <- scales::rescale(df$Pheno, to = c(1, 10)) +
+  ifelse(df$Sex == "Male", 0.6, 0)
 
-#fit gamlss model
+#fit gamlss model on raw age
 pheno_model <- gamlss(formula = Pheno ~ pb(Age) + Sex + random(Study), sigma.formula= ~ pb(Age), data = df, family=BCCG)
 
 make_centile_fan(pheno_model, df, "Age", "Sex", x_axis="lifespan")

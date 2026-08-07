@@ -7,8 +7,18 @@
 format_x_axis(
   x_axis = c("custom", "lifespan", "log_lifespan", "lifespan_fetal",
     "log_lifespan_fetal"),
-  x_values
+  x_values,
+  pad_right = FALSE
 )
+}
+\arguments{
+\item{x_axis}{pre-formatted x-axis option (see \code{\link[=make_centile_fan]{make_centile_fan()}})}
+
+\item{x_values}{numeric vector of x-axis values, used to set the plotting range}
+
+\item{pad_right}{logical; if \code{TRUE}, add extra room on the right of the plot so
+centile labels (drawn when \code{label_centiles = "label"}) have space to render.
+Defaults to \code{FALSE}.}
 }
 \description{
 Mostly internal/helper fun for formatting x-axis in centile fan plots

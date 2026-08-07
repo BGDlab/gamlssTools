@@ -1,7 +1,7 @@
 
 ################################################
 
-# functions that enable centile fan calculation and plotting in make_centile_fan() 
+# functions that enable centile fan calculation and plotting in make_centile_fan()
 
 ################################################
 
@@ -440,21 +440,30 @@ get_derivatives <- function(cent_df){
 }
 
 #' Format X-Axis
-#' 
+#'
 #' Mostly internal/helper fun for formatting x-axis in centile fan plots
+#'
+#' @param x_axis pre-formatted x-axis option (see [make_centile_fan()])
+#' @param x_values numeric vector of x-axis values, used to set the plotting range
+#' @param pad_right logical; if `TRUE`, add extra room on the right of the plot so
+#' centile labels (drawn when `label_centiles = "label"`) have space to render.
+#' Defaults to `FALSE`.
 #' @export
-format_x_axis <- function(x_axis = c("custom", 
-                                     "lifespan", 
-                                     "log_lifespan", 
+format_x_axis <- function(x_axis = c("custom",
+                                     "lifespan",
+                                     "log_lifespan",
                                      "lifespan_fetal",
                                      "log_lifespan_fetal"),
-                          x_values){
+                          x_values,
+                          pad_right = FALSE){
   x_axis <- match.arg(x_axis)
   
   if (x_axis == "custom") {
     message("no formatting required")
     return(NULL)  # return nothing, so `+ NULL` does nothing
   }
+  
+  unit_lab <- "(years)"
   
   # add days for fetal development?
   if (grepl("fetal", x_axis, fixed = TRUE)) {
@@ -474,32 +483,36 @@ format_x_axis <- function(x_axis = c("custom",
       tickMarks[is.infinite(tickMarks)] <- 0
     }
     tickLabels <- append(tickLabels, c("Birth", "1", "2", "5", "10", "20", "50", "100"))
-    unit_lab <- "(log years)"
   } else {
     for (year in seq(0, 100, by = 10)) {
       tickMarks <- append(tickMarks, year*365.25 + add_val)
     }
     tickLabels <- append(tickLabels, c("Birth", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"))
-    unit_lab <- "(years)"
   }
   
-  # get actual range of data points
+  # get actual range of data points, plus a small (1%) buffer. this tight range
+  # is used to drop ticks/labels that fall beyond where the data actually extends.
   xrange <- range(x_values, na.rm = TRUE)
   buffer <- diff(xrange) * 0.01
   xlims <- c(xrange[1] - buffer, xrange[2] + buffer)
-  
+
   # keep only ticks within buffered range
   inside <- tickMarks >= xlims[1] & tickMarks <= xlims[2]
   valid_ticks <- tickMarks[inside]
   valid_labels <- tickLabels[inside]
-  
+
+  # viewport limits: same tight range as the tick filter, but with extra room on
+  # the right (only when pad_right = TRUE) so the centile labels have space
+  view_right <- if (isTRUE(pad_right)) xrange[2] + diff(xrange) * 0.1 else xlims[2]
+  view_lims <- c(xlims[1], view_right)
+
   # return a list of components to add to ggplot
   list(
     scale_x_continuous(
       breaks = valid_ticks,
-      labels = valid_labels,
-      limits = xlims
+      labels = valid_labels
     ),
+    coord_cartesian(xlim = view_lims, clip = "off"),
     labs(x = paste("Age at Scan", unit_lab))
   )
 }
