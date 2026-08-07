@@ -33,9 +33,9 @@ with the smoothing degrees of freedom fixed at their values chosen from the mode
 
 \code{drop1()} refits each reduced model by re-evaluating the model's call, which looks the fitting
 data up BY NAME in the global environment. If that data is no longer in scope (e.g. on an HPC,
-or when the model was loaded from disk), supply it via \code{ref_data} so the refits can run --
-otherwise the function errors rather than silently returning empty output. You can also label the
-model with a string via \code{name} (useful when applying across many models).
+or when the model was loaded from disk), supply it via \code{ref_data}.
+
+You can also label the model with a string via \code{name} (useful when applying across many models).
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)

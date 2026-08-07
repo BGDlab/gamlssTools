@@ -667,55 +667,105 @@ safe_gamlss <- function(...) {
 
 #' Get Diffs in Trajectories
 #' 
-#' Calculate differences in 50th centile or sigma trajectories between 2 factor levels
+#' Calculate differences in 50th centile (mu) or sigma trajectories between 2 factor levels
 #' 
 #' To test significance, see [gamlssTools::ci_diffs()]
-#' 
+#'
+#' @details
+#' By default (`datafree = TRUE`) the mu/sigma trajectories are predicted WITHOUT the
+#' original fitting data, reconstructing the model's parameters from its stored coefficients,
+#' `pb()` smooths and `random()` effects (see [centile_fan_values()]). For a gamlss model that
+#' contains a smoother which cannot be rebuilt data-free (`cs()`, `ps()`, `ga()`, `s()`),
+#' `datafree` is switched off with a warning and `df` is used as the reference data instead --
+#' so `df` must be supplied in that case. Set `datafree = FALSE` to always predict via the
+#' original-data [gamlss::predictAll()] path.
+#'
+#' To run fully data-free (e.g. on an HPC, or when the model was loaded from disk and its data
+#' is no longer in scope), supply a pre-built `sim_data_list` from [sim_grid()] and leave `df`
+#' as `NULL`. In that case the two factor levels are taken from `factor_var_levels` if supplied,
+#' otherwise from the names of `sim_data_list`.
+#'
 #' @param gamlssModel gamlss model object
-#' @param df dataframe model was originally fit on
-#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over 
+#' @param df (optional) dataframe model was originally fit on. Needed to simulate a grid when
+#' `sim_data_list` is not supplied, and as the reference data when `datafree = FALSE` (or when the
+#' model contains a non-reconstructable smoother). Can be left `NULL` for fully data-free use when
+#' `sim_data_list` is provided.
+#' @param x_var continuous predictor (e.g. 'age'), which `sim_data_list` varies over
 #' @param factor_var categorical variable to compare levels within.
 #' @param sim_data_list list of simulated dataframes returned by `sim_grid()`
-#' @param moment what moment to get differences for. `mu` calculates differences in 50th centile, 
+#' @param moment what moment to get differences for. `mu` calculates differences in 50th centile,
 #' `sigma` calculates differences in predicted value of sigma (with link-function applied)
 #' @param factor_var_levels (optional) specify the order for factor levels. E.g., `factor_var_levels = c("A", "B")`
-#' would calculate the difference A - B. 
-#' 
+#' would calculate the difference A - B. Required (or inferred from `names(sim_data_list)`) when `df` is `NULL`.
+#' @param datafree logical; `TRUE` (default) predicts the trajectories WITHOUT the original data
+#' (reconstructed from stored coefficients / `pb()` smooths / `random()` effects), `FALSE` uses `df`
+#' as the reference data via [gamlss::predictAll()].
+#' @param ... additional arguments passed to `sim_grid()` (e.g. `special_term`)
+#'
 #' @returns dataframe
-#' 
+#'
 #' @export
-trajectory_diff <- function(gamlssModel, 
-                            df, 
-                            x_var, 
-                            factor_var, 
+trajectory_diff <- function(gamlssModel,
+                            df = NULL,
+                            x_var,
+                            factor_var,
                             sim_data_list = NULL,
                             moment=c("mu", "sigma"),
                             factor_var_levels = NULL,
+                            datafree = TRUE,
                             ...){
   moment <- match.arg(moment)
   opt_args_list <- list(...)
-  stopifnot(length(unique(df[[factor_var]])) == 2)
-  
-  if (is.null(factor_var_levels)){
+
+  # need either the fitting data (to simulate a grid) or a pre-built grid
+  if (is.null(df) && is.null(sim_data_list)) {
+    stop("Supply either `df` or a pre-built `sim_data_list` (for fully data-free use).")
+  }
+
+  # trajectory_diff compares exactly two factor levels
+  if (!is.null(df)) {
+    stopifnot(length(unique(df[[factor_var]])) == 2)
+  } else {
+    stopifnot(length(sim_data_list) == 2)
+  }
+
+  # resolve the two levels (and their subtraction order). With `df` they come from
+  # the data; data-free they come from `factor_var_levels` or the grid's names.
+  if (!is.null(factor_var_levels)){
+    L1 <- factor_var_levels[[1]]
+    L2 <- factor_var_levels[[2]]
+  } else if (!is.null(df)) {
     L1 <- as.character(unique(df[[factor_var]])[1])
     L2 <- as.character(unique(df[[factor_var]])[2])
   } else {
-    L1 <- factor_var_levels[[1]]
-    L2 <- factor_var_levels[[2]]
+    L1 <- names(sim_data_list)[1]
+    L2 <- names(sim_data_list)[2]
   }
-  
+
+  # prediction data: data-free by default; otherwise use `df` as ref_data so
+  # prediction goes through the exact predictAll() path. For a gamlss model with a
+  # smoother that cannot be rebuilt data-free, fall back to `df` with a warning.
+  if (isTRUE(datafree)) {
+    if (inherits(gamlssModel, "gamlss") && !.datafree_eligible_gamlss(gamlssModel)) {
+      warning("Model contains a smoother that cannot be predicted data-free; setting datafree=FALSE (using `df` as ref_data)")
+      pred_ref <- df
+    } else {
+      pred_ref <- NULL
+    }
+  } else {
+    pred_ref <- df
+  }
+
   ##get 50th percentiles##
   #simulate dataset(s) if not already supplied
   if (is.null(sim_data_list)) {
     print("simulating data")
-    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")] 
+    sim_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
     sim_list <- do.call(sim_grid, c(list(df, x_var, factor_var, gamlssModel),
                                     sim_args))
   } else if (!is.null(sim_data_list)) {
     sim_list <- sim_data_list
   }
-
-  pred_args <- opt_args_list[names(opt_args_list) %in% c("special_term")]
 
   if (moment == "mu"){
     #predict centiles
@@ -723,7 +773,7 @@ trajectory_diff <- function(gamlssModel,
                                 sim_grid_list = sim_list,
                                 x_var = x_var,
                                 centiles = c(0.5),
-                                ref_data = df,
+                                ref_data = pred_ref,
                                 average_over = FALSE)
     val_col_name <- "cent_0.5"
     names(pred_dfs) <- sub("fanCentiles_", "", names(pred_dfs)) #drop prefix
@@ -732,7 +782,7 @@ trajectory_diff <- function(gamlssModel,
     pred_dfs <- sigma_values(gamlssModel = gamlssModel,
                               sim_grid_list = sim_list,
                               x_var = x_var,
-                              ref_data = df,
+                              ref_data = pred_ref,
                               average_over = FALSE)
     val_col_name <- "sigma"
     names(pred_dfs) <- sub("sigma_", "", names(pred_dfs)) #drop prefix
