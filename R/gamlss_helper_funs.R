@@ -130,11 +130,17 @@ GGalt.variance <- function(mu, sigma, nu){
 #' Regression and Smoothing using GAMLSS in R": " "in the presence of smoothing terms... 
 #' drop1() could be used as a rough guide to the significance of each of the parametric terms,
 #' with the smoothing degrees of freedom fixed at their values chosen from the model prior to drop1()".
-#' Can optionally pass name your model with a string (useful if applying across many models).
+#'
+#' `drop1()` refits each reduced model by re-evaluating the model's call, which looks the fitting
+#' data up BY NAME in the global environment. If that data is no longer in scope (e.g. on an HPC,
+#' or when the model was loaded from disk), supply it via `ref_data`. 
 #' 
+#' You can also label the model with a string via `name` (useful when applying across many models).
+#'
 #' @param gamlssModel gamlss model object
 #' @param list list of moments that `drop1()` will be applied across. Defaults to mu and sigma
-#' @param ref_data dataframe used to fit `gamlssModel`
+#' @param ref_data (optional) dataframe used to fit `gamlssModel`; needed only when that data is not
+#' already in the global environment
 #' @param name (optional) name to label output with. stored in 'Model' column. Defaults to the name
 #' of the `gamlssModel` object
 #' @param ... additional arguments
@@ -154,7 +160,18 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA,
   } else {
     n <- name
   }
-  
+
+  # gamlss::drop1() refits every reduced model by re-evaluating the model's call,
+  # which resolves the fitting data BY NAME in the global environment, so point the 
+  # model's call at a private global binding of ref_data for the duration of the 
+  # call and clean up on exit.
+  if (!missing(ref_data)) {
+    .refdata_nm <- "..drop1_all_ref_data.."
+    gamlssModel$call$data <- as.name(.refdata_nm)
+    assign(.refdata_nm, ref_data, envir = globalenv())
+    on.exit(rm(list = .refdata_nm, envir = globalenv()), add = TRUE)
+  }
+
   df <- data.frame("Model"=character(),
                    "Term"=character(),
                    "Df"=double(),
@@ -162,7 +179,7 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA,
                    "LRT"=double(),
                    "Pr(Chi)"=double(),
                    "Moment"=character())
-  
+
   for (m in list){
     print(paste("drop1 from", m))
     drop.obj<-drop1(gamlssModel, what = m, ...)
@@ -174,6 +191,14 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA,
       na.omit()
     df <- rbind(df, df2)
   }
+
+  # fail loudly
+  if (nrow(df) == 0) {
+    stop("drop1() produced no usable output: every reduced-model refit failed. ",
+         "This usually means the data used to fit `gamlssModel` is not in scope -- ",
+         "supply it via `ref_data`.")
+  }
+
   return(df)
 }
 

@@ -11,7 +11,8 @@ drop1_all(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA, ...)
 
 \item{list}{list of moments that \code{drop1()} will be applied across. Defaults to mu and sigma}
 
-\item{ref_data}{dataframe used to fit \code{gamlssModel}}
+\item{ref_data}{(optional) dataframe used to fit \code{gamlssModel}; needed only when that data is not
+already in the global environment}
 
 \item{name}{(optional) name to label output with. stored in 'Model' column. Defaults to the name
 of the \code{gamlssModel} object}
@@ -29,7 +30,12 @@ Should be used with caution depending on the smooths included in the model. From
 Regression and Smoothing using GAMLSS in R": " "in the presence of smoothing terms...
 drop1() could be used as a rough guide to the significance of each of the parametric terms,
 with the smoothing degrees of freedom fixed at their values chosen from the model prior to drop1()".
-Can optionally pass name your model with a string (useful if applying across many models).
+
+\code{drop1()} refits each reduced model by re-evaluating the model's call, which looks the fitting
+data up BY NAME in the global environment. If that data is no longer in scope (e.g. on an HPC,
+or when the model was loaded from disk), supply it via \code{ref_data} so the refits can run --
+otherwise the function errors rather than silently returning empty output. You can also label the
+model with a string via \code{name} (useful when applying across many models).
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
