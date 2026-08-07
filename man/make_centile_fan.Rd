@@ -10,23 +10,23 @@ make_centile_fan(
   x_var,
   color_var = NULL,
   get_peaks = TRUE,
-  x_axis = c("custom", "lifespan", "log_lifespan", "lifespan_fetal",
-    "log_lifespan_fetal"),
   desiredCentiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
   average_over = FALSE,
-  datafree = TRUE,
-  sim_grid_list = NULL,
   show_points = TRUE,
-  label_centiles = c("label", "legend", "none"),
   remove_point_effect = NULL,
   zero_effect = NULL,
-  color_manual = NULL,
+  datafree = TRUE,
+  sim_grid_list = NULL,
   get_derivs = FALSE,
-  y_scale = NULL,
-  x_scale = NULL,
+  x_axis = c("custom", "lifespan", "log_lifespan", "lifespan_fetal",
+    "log_lifespan_fetal"),
+  label_centiles = c("label", "legend", "none"),
+  color_manual = NULL,
   point_color_manual = NULL,
   color_name = waiver(),
   color_labels = waiver(),
+  y_scale = NULL,
+  x_scale = NULL,
   ...
 )
 }
@@ -43,11 +43,6 @@ to return a single set of centile lines (see \code{average_over}).}
 
 \item{get_peaks}{logical to indicate whether to add a point at the median centile's peak value}
 
-\item{x_axis}{optional pre-formatted options for x-axis tick marks, labels, etc. Defaults to 'custom',
-which is, actually, no specific formatting. NOTE: options "lifespan" and "log_lifespan" assume that
-age is formatted in days post-birth. if age is formatted in days post-conception
-(i.e. age post-birth + 280 days), use options ending in "_fetal".}
-
 \item{desiredCentiles}{list of percentiles as values between 0 and 1 that will be
 calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
 which returns the 1st percentile, 5th percentile, 10th percentile, etc.}
@@ -55,37 +50,46 @@ which returns the 1st percentile, 5th percentile, 10th percentile, etc.}
 \item{average_over}{logical indicating whether to average predicted centiles across each level of \code{color_var}.
 Defaults to \code{FALSE}, which will plot a different colored centile fan for each level of \code{color_var}.}
 
+\item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
+
+\item{remove_point_effect}{list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization}
+
+\item{zero_effect}{list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via \code{remove_effects()}).}
+
 \item{datafree}{logical controlling how the centile lines and residualized points are predicted.
 \code{TRUE} (default) reconstructs them WITHOUT the original data (from the model's stored coefficients,
 \code{pb()} smooths and \code{random()} effects); \code{FALSE} uses \code{df} as the reference data and predicts via
-\code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} (the exact path). Data-free is required for \code{cs()}/\code{ps()}/\code{ga()}/\code{s()}-free
-models; a model with such a smoother is predicted with \code{df} regardless.}
+\code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} (the exact path).}
 
 \item{sim_grid_list}{(optional) output of \code{\link[=sim_grid]{sim_grid()}}}
 
-\item{show_points}{logical indicating whether to plot data points below centile fans. Defaults to \code{TRUE}}
+\item{get_derivs}{plot 1st derivative of centile lines instead of the centile lines themselves}
+
+\item{x_axis}{optional pre-formatted options for x-axis tick marks, labels, etc. Defaults to 'custom',
+which is, actually, no specific formatting. NOTE: options "lifespan" and "log_lifespan" assume that
+age is formatted in days post-birth. if age is formatted in days post-conception
+(i.e. age post-birth + 280 days), use options ending in "_fetal".}
 
 \item{label_centiles}{label the percentile corresponding to each centile line(\code{label}), map thickness in legend(\code{legend}), or neither(\code{none}).
 Defaults to \code{label}.}
 
-\item{remove_point_effect}{list of term(s) whose effects are to be residualized (set to mean/mode) from points for visualization}
-
-\item{zero_effect}{list of numeric term(s) whose effects will be zeroed (set to 0) from points for visualization (via \code{resid_data()}).}
-
 \item{color_manual}{(optional) arg to specify color for centile lines ONLY. Will override \code{color_var}.
 Takes hex color codes or color names (e.g. "red")}
 
-\item{get_derivs}{plot 1st derivative of centile lines instead of the centile lines themselves}
+\item{point_color_manual}{(optional) arg to specify color for points ONLY. Will override \code{color_var}.
+Takes hex color codes or color names (e.g. "red")}
+
+\item{color_name}{(optional) color variable name as it will appear in the legend.
+Requires \code{color_manual} or \code{point_color_manual}}
+
+\item{color_labels}{(optional) vector passed to \code{scale_discrete_manual()} to re-label levels of \code{color_var}.
+Requires \code{color_manual} or \code{point_color_manual}}
 
 \item{y_scale}{function to be applied to rescale dependent variable (y axis)}
 
 \item{x_scale}{function to be applied to rescale variable on x axis}
 
-\item{point_color_manual}{(optional) arg to specify color for points ONLY. Will override \code{color_var}.
-Takes hex color codes or color names (e.g. "red")}
-
-\item{color_name}{(optional) vector passed to \code{scale_discrete_manual()} to re-label levels of \code{color_var}.
-Requires \code{color_manual} or \code{color_point_manual}}
+\item{...}{(optional) any additional arguments}
 }
 \value{
 ggplot object
@@ -97,7 +101,7 @@ ggplot object
 The resulting ggplot object can be further modified as needed (see example). There are several built-in formatting
 options for the x-axis that can be accessed using the \code{x_axis} argument. Alternatively, the default value of 'custom'
 will allow you to further adjust the formatting of the resulting ggplot object yourself, as usual. Can also be used
-to plot 1st derivative of centile lines using \code{plot_deriv} argument. You can save
+to plot 1st derivative of centile lines using \code{get_derivs} argument. You can save
 time when plotting the same model with multiple aes() values or multiple models fit on the same data/predictors
 by first running \code{\link[=sim_grid]{sim_grid()}} and supplying the output to arg \code{sim_grid_list}.
 
@@ -129,10 +133,10 @@ iris_model_long <- gamlss(formula = Sepal.Width_t2 ~ Sepal.Width + Sepal.Length 
 sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
 
 #Looks bad:
-make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", desiredCentiles=c(0.05, .5, 0.95))
+make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", desiredCentiles=c(0.05, .5, 0.95), datafree=FALSE)
 
 #Looks good:
-make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", remove_point_effect = "Sepal.Width", desiredCentiles=c(0.05, .5, 0.95))
+make_centile_fan(iris_model_long, iris, "Sepal.Length", "Species", remove_point_effect = "Sepal.Width", desiredCentiles=c(0.05, .5, 0.95), datafree=FALSE)
 
 #################################
 #simulate a dataframe to use x_axis options
