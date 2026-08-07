@@ -55,7 +55,7 @@ Calculates and plots predicted sigma values across simulated data
 \details{
 This function takes a list of dataframes simulated with \code{\link[=sim_data]{sim_data()}} and calculates
 the value of sigma (after link function is applied) as a way to visualize variability.
-Calls subfunction \code{sigma_predict()}.
+Calls subfunction \code{sigma_values()}.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length + Species, data=iris, family=BCCG)

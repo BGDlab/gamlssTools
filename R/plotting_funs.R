@@ -11,7 +11,7 @@
 #' 
 #' This function takes a list of dataframes simulated with [sim_data()] and calculates
 #' the value of sigma (after link function is applied) as a way to visualize variability.
-#' Calls subfunction `sigma_predict()`.
+#' Calls subfunction `sigma_values()`.
 #' 
 #' @param gamlssModel gamlss model object
 #' @param df dataframe used to fit the gamlss model
@@ -73,7 +73,7 @@ plot_sigma <- function(gamlssModel, df, x_var,
   }
 
   #predict sigma response
-  sigma_dfs <- sigma_predict(gamlssModel = gamlssModel,
+  sigma_dfs <- sigma_values(gamlssModel = gamlssModel,
                                  sim_grid_list = sim_list,
                                  x_var = x_var,
                                  ref_data = pred_ref,

@@ -301,7 +301,7 @@ gamlss_ci <- function(boot_list,
   } else if (moment == "sigma"){
     #sigma predictions
     pred_boot_list <- lapply(boot_list,
-                             sigma_predict,
+                             sigma_values,
                              sim_grid_list = sim_data_list,
                              x_var = x_var,
                              average_over = average_over)

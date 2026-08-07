@@ -704,7 +704,7 @@ trajectory_diff <- function(gamlssModel,
     names(pred_dfs) <- sub("fanCentiles_", "", names(pred_dfs)) #drop prefix
   } else if (moment == "sigma"){
     #predict sigma
-    pred_dfs <- sigma_predict(gamlssModel = gamlssModel,
+    pred_dfs <- sigma_values(gamlssModel = gamlssModel,
                               sim_grid_list = sim_list,
                               x_var = x_var,
                               ref_data = df,

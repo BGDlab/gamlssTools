@@ -458,7 +458,7 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
   }
 }
 
-#' Predict sigma - RENAME TO sigma_values
+#' Sigma values
 #'
 #' Calculates predicted sigma values across simulated data
 #'
@@ -469,7 +469,7 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #' For \link[gamlss]{gamlss} fits, by default (`ref_data = NULL`) sigma is predicted WITHOUT
 #' the original data by reconstructing the model's parameters from its stored coefficients,
 #' `pb()` smooths and `random()` effects. Supplying `ref_data` forces prediction via
-#' [gamlss::predictAll()]; it is also used automatically for a model with a non-reconstructable
+#' [gamlss::predictAll()], and is required for a model with a non-reconstructable
 #' smoother (`cs()`, `ps()`, `ga()`, `s()`). \link[gamlss2]{gamlss2} fits use gamlss2's own
 #' `predict()`.
 #'
@@ -480,8 +480,6 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #' @param average_over logical indicating whether to return sigma averaged across multiple
 #' levels of a factor, with each level represented as a dataframe in `sim_grid_list`.
 #' Defaults to `FALSE`.
-#' @param ... additional arguments. Also accepts the deprecated names `sim_data_list`
-#' (now `sim_grid_list)` and `df` (now `ref_data`)
 #'
 #' @returns list of dataframes containing predicted sigma across range of predictors
 #'
@@ -490,45 +488,23 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #' sim_df <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
 #'
 #' #to average across levels of "Species"
-#' sigma_predict(iris_model, sim_df, "Sepal.Length", average_over = TRUE)
+#' sigma_values(iris_model, sim_df, "Sepal.Length", average_over = TRUE)
 #'
 #' @export
-sigma_predict <- function(gamlssModel,
-                          sim_grid_list,
-                          x_var,
-                          ref_data = NULL,
-                          average_over = FALSE,
-                          ...){
-  UseMethod("sigma_predict")
-}
-
-# internal: map the deprecated `sim_data_list`/`df` arg names (arriving via `...`)
-# onto `sim_grid_list`/`ref_data`. Returns the resolved pair.
-.sigma_predict_depr_args <- function(dots, sim_grid_list, ref_data,
-                                     sim_grid_missing, ref_data_missing) {
-  if ("sim_data_list" %in% names(dots)) {
-    warning("`sim_data_list` is deprecated; use `sim_grid_list` instead.", call. = FALSE)
-    if (sim_grid_missing) sim_grid_list <- dots$sim_data_list
-  }
-  if ("df" %in% names(dots)) {
-    warning("`df` is deprecated; use `ref_data` instead.", call. = FALSE)
-    if (ref_data_missing) ref_data <- dots$df
-  }
-  list(sim_grid_list = sim_grid_list, ref_data = ref_data)
+sigma_values <- function(gamlssModel,
+                         sim_grid_list,
+                         x_var,
+                         ref_data = NULL,
+                         average_over = FALSE){
+  UseMethod("sigma_values")
 }
 
 #' @export
-sigma_predict.gamlss <- function(gamlssModel,
-                                 sim_grid_list,
-                                 x_var,
-                                 ref_data = NULL,
-                                 average_over = FALSE,
-                                 ...){
-  # --- backwards compatibility for renamed arguments ---
-  .a <- .sigma_predict_depr_args(list(...), if (missing(sim_grid_list)) NULL else sim_grid_list,
-                                 ref_data, missing(sim_grid_list), missing(ref_data))
-  sim_grid_list <- .a$sim_grid_list; ref_data <- .a$ref_data
-
+sigma_values.gamlss <- function(gamlssModel,
+                                sim_grid_list,
+                                x_var,
+                                ref_data = NULL,
+                                average_over = FALSE){
   #initialize empty list(s)
   sig_result_list <- list()
 
@@ -577,17 +553,11 @@ sigma_predict.gamlss <- function(gamlssModel,
 }
 
 #' @export
-sigma_predict.gamlss2 <- function(gamlssModel,
-                                  sim_grid_list,
-                                  x_var,
-                                  ref_data = NULL,
-                                  average_over = FALSE,
-                                  ...){
-  # --- backwards compatibility for renamed arguments ---
-  .a <- .sigma_predict_depr_args(list(...), if (missing(sim_grid_list)) NULL else sim_grid_list,
-                                 ref_data, missing(sim_grid_list), missing(ref_data))
-  sim_grid_list <- .a$sim_grid_list; ref_data <- .a$ref_data
-
+sigma_values.gamlss2 <- function(gamlssModel,
+                                 sim_grid_list,
+                                 x_var,
+                                 ref_data = NULL,
+                                 average_over = FALSE){
   #initialize empty list(s)
   sig_result_list <- list()
 
@@ -633,6 +603,21 @@ sigma_predict.gamlss2 <- function(gamlssModel,
     stop("Do you want results to be averaged across variable levels?")
   }
 
+}
+
+#' @rdname sigma_values
+#' @details
+#' `sigma_predict()` is a deprecated alias for `sigma_values()`, retained for backwards
+#' compatibility. Its `sim_data_list` and `df` arguments map onto `sim_grid_list` and
+#' `ref_data` respectively.
+#' @export
+sigma_predict <- function(gamlssModel, sim_data_list, x_var, df = NULL, average_over = FALSE){
+  .Deprecated("sigma_values")
+  sigma_values(gamlssModel = gamlssModel,
+               sim_grid_list = sim_data_list,
+               x_var = x_var,
+               ref_data = df,
+               average_over = average_over)
 }
 
 #' Get phenotype at centile(s)
