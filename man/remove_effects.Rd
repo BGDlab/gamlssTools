@@ -8,7 +8,7 @@
 remove_effects(
   gamlssModel,
   data,
-  ref_data = NULL,
+  fit_data = NULL,
   rm_terms = NULL,
   zero_terms = NULL
 )
@@ -20,7 +20,7 @@ resid_data(gamlssModel, df, og_data = NULL, rm_terms = NULL, zero_terms = NULL)
 
 \item{data}{dataframe to residualize (must contain the model's response and any \code{rm_terms}/\code{zero_terms} columns)}
 
-\item{ref_data}{(optional) original dataframe on which the model was fit}
+\item{fit_data}{(optional) original dataframe on which the model was fit}
 
 \item{rm_terms}{(optional) list of term(s) whose effects will be residualized (set to mean/mode)}
 
@@ -42,12 +42,12 @@ caution, as 0 is often outside the term's range in the training data and estimat
 Because the adjustment is applied on the response scale, for non-identity mu links it removes a
 back-transformed mean difference (the standard approximation).
 
-By default (\code{ref_data = NULL}) mu is reconstructed WITHOUT the original fitting data whenever
+By default (\code{fit_data = NULL}) mu is reconstructed WITHOUT the original fitting data whenever
 possible (from the model's stored coefficients, \code{pb()} smooths and \code{random()} effects). Supplying
-\code{ref_data} forces prediction via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} with those data, and is required when the
-model contains a non-reconstructable smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \code{ref_data} is also
+\code{fit_data} forces prediction via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} with those data, and is required when the
+model contains a non-reconstructable smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \code{fit_data} is also
 the reference distribution used to compute the mean/mode each \code{rm_terms} value is held at.
 
 \code{resid_data()} is a deprecated alias for \code{remove_effects()}. Its \code{df} and \code{og_data}
-arguments map onto \code{data} and \code{ref_data}; \code{rm_terms} and \code{zero_terms} are passed through unchanged.
+arguments map onto \code{data} and \code{fit_data}; \code{rm_terms} and \code{zero_terms} are passed through unchanged.
 }

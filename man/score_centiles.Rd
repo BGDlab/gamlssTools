@@ -5,7 +5,13 @@
 \alias{pred_og_centile}
 \title{Score centiles for observations}
 \usage{
-score_centiles(gamlssModel, data, ref_data = NULL, standardize = FALSE)
+score_centiles(
+  gamlssModel,
+  data,
+  fit_data = NULL,
+  standardize = FALSE,
+  batch_term = NULL
+)
 
 pred_og_centile(gamlssModel, og.data, get.std.scores = FALSE, new.data = NULL)
 }
@@ -14,10 +20,12 @@ pred_og_centile(gamlssModel, og.data, get.std.scores = FALSE, new.data = NULL)
 
 \item{data}{dataframe of observations to score}
 
-\item{ref_data}{(optional) original fitting data. Supplying it forces prediction via
+\item{fit_data}{(optional) original fitting data. Supplying it forces prediction via
 \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} with those data and range-checks \code{data} against them.}
 
 \item{standardize}{logical indicating whether to also calculate and return standardized (pseudo z-)scores}
+
+\item{batch_term}{(optional) variable for which new levels' offsets are estimated and removed}
 }
 \value{
 either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
@@ -26,24 +34,25 @@ either vector listing centiles for every datapoint OR dataframe with centiles an
 Returns the centile and/or z-score values for observations under a fitted gamlss model
 }
 \details{
-Scores the observations in \code{data}, which may be the original
-fitting data or any new data with the same covariates (and levels of those covariates),
-e.g. new subjects from the same studies. Returns pseudo zscores (standardized scores)
+Scores the observations in \code{data}, which may be the original fitting data or new data.
+Any new data must have with the same covariates (and levels of those covariates), with
+exception of a batch variable specified using \code{batch_term}; offsets for new batch levels are
+calculated using \code{\link[gamlss2charts:predict_score]{gamlss2charts::predict_score()}}. Returns pseudo zscores (standardized scores)
 calculated by running \code{qnorm()} on centiles - may be more or less appropriately called
 "z scores" depending on distribution family of the model.
 
-For \link[gamlss]{gamlss} fits, by default (\code{ref_data=NULL}) centiles are computed by reconstructing
+For \link[gamlss]{gamlss} fits, by default (\code{fit_data=NULL}) centiles are computed by reconstructing
 parameters from stored coefficients, \code{pb()} smooths and \code{random()} effects.
-Supplying \code{ref_data} (original fitting data) forces the exact \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} path
+Supplying \code{fit_data} (original fitting data) forces the exact \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} path
 (and additionally checks that \code{data} falls within its covariate range);
-\code{ref_data} is necessary when the model contains a non-reconstructable smoother
+\code{fit_data} is necessary when the model contains a non-reconstructable smoother
 (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \link[gamlss2]{gamlss2} fits use gamlss2's own \code{predict()}.
 
-Based on Jenna's function \code{\link[=calculatePhenotypeCentile]{calculatePhenotypeCentile()}} (https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
+Original idea based on Jenna's function \code{\link[=calculatePhenotypeCentile]{calculatePhenotypeCentile()}} (https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
 and \code{\link[gamlss:z.scores]{gamlss::z.scores()}}.
 
 \code{pred_og_centile()} is a deprecated alias for \code{score_centiles()}. Its \code{og.data}/\code{new.data}
-pair maps onto \code{data}/\code{ref_data}: with \code{new.data = NULL} the original data is scored;
+pair maps onto \code{data}/\code{fit_data}: with \code{new.data = NULL} the original data is scored;
 otherwise \code{new.data} is scored and range-checked against \code{og.data}. \code{get.std.scores} maps
 onto \code{standardize}.
 }

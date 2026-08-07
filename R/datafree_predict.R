@@ -140,7 +140,7 @@
   }
   if (is.null(data)) {
     stop("Model contains a smoother that can't be reconstructed without the original",
-        " data (cs/ps/ga/s); supply the original fitting data (e.g. `ref_data`)")
+        " data (cs/ps/ga/s); supply the original fitting data (e.g. `fit_data`)")
   }
   predictAll(object, newdata = newdata, data = data, type = "response")
 }

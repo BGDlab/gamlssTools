@@ -511,7 +511,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
                                sim_grid_list = sim_list,
                                x_var = x_var,
                                centiles = desiredCentiles_reord,
-                               ref_data = pred_ref,
+                               fit_data = pred_ref,
                                average_over = average_over)
   
   names(centile_dfs) <- sub("fanCentiles_", "", names(centile_dfs)) #drop prefix
@@ -566,7 +566,7 @@ make_centile_fan <- function(gamlssModel, df, x_var,
   #remove effects from points if necessary
   if (show_points == TRUE && (!is.null(remove_point_effect) | !is.null(zero_effect))) {
     print(paste("Residualizing", remove_point_effect, "from data points"))
-    point_df <- remove_effects(gamlssModel, data=df, ref_data=pred_ref, rm_terms=remove_point_effect, zero_terms = zero_effect)
+    point_df <- remove_effects(gamlssModel, data=df, fit_data=pred_ref, rm_terms=remove_point_effect, zero_terms = zero_effect)
     print("success")
   } else {
     point_df <- df

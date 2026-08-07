@@ -9,7 +9,7 @@ sigma_values(
   gamlssModel,
   sim_grid_list,
   x_var,
-  ref_data = NULL,
+  fit_data = NULL,
   average_over = FALSE
 )
 
@@ -28,7 +28,7 @@ sigma_predict(
 
 \item{x_var}{continuous predictor (e.g. 'age'), which \code{sim_grid_list} varies over}
 
-\item{ref_data}{(optional) original dataframe used to fit \code{gamlssModel}.}
+\item{fit_data}{(optional) original dataframe used to fit \code{gamlssModel}.}
 
 \item{average_over}{logical indicating whether to return sigma averaged across multiple
 levels of a factor, with each level represented as a dataframe in \code{sim_grid_list}.
@@ -44,16 +44,16 @@ Calculates predicted sigma values across simulated data
 This function takes a list of dataframes simulated with \code{\link[=sim_grid]{sim_grid()}} and calculates
 the value of sigma (after link function is applied) as a way to visualize variability.
 
-For \link[gamlss]{gamlss} fits, by default (\code{ref_data = NULL}) sigma is predicted WITHOUT
+For \link[gamlss]{gamlss} fits, by default (\code{fit_data = NULL}) sigma is predicted WITHOUT
 the original data by reconstructing the model's parameters from its stored coefficients,
-\code{pb()} smooths and \code{random()} effects. Supplying \code{ref_data} forces prediction via
+\code{pb()} smooths and \code{random()} effects. Supplying \code{fit_data} forces prediction via
 \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}, and is required for a model with a non-reconstructable
 smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \link[gamlss2]{gamlss2} fits use gamlss2's own
 \code{predict()}.
 
 \code{sigma_predict()} is a deprecated alias for \code{sigma_values()}, retained for backwards
 compatibility. Its \code{sim_data_list} and \code{df} arguments map onto \code{sim_grid_list} and
-\code{ref_data} respectively.
+\code{fit_data} respectively.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)

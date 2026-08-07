@@ -59,7 +59,7 @@ plot_sigma <- function(gamlssModel, df, x_var,
   stopifnot(is.character(x_var))
   pheno <- as.character(get_y(gamlssModel))
 
-  # prediction data for sigma: data-free by default; otherwise use `df` as ref_data
+  # prediction data for sigma: data-free by default; otherwise use `df` as fit_data
   pred_ref <- if (isTRUE(datafree)) NULL else df
   
   #simulate dataset(s) if not already supplied
@@ -76,7 +76,7 @@ plot_sigma <- function(gamlssModel, df, x_var,
   sigma_dfs <- sigma_values(gamlssModel = gamlssModel,
                                  sim_grid_list = sim_list,
                                  x_var = x_var,
-                                 ref_data = pred_ref,
+                                 fit_data = pred_ref,
                                  average_over = average_over)
   
   names(sigma_dfs) <- sub("sigma_", "", names(sigma_dfs)) #drop prefix

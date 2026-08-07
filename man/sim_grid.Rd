@@ -6,7 +6,7 @@
 \title{Simulate a covariate grid for plotting GAMLSS}
 \usage{
 sim_grid(
-  ref_data,
+  fit_data,
   x_var,
   factor_var = NULL,
   gamlssModel = NULL,
@@ -24,15 +24,15 @@ sim_data(
 )
 }
 \arguments{
-\item{ref_data}{original dataframe from which grid will be simulated}
+\item{fit_data}{original dataframe from which grid will be simulated}
 
 \item{x_var}{continuous variable whose value will be simulated across it's full range,
-as determined from the \code{ref_data} parameter}
+as determined from the \code{fit_data} parameter}
 
 \item{factor_var}{(optional) categorical variable that will be simulated at every level}
 
 \item{gamlssModel}{(optional) gamlss model object that will be used to remove any extra columns
-in \code{ref_data} such that only the model's covariates are simulated across}
+in \code{fit_data} such that only the model's covariates are simulated across}
 
 \item{special_term}{formula (or character vector of formulas) defining any terms that should be calculated separately
 (e.g. interaction terms). When passing multiple, list them in dependency order — each is applied in sequence.

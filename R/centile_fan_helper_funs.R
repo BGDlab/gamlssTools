@@ -15,12 +15,12 @@
 #' centiles across, for example, age, while holding freesurfer version constant. Can be
 #' used on its own or as a subfunction of [make_centile_fan()].
 #'
-#' @param ref_data original dataframe from which grid will be simulated
+#' @param fit_data original dataframe from which grid will be simulated
 #' @param x_var continuous variable whose value will be simulated across it's full range,
-#' as determined from the `ref_data` parameter
+#' as determined from the `fit_data` parameter
 #' @param factor_var (optional) categorical variable that will be simulated at every level
 #' @param gamlssModel (optional) gamlss model object that will be used to remove any extra columns 
-#' in `ref_data` such that only the model's covariates are simulated across
+#' in `fit_data` such that only the model's covariates are simulated across
 #' @param special_term formula (or character vector of formulas) defining any terms that should be calculated separately 
 #' (e.g. interaction terms). When passing multiple, list them in dependency order — each is applied in sequence.
 #' Can also be used to set term to zero (i.e. `special_term="Sepal.Length = 0"`).
@@ -43,7 +43,7 @@
 #' sim_grid(iris2, "Sepal.Length", "Species", iris_model2, special_term="SL_int = Sepal.Length * Species")
 #'
 #' @export
-sim_grid <- function(ref_data, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL, x_range = NULL){
+sim_grid <- function(fit_data, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL, x_range = NULL){
   # Apply one or more `special_term` formulas (e.g. "SL_int = Sepal.Length * Species") to a simulated df.
   # Terms are applied in order so later terms can depend on earlier ones.
   apply_special_terms <- function(new_df, special_term){
@@ -61,30 +61,30 @@ sim_grid <- function(ref_data, x_var, factor_var=NULL, gamlssModel=NULL, special
   }
 
   #make sure variable names are correct
-  stopifnot(x_var %in% names(ref_data))
+  stopifnot(x_var %in% names(fit_data))
   
   #subset df cols just to predictors from model
   if (!is.null(gamlssModel)){
     predictor_list <- list_predictors(gamlssModel)
     stopifnot("Not all predictors are present in dataframe" =
-                all(predictor_list %in% names(ref_data)))
-    ref_data <- subset(ref_data, select = names(ref_data) %in% predictor_list)
+                all(predictor_list %in% names(fit_data)))
+    fit_data <- subset(fit_data, select = names(fit_data) %in% predictor_list)
   }
   
   # get datapoints across x-axis
-  x_min <- min(ref_data[[x_var]])
-  x_max <- max(ref_data[[x_var]])
+  x_min <- min(fit_data[[x_var]])
+  x_max <- max(fit_data[[x_var]])
   
   if (is.null(x_range)) {
     print(paste("simulating", x_var, "from", x_min, "to", x_max))
     x_range <- seq(x_min, x_max, length.out=500)
   } else {
     if (x_min > min(x_range)) {
-      warning("min(x_range) < min(ref_data[[x_var]]. Truncating x_range to match data.")
+      warning("min(x_range) < min(fit_data[[x_var]]. Truncating x_range to match data.")
       x_range <- x_range[x_range > x_min]
     }
     if (x_max < max(x_range)) {
-      warning("max(x_range) > max(ref_data[[x_var]]. Truncating x_range to match data.")
+      warning("max(x_range) > max(fit_data[[x_var]]. Truncating x_range to match data.")
       x_range <- x_range[x_range < x_max]
     }
     print(paste("simulating", x_var, "from", min(x_range), "to", max(x_range)))
@@ -97,15 +97,15 @@ sim_grid <- function(ref_data, x_var, factor_var=NULL, gamlssModel=NULL, special
   
   #simulate over levels of a factor
   if(!is.null(factor_var)){
-    stopifnot(factor_var %in% names(ref_data))
+    stopifnot(factor_var %in% names(fit_data))
     # make new dfs iteratively over factor variable's values
-    for (factor_level in unique(ref_data[[factor_var]])){
+    for (factor_level in unique(fit_data[[factor_var]])){
       
       print(paste("simulating", factor_var, "at", factor_level))
       
-      # initialize right size ref_data
-      new_df <- data.frame(matrix(ncol = ncol(ref_data), nrow = n_rows))
-      colnames(new_df) <- colnames(ref_data)
+      # initialize right size fit_data
+      new_df <- data.frame(matrix(ncol = ncol(fit_data), nrow = n_rows))
+      colnames(new_df) <- colnames(fit_data)
       
       #iterate over variables
       for (col in colnames(new_df)){
@@ -115,16 +115,16 @@ sim_grid <- function(ref_data, x_var, factor_var=NULL, gamlssModel=NULL, special
           new_df[[col]] <- rep(factor_level, n_rows)
           } else if (col == x_var) {
             new_df[[col]] <- x_range
-          } else if (is.numeric(ref_data[[col]])) {
-            mean_value <- mean(ref_data[[col]], na.rm=T)
+          } else if (is.numeric(fit_data[[col]])) {
+            mean_value <- mean(fit_data[[col]], na.rm=T)
             new_df[[col]] <- rep(mean_value, n_rows)
             print(paste("simulating", col, "at", mean_value))
-          } else if (is.factor(ref_data[[col]])) {
-            mode_value <- mode(ref_data[[col]])
-            new_df[[col]] <- factor(rep(mode_value, n_rows), levels = levels(ref_data[[col]]))
+          } else if (is.factor(fit_data[[col]])) {
+            mode_value <- mode(fit_data[[col]])
+            new_df[[col]] <- factor(rep(mode_value, n_rows), levels = levels(fit_data[[col]]))
             print(paste("simulating", col, "at", mode_value))
           } else {
-            mode_value <- mode(ref_data[[col]])
+            mode_value <- mode(fit_data[[col]])
             new_df[[col]] <- rep(mode_value, n_rows)
             print(paste("simulating", col, "at", mode_value))
           }
@@ -143,24 +143,24 @@ sim_grid <- function(ref_data, x_var, factor_var=NULL, gamlssModel=NULL, special
   #or just simulate one df
     print("simulating data")
     # initialize right size df
-    new_df <- data.frame(matrix(ncol = ncol(ref_data), nrow = n_rows))
-    colnames(new_df) <- colnames(ref_data)
+    new_df <- data.frame(matrix(ncol = ncol(fit_data), nrow = n_rows))
+    colnames(new_df) <- colnames(fit_data)
     
     #simulate each variable
     #iterate over variables
     for (col in colnames(new_df)){
       if (col == x_var) {
         new_df[[col]] <- x_range
-      } else if (is.numeric(ref_data[[col]])){
-        mean_value <- mean(ref_data[[col]], na.rm=T)
+      } else if (is.numeric(fit_data[[col]])){
+        mean_value <- mean(fit_data[[col]], na.rm=T)
         new_df[[col]] <- rep(mean_value, n_rows)
         print(paste("simulating", col, "at", mean_value))
-      } else if (is.factor(ref_data[[col]])) {
-        mode_value <- mode(ref_data[[col]])
+      } else if (is.factor(fit_data[[col]])) {
+        mode_value <- mode(fit_data[[col]])
         new_df[[col]] <- factor(rep(mode_value, n_rows), levels = levels(df[[col]]))
         print(paste("simulating", col, "at", mode_value))
       } else {
-        mode_value <- mode(ref_data[[col]])
+        mode_value <- mode(fit_data[[col]])
         new_df[[col]] <- rep(mode_value, n_rows)
         print(paste("simulating", col, "at", mode_value))
       }
@@ -182,7 +182,7 @@ sim_grid <- function(ref_data, x_var, factor_var=NULL, gamlssModel=NULL, special
 #' @export
 sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=NULL, x_range=NULL){
   .Deprecated("sim_grid")
-  sim_grid(ref_data = df, x_var = x_var, factor_var = factor_var,
+  sim_grid(fit_data = df, x_var = x_var, factor_var = factor_var,
            gamlssModel = gamlssModel, special_term = special_term, x_range = x_range)
 }
 
@@ -200,22 +200,22 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
 #' Because the adjustment is applied on the response scale, for non-identity mu links it removes a
 #' back-transformed mean difference (the standard approximation).
 #'
-#' By default (`ref_data = NULL`) mu is reconstructed WITHOUT the original fitting data whenever
+#' By default (`fit_data = NULL`) mu is reconstructed WITHOUT the original fitting data whenever
 #' possible (from the model's stored coefficients, `pb()` smooths and `random()` effects). Supplying
-#' `ref_data` forces prediction via [gamlss::predictAll()] with those data, and is required when the
-#' model contains a non-reconstructable smoother (`cs()`, `ps()`, `ga()`, `s()`). `ref_data` is also
+#' `fit_data` forces prediction via [gamlss::predictAll()] with those data, and is required when the
+#' model contains a non-reconstructable smoother (`cs()`, `ps()`, `ga()`, `s()`). `fit_data` is also
 #' the reference distribution used to compute the mean/mode each `rm_terms` value is held at.
 #'
 #' @param gamlssModel gamlss (or gamlss2) model object
 #' @param data dataframe to residualize (must contain the model's response and any `rm_terms`/`zero_terms` columns)
-#' @param ref_data (optional) original dataframe on which the model was fit
+#' @param fit_data (optional) original dataframe on which the model was fit
 #' @param rm_terms (optional) list of term(s) whose effects will be residualized (set to mean/mode)
 #' @param zero_terms (optional) list of NUMERIC term(s) whose effects will be removed completely (set to zero)
 #'
 #' @returns dataframe with the outcome var of the gamlssModel residualized
 #'
 #' @export
-remove_effects <- function(gamlssModel, data, ref_data=NULL, rm_terms=NULL, zero_terms=NULL){
+remove_effects <- function(gamlssModel, data, fit_data=NULL, rm_terms=NULL, zero_terms=NULL){
   if (length(rm_terms) == 0 && length(zero_terms) == 0) {
     warning("no `rm_terms` or `zero_terms` supplied; returning `data` unchanged.")
     return(data)
@@ -224,27 +224,27 @@ remove_effects <- function(gamlssModel, data, ref_data=NULL, rm_terms=NULL, zero
 }
 
 #' @export
-remove_effects.gamlss <- function(gamlssModel, data, ref_data=NULL, rm_terms=NULL, zero_terms=NULL){
+remove_effects.gamlss <- function(gamlssModel, data, fit_data=NULL, rm_terms=NULL, zero_terms=NULL){
   # `stat_data` is the reference distribution used to decide what value each term
   # is held at (mean/mode)
-  stat_data <- if (!is.null(ref_data)) ref_data else data
+  stat_data <- if (!is.null(fit_data)) fit_data else data
 
-  # validate required columns: `data` needs the terms and the response; `ref_data`
+  # validate required columns: `data` needs the terms and the response; `fit_data`
   # (if supplied) needs the terms it provides mean/mode values for
   pheno <- as.character(get_y(gamlssModel))
   missing_in_data <- setdiff(c(rm_terms, zero_terms, pheno), names(data))
   if (length(missing_in_data) > 0)
     stop("Missing column(s) in `data`: ", paste(missing_in_data, collapse = ", "))
-  if (!is.null(ref_data)) {
-    missing_in_ref <- setdiff(c(rm_terms, zero_terms), names(ref_data))
+  if (!is.null(fit_data)) {
+    missing_in_ref <- setdiff(c(rm_terms, zero_terms), names(fit_data))
     if (length(missing_in_ref) > 0)
-      stop("Missing column(s) in `ref_data`: ", paste(missing_in_ref, collapse = ", "))
+      stop("Missing column(s) in `fit_data`: ", paste(missing_in_ref, collapse = ", "))
   }
 
-  #run predict on data (data-free unless ref_data supplied)
+  #run predict on data (data-free unless fit_data supplied)
   pred_true <- .predict_params_gamlss(gamlssModel,
                        newdata = data,
-                       data = ref_data)$mu
+                       data = fit_data)$mu
 
   #run predict on data with rm_terms held at mean/mode (and zero_terms set to 0)
   print("simulating residualized data")
@@ -269,10 +269,10 @@ remove_effects.gamlss <- function(gamlssModel, data, ref_data=NULL, rm_terms=NUL
     }
   }
 
-  #predict on new_df (data-free unless ref_data supplied)
+  #predict on new_df (data-free unless fit_data supplied)
   pred_resid <- .predict_params_gamlss(gamlssModel,
                     newdata=new_df,
-                    data=ref_data)$mu
+                    data=fit_data)$mu
 
   #take difference and subtract from pheno
   data[[pheno]] <- data[[pheno]] - (pred_true - pred_resid)
@@ -280,21 +280,21 @@ remove_effects.gamlss <- function(gamlssModel, data, ref_data=NULL, rm_terms=NUL
 }
 
 #' @export
-remove_effects.gamlss2 <- function(gamlssModel, data, ref_data=NULL, rm_terms=NULL, zero_terms=NULL){
+remove_effects.gamlss2 <- function(gamlssModel, data, fit_data=NULL, rm_terms=NULL, zero_terms=NULL){
   # reference distribution for the hold-at (mean/mode) values; prediction passes
-  # `ref_data` straight through (gamlss2 predicts natively, so NULL is fine).
-  stat_data <- if (!is.null(ref_data)) ref_data else data
+  # `fit_data` straight through (gamlss2 predicts natively, so NULL is fine).
+  stat_data <- if (!is.null(fit_data)) fit_data else data
 
-  # validate required columns: `data` needs the terms and the response; `ref_data`
+  # validate required columns: `data` needs the terms and the response; `fit_data`
   # (if supplied) needs the terms it provides mean/mode values for
   pheno <- as.character(get_y(gamlssModel))
   missing_in_data <- setdiff(c(rm_terms, zero_terms, pheno), names(data))
   if (length(missing_in_data) > 0)
     stop("Missing column(s) in `data`: ", paste(missing_in_data, collapse = ", "))
-  if (!is.null(ref_data)) {
-    missing_in_ref <- setdiff(c(rm_terms, zero_terms), names(ref_data))
+  if (!is.null(fit_data)) {
+    missing_in_ref <- setdiff(c(rm_terms, zero_terms), names(fit_data))
     if (length(missing_in_ref) > 0)
-      stop("Missing column(s) in `ref_data`: ", paste(missing_in_ref, collapse = ", "))
+      stop("Missing column(s) in `fit_data`: ", paste(missing_in_ref, collapse = ", "))
   }
 
   # Ensure data types match between data and stat_data for rm_terms
@@ -317,7 +317,7 @@ remove_effects.gamlss2 <- function(gamlssModel, data, ref_data=NULL, rm_terms=NU
                          newdata = data,
                          type = "parameter",
                          model = "mu",
-                         data=ref_data)
+                         data=fit_data)
 
     #run predict on data with rm_terms held at mean/mode (zero_terms set to 0)
     print("simulating residualized data")
@@ -345,7 +345,7 @@ remove_effects.gamlss2 <- function(gamlssModel, data, ref_data=NULL, rm_terms=NU
                           newdata=new_df,
                           type = "parameter",
                           model = "mu",
-                          data=ref_data)
+                          data=fit_data)
 
     #take difference and subtract from pheno
     data[[pheno]] <- data[[pheno]] - (pred_true - pred_resid)
@@ -362,12 +362,12 @@ remove_effects.gamlss2 <- function(gamlssModel, data, ref_data=NULL, rm_terms=NU
 #' @rdname remove_effects
 #' @details
 #' `resid_data()` is a deprecated alias for `remove_effects()`. Its `df` and `og_data`
-#' arguments map onto `data` and `ref_data`; `rm_terms` and `zero_terms` are passed through unchanged.
+#' arguments map onto `data` and `fit_data`; `rm_terms` and `zero_terms` are passed through unchanged.
 #' @export
 resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zero_terms=NULL){
   .Deprecated("remove_effects")
   remove_effects(gamlssModel = gamlssModel, data = df,
-                 ref_data = og_data, rm_terms = rm_terms, zero_terms = zero_terms)
+                 fit_data = og_data, rm_terms = rm_terms, zero_terms = zero_terms)
 }
 
 #' Get Age of Peak

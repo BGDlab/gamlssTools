@@ -48,7 +48,7 @@ test_that("score_centiles centiles are data-free by default and match the gold p
   expect_equal(free, gold_centiles(m, d), tolerance = 1e-6)
 })
 
-test_that("centile_fan_values default (data-free) matches the ref_data-supplied path", {
+test_that("centile_fan_values default (data-free) matches the fit_data-supplied path", {
   d <- sim_datafree()
   m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex + random(Study),
                       sigma.formula = ~ pb(Age),
@@ -56,7 +56,7 @@ test_that("centile_fan_values default (data-free) matches the ref_data-supplied 
   sim <- suppressMessages(sim_grid(d, "Age", "Sex", m))
 
   free   <- suppressMessages(centile_fan_values(m, sim, "Age"))
-  legacy <- suppressMessages(centile_fan_values(m, sim, "Age", ref_data = d))
+  legacy <- suppressMessages(centile_fan_values(m, sim, "Age", fit_data = d))
 
   for (nm in names(free))
     expect_equal(unlist(free[[nm]]), unlist(legacy[[nm]]), tolerance = 1e-6, info = nm)
@@ -74,20 +74,20 @@ test_that("centile_predict() is a deprecated alias that matches centile_fan_valu
     regexp = "deprecated|centile_fan_values"
   )
   new <- suppressMessages(
-    centile_fan_values(m, sim, "Age", centiles = c(0.25, 0.5, 0.75), ref_data = d)
+    centile_fan_values(m, sim, "Age", centiles = c(0.25, 0.5, 0.75), fit_data = d)
   )
   for (nm in names(new))
     expect_equal(unlist(old[[nm]]), unlist(new[[nm]]), tolerance = 1e-10, info = nm)
 })
 
-test_that("remove_effects default (data-free) matches the ref_data-supplied path", {
+test_that("remove_effects default (data-free) matches the fit_data-supplied path", {
   d <- sim_datafree()
   m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex + random(Study),
                       sigma.formula = ~ pb(Age),
                       data = d, family = "BCCG", trace = FALSE)
 
   free   <- suppressMessages(remove_effects(m, d, rm_terms = "Sex"))
-  legacy <- suppressMessages(remove_effects(m, d, ref_data = d, rm_terms = "Sex"))
+  legacy <- suppressMessages(remove_effects(m, d, fit_data = d, rm_terms = "Sex"))
   expect_equal(free$Pheno, legacy$Pheno, tolerance = 1e-6)
 })
 
@@ -190,7 +190,7 @@ test_that("a cs() model errors without data; with data it's exact", {
   gold <- gamlss::predictAll(m, newdata = nd, data = d, type = "response")
   expect_equal(free$mu, gold$mu, tolerance = tol)
 
-  # And centile_fan_values works end-to-end when ref_data is supplied for such a model.
+  # And centile_fan_values works end-to-end when fit_data is supplied for such a model.
   sim <- suppressMessages(sim_grid(d, "Age", "Sex", m))
-  expect_no_error(suppressMessages(centile_fan_values(m, sim, "Age", ref_data = d)))
+  expect_no_error(suppressMessages(centile_fan_values(m, sim, "Age", fit_data = d)))
 })

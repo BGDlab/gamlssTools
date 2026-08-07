@@ -133,13 +133,13 @@ GGalt.variance <- function(mu, sigma, nu){
 #'
 #' `drop1()` refits each reduced model by re-evaluating the model's call, which looks the fitting
 #' data up BY NAME in the global environment. If that data is no longer in scope (e.g. on an HPC,
-#' or when the model was loaded from disk), supply it via `ref_data`. 
+#' or when the model was loaded from disk), supply it via `fit_data`. 
 #' 
 #' You can also label the model with a string via `name` (useful when applying across many models).
 #'
 #' @param gamlssModel gamlss model object
 #' @param list list of moments that `drop1()` will be applied across. Defaults to mu and sigma
-#' @param ref_data (optional) dataframe used to fit `gamlssModel`; needed only when that data is not
+#' @param fit_data (optional) dataframe used to fit `gamlssModel`; needed only when that data is not
 #' already in the global environment
 #' @param name (optional) name to label output with. stored in 'Model' column. Defaults to the name
 #' of the `gamlssModel` object
@@ -154,7 +154,7 @@ GGalt.variance <- function(mu, sigma, nu){
 #' @importFrom tibble rownames_to_column
 #' 
 #' @export
-drop1_all <- function(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA, ...){
+drop1_all <- function(gamlssModel, list = c("mu", "sigma"), fit_data, name = NA, ...){
   if (is.na(name)){
     n <- deparse(substitute(gamlssModel))
   } else {
@@ -163,13 +163,13 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA,
 
   # gamlss::drop1() refits every reduced model by re-evaluating the model's call,
   # which resolves the fitting data BY NAME in the global environment, so point the 
-  # model's call at a private global binding of ref_data for the duration of the 
+  # model's call at a private global binding of fit_data for the duration of the 
   # call and clean up on exit.
-  if (!missing(ref_data)) {
-    .refdata_nm <- "..drop1_all_ref_data.."
-    gamlssModel$call$data <- as.name(.refdata_nm)
-    assign(.refdata_nm, ref_data, envir = globalenv())
-    on.exit(rm(list = .refdata_nm, envir = globalenv()), add = TRUE)
+  if (!missing(fit_data)) {
+    .fitdata_nm <- "..drop1_all_fit_data.."
+    gamlssModel$call$data <- as.name(.fitdata_nm)
+    assign(.fitdata_nm, fit_data, envir = globalenv())
+    on.exit(rm(list = .fitdata_nm, envir = globalenv()), add = TRUE)
   }
 
   df <- data.frame("Model"=character(),
@@ -196,7 +196,7 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA,
   if (nrow(df) == 0) {
     stop("drop1() produced no usable output: every reduced-model refit failed. ",
          "This usually means the data used to fit `gamlssModel` is not in scope -- ",
-         "supply it via `ref_data`.")
+         "supply it via `fit_data`.")
   }
 
   return(df)
@@ -742,12 +742,12 @@ trajectory_diff <- function(gamlssModel,
     L2 <- names(sim_data_list)[2]
   }
 
-  # prediction data: data-free by default; otherwise use `df` as ref_data so
+  # prediction data: data-free by default; otherwise use `df` as fit_data so
   # prediction goes through the exact predictAll() path. For a gamlss model with a
   # smoother that cannot be rebuilt data-free, fall back to `df` with a warning.
   if (isTRUE(datafree)) {
     if (inherits(gamlssModel, "gamlss") && !.datafree_eligible_gamlss(gamlssModel)) {
-      warning("Model contains a smoother that cannot be predicted data-free; setting datafree=FALSE (using `df` as ref_data)")
+      warning("Model contains a smoother that cannot be predicted data-free; setting datafree=FALSE (using `df` as fit_data)")
       pred_ref <- df
     } else {
       pred_ref <- NULL
@@ -773,7 +773,7 @@ trajectory_diff <- function(gamlssModel,
                                 sim_grid_list = sim_list,
                                 x_var = x_var,
                                 centiles = c(0.5),
-                                ref_data = pred_ref,
+                                fit_data = pred_ref,
                                 average_over = FALSE)
     val_col_name <- "cent_0.5"
     names(pred_dfs) <- sub("fanCentiles_", "", names(pred_dfs)) #drop prefix
@@ -782,7 +782,7 @@ trajectory_diff <- function(gamlssModel,
     pred_dfs <- sigma_values(gamlssModel = gamlssModel,
                               sim_grid_list = sim_list,
                               x_var = x_var,
-                              ref_data = pred_ref,
+                              fit_data = pred_ref,
                               average_over = FALSE)
     val_col_name <- "sigma"
     names(pred_dfs) <- sub("sigma_", "", names(pred_dfs)) #drop prefix

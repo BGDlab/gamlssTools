@@ -4,14 +4,14 @@
 \alias{drop1_all}
 \title{drop1 across all terms and moments}
 \usage{
-drop1_all(gamlssModel, list = c("mu", "sigma"), ref_data, name = NA, ...)
+drop1_all(gamlssModel, list = c("mu", "sigma"), fit_data, name = NA, ...)
 }
 \arguments{
 \item{gamlssModel}{gamlss model object}
 
 \item{list}{list of moments that \code{drop1()} will be applied across. Defaults to mu and sigma}
 
-\item{ref_data}{(optional) dataframe used to fit \code{gamlssModel}; needed only when that data is not
+\item{fit_data}{(optional) dataframe used to fit \code{gamlssModel}; needed only when that data is not
 already in the global environment}
 
 \item{name}{(optional) name to label output with. stored in 'Model' column. Defaults to the name
@@ -33,7 +33,7 @@ with the smoothing degrees of freedom fixed at their values chosen from the mode
 
 \code{drop1()} refits each reduced model by re-evaluating the model's call, which looks the fitting
 data up BY NAME in the global environment. If that data is no longer in scope (e.g. on an HPC,
-or when the model was loaded from disk), supply it via \code{ref_data}.
+or when the model was loaded from disk), supply it via \code{fit_data}.
 
 You can also label the model with a string via \code{name} (useful when applying across many models).
 }

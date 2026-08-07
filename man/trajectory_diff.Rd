@@ -46,7 +46,7 @@ as the reference data via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll(
 dataframe
 }
 \description{
-Calculate differences in 50th centile or sigma trajectories between 2 factor levels
+Calculate differences in 50th centile (mu) or sigma trajectories between 2 factor levels
 }
 \details{
 To test significance, see \code{\link[=ci_diffs]{ci_diffs()}}

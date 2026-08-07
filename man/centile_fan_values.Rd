@@ -10,7 +10,7 @@ centile_fan_values(
   sim_grid_list,
   x_var,
   centiles = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
-  ref_data = NULL,
+  fit_data = NULL,
   average_over = FALSE
 )
 
@@ -34,7 +34,7 @@ centile_predict(
 calculated and returned. Defaults to c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99),
 which returns the 1st percentile, 5th percentile, 10th percentile, etc.}
 
-\item{ref_data}{(optional) original dataframe used to fit \code{gamlssModel}.}
+\item{fit_data}{(optional) original dataframe used to fit \code{gamlssModel}.}
 
 \item{average_over}{logical indicating whether to return percentiles and
 peaks averaged across multiple levels of a factor, with each level represented as
@@ -53,17 +53,17 @@ predicted values for each level of a factor variable or choose to average across
 values. Can also calculate and return the peak median (0.5) value of y across predictor
 \code{x_var}.
 
-For \link[gamlss]{gamlss} fits, by default (\code{ref_data = NULL}) centiles are predicted
+For \link[gamlss]{gamlss} fits, by default (\code{fit_data = NULL}) centiles are predicted
 WITHOUT the original data by reconstructing the model's parameters from its stored
-coefficients, \code{pb()} smooths and \code{random()} effects. Supplying \code{ref_data} forces
+coefficients, \code{pb()} smooths and \code{random()} effects. Supplying \code{fit_data} forces
 prediction via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} using the original data and is required
 if the model contains a smoother that cannot be rebuilt data-free (\code{cs()}, \code{ps()}, \code{ga()},
 \code{s()}). For \link[gamlss2]{gamlss2} fits, prediction uses gamlss2's own \code{predict()}
-so no \code{ref_data} is necessary.
+so no \code{fit_data} is necessary.
 
 \code{centile_predict()} is a deprecated alias for \code{centile_fan_values()}, kept for
 backwards compatibility. Its \code{sim_data_list}, \code{desiredCentiles} and \code{df} arguments
-map onto \code{sim_grid_list}, \code{centiles} and \code{ref_data} respectively.
+map onto \code{sim_grid_list}, \code{centiles} and \code{fit_data} respectively.
 }
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
