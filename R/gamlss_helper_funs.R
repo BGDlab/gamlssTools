@@ -261,16 +261,24 @@ list_predictors.gamlss2 <- function(gamlssModel, moment=c("all", "mu", "sigma", 
   moment <- match.arg(moment)
   if (moment == "all"){
     return(attributes(gamlssModel$terms)$term.labels)
-  } else if (moment == "mu") {
-    return(attributes(gamlssModel$fake_formula)$rhs[[1]])
-  } else if (moment == "sigma") {
-    return(attributes(gamlssModel$fake_formula)$rhs[[2]])
-  } else if (moment == "nu") {
-    return(attributes(gamlssModel$fake_formula)$rhs[[3]])
-  } else if (moment == "tau") {
-    return(attributes(gamlssModel$fake_formula)$rhs[[4]])
   }
-  
+
+  #moments are stored positionally in the fake formula's rhs, in family order
+  rhs <- attributes(gamlssModel$fake_formula)$rhs
+  param_names <- gamlssModel$family$names
+  if (is.null(param_names)) {
+    param_names <- c("mu", "sigma", "nu", "tau")[seq_along(rhs)]
+  }
+
+  i <- match(moment, param_names)
+  if (is.na(i) || i > length(rhs)) {
+    stop("`", moment, "` is not a parameter of this model's family (",
+         paste(param_names, collapse = ", "), ")")
+  }
+
+  #each rhs element is an unevaluated call, not a vector of terms, so pull the
+  #variable names out of it. Intercept-only moments give character(0).
+  return(all.vars(rhs[[i]]))
 }
 
 #' Get y
