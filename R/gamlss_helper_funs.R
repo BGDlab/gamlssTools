@@ -4,8 +4,73 @@
 
 ################################################
 
+# ---- internal: optional-dependency guard -------------------------------------
+# gamlss2 and gamlss2charts are Suggests, not Imports: they are needed only by
+# the subset of functions that call them directly (see ?gamlssTools-optional).
+# Call this before any `pkg::fun()` from a suggested package so users get an
+# actionable install message instead of "there is no package called ...".
+#' @keywords internal
+#' @noRd
+.require_pkg <- function(pkg, what, remote = NULL) {
+  if (requireNamespace(pkg, quietly = TRUE)) return(invisible(TRUE))
+
+  install_hint <- if (is.null(remote)) {
+    paste0('install.packages("', pkg, '")')
+  } else {
+    paste0('remotes::install_github("', remote, '")')
+  }
+  stop("Package '", pkg, "' is required for ", what,
+       ", but is not installed.\n  Install it with: ", install_hint,
+       call. = FALSE)
+}
+
+# Convenience wrappers so the install hints stay consistent across call sites.
+#' @keywords internal
+#' @noRd
+.require_gamlss2 <- function(what) {
+  .require_pkg("gamlss2", what, remote = "gamlss-dev/gamlss2")
+}
+
+#' @keywords internal
+#' @noRd
+.require_gamlss2charts <- function(what) {
+  .require_pkg("gamlss2charts", what, remote = "andy1764/gamlss2charts")
+}
+
+#' Optional dependencies
+#'
+#' gamlssTools works with only its required dependencies installed. Two packages
+#' are Suggests rather than Imports, because each is needed by a subset of
+#' functions rather than by the package as a whole.
+#'
+#' @details
+#' [gamlss2](https://github.com/gamlss-dev/gamlss2) is required to:
+#'   * fit or work with `gamlss2` model objects at all: every `*.gamlss2` method
+#'     here relies on gamlss2's own `predict()`;
+#'   * call [cohens_f2_local()], which uses `gamlss2::Rsq()` for *both* gamlss and
+#'     gamlss2 fits;
+#'   * call [bootstrap_gamlss()] on a `gamlss2` model, which refits with `gamlss2()`.
+#'
+#' [gamlss2charts](https://github.com/andy1764/gamlss2charts) is required only to
+#' pass `batch_term` to [score_centiles()], which estimates and removes the
+#' offsets of unseen batch levels via `gamlss2charts::predict_score()`.
+#'
+#' Neither package is on CRAN, so both are listed under `Remotes:` and install with:
+#' ```
+#' remotes::install_github("gamlss-dev/gamlss2")
+#' remotes::install_github("andy1764/gamlss2charts")
+#' ```
+#'
+#' Functions that need a suggested package check for it first and fail with an
+#' install hint, so a missing optional dependency never surfaces as a cryptic
+#' error from deep inside a call stack.
+#'
+#' @name gamlssTools-optional
+#' @keywords internal
+NULL
+
 #' Mode
-#' 
+#'
 #' `mode()` returns the mode of a vector
 #' 
 #' Returns mode of numeric vector or vector of characters. If there are 2+ modes,
@@ -309,7 +374,11 @@ get_y.gamlss2 <- function(gamlssModel){
 #' Calculate effect size (cohen's fsq) of a covariate using the difference in Rsq of full and nested models.
 #' 
 #' See Equation 2 in [Selya et al, 2012](https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2012.00111/full)
-#' 
+#'
+#' @section Optional dependency:
+#' Requires the suggested package gamlss2, whose `Rsq()` has methods for both
+#' gamlss and gamlss2 fits. See [gamlssTools-optional].
+#'
 #' @param full_mod full gamlss model object
 #' @param null_mod null gamlss model object (refit without covariate of interest)
 #' 
@@ -323,8 +392,10 @@ get_y.gamlss2 <- function(gamlssModel){
 #' 
 #' @export
 cohens_f2_local <- function(full_mod, null_mod){
+  .require_gamlss2("cohens_f2_local()")
+
   #gamlss2 version of Rsq() has methods for both gamlss and gamlss2 objs
-  full_rsq <- gamlss2::Rsq(full_mod) 
+  full_rsq <- gamlss2::Rsq(full_mod)
   null_rsq <- gamlss2::Rsq(null_mod)
   
   fsq <- (full_rsq - null_rsq)/(1-full_rsq)

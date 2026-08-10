@@ -56,8 +56,20 @@ pair maps onto \code{data}/\code{fit_data}: with \code{new.data = NULL} the orig
 otherwise \code{new.data} is scored and range-checked against \code{og.data}. \code{get.std.scores} maps
 onto \code{standardize}.
 }
+\section{Optional dependency}{
+
+\code{batch_term} requires the suggested package gamlss2charts, which supplies
+\code{predict_score()}. Every other use of \code{score_centiles()} works without it.
+See \link{gamlssTools-optional}.
+}
+
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 score_centiles(iris_model, iris)
+
+#out-of-sample scoring
+train <- iris[1:100,]
+train$Species <- droplevels(train$Species)
+iris_model_oos <- gamlss(Sepal.Length ~ Sepal.Width + Species, ~ Species, family = BCCG(), data = train)
 
 }

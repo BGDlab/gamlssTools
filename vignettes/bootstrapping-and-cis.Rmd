@@ -13,10 +13,17 @@ knitr::opts_chunk$set(
   comment = "#>",
   message = FALSE,
   markup = FALSE,
-  fig.width = 8, 
-  fig.height = 7
+  fig.width = 8,
+  fig.height = 7,
+  # gamlss2 is a suggested (optional) dependency, so skip the vignette without it
+  eval = requireNamespace("gamlss2", quietly = TRUE)
 )
 ```
+
+This vignette fits its models with [gamlss2](https://github.com/gamlss-dev/gamlss2),
+an optional dependency of gamlssTools. If it isn't installed
+(`remotes::install_github("gamlss-dev/gamlss2")`), the code below is shown but not
+run. Every function demonstrated here also works with an original gamlss fit.
 
 ```{r setup}
 library(gamlssTools)

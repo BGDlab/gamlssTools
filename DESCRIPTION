@@ -25,7 +25,9 @@ Suggests:
     testthat (>= 3.0.0),
     devtools,
     rlang,
-    foreach
+    foreach,
+    gamlss2,
+    gamlss2charts
 Imports:
 	tibble,
 	tidyr,
@@ -36,7 +38,9 @@ Imports:
 	purrr,
 	zoo,
 	ggrepel,
-	scales,
-	gamlss2
+	scales
+Remotes:
+	github::gamlss-dev/gamlss2,
+	github::andy1764/gamlss2charts
 Config/testthat/edition: 3
 VignetteBuilder: knitr

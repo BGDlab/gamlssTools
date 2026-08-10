@@ -20,6 +20,12 @@ Calculate effect size (cohen's fsq) of a covariate using the difference in Rsq o
 \details{
 See Equation 2 in \href{https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2012.00111/full}{Selya et al, 2012}
 }
+\section{Optional dependency}{
+
+Requires the suggested package gamlss2, whose \code{Rsq()} has methods for both
+gamlss and gamlss2 fits. See \link{gamlssTools-optional}.
+}
+
 \examples{
 iris_model_full <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 iris_model_null <- gamlss(formula = Sepal.Width ~ Sepal.Length, sigma.formula = ~ Sepal.Length, data=iris)

@@ -137,7 +137,8 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
                                     type=c("resample", "bayes", "LOSO"), 
                                     stratify=FALSE,
                                     group_var=NULL){
-  
+  .require_gamlss2("bootstrapping a gamlss2 model")
+
   #make sure args provided
   type <- match.arg(type)
   stopifnot(is.logical(stratify))
@@ -216,7 +217,7 @@ bootstrap_gamlss.gamlss2 <- function(gamlssModel, df=NULL, B=100,
         args <- list(formula = mod_formula, data = bootstrap_df, family = mod_fam)
       }
       
-      refit_mod <- do.call(gamlss2, args)
+      refit_mod <- do.call(gamlss2::gamlss2, args)
       
     }
 
