@@ -306,7 +306,7 @@ centile_predict <- function(gamlssModel,
 #' @param fit_data (optional) original fitting data. Supplying it forces prediction via
 #' [gamlss::predictAll()] with those data and range-checks `data` against them.
 #' @param standardize logical indicating whether to also calculate and return standardized (pseudo z-)scores
-#' @param batch_term (optional) variable for which new levels' offsets are estimated and removed
+#' @param batch_term (optional) variable for which new levels' offsets are estimated and removed.
 #'
 #' @section Optional dependency:
 #' `batch_term` requires the suggested package gamlss2charts, which supplies
@@ -369,7 +369,15 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
       #only unseen levels need the offset machinery, so only check for it here
       .require_gamlss2charts("scoring new levels of `batch_term`")
 
-      warning(paste0("New levels of ", batch_term,":\n", new_batches,
+      #coerce to factor for predict_score() if necessary
+      if (!is.factor(data[[batch_term]])){
+        warning(paste0("`", batch_term, "` is ", class(data[[batch_term]])[1],
+                       "; coercing to factor to estimate new-level offsets"))
+        data[[batch_term]] <- factor(data[[batch_term]])
+      }
+
+      warning(paste0("New levels of ", batch_term, ":\n",
+                     paste(new_batches, collapse = "\n"),
                      "\nEstimating and removing effects"))
 
       #hold in-sample rows (known batches) for the standard scoring path below
@@ -384,41 +392,47 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
         
         cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
                                              type = "cent", adjust = TRUE, 
-                                             rm.term = batch_term)
+                                             rm.term = batch_term,
+                                             traindata = fit_data)
         oos_centiles <- c(oos_centiles, cent)
         oos_idx      <- c(oos_idx, b_idx)
       }
     }
   }
 
-  #predict, using fit_data if supplied
-  predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fit_data)
-
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[1]
   pfun <- paste0("p", fname)
 
-  #look for moments
-  has_sigma <- "sigma" %in% gamlssModel[[2]]
-  has_nu <- "nu" %in% gamlssModel[[2]]
-  has_tau <- "tau" %in% gamlssModel[[2]]
+  in_centiles <- numeric(0)
 
-  in_centiles <- c()
-  #iterate through in-sample participants
-  for (i in seq_along(predict_me)){
-    cent_args <- list(predict_me[[i]], predModel$mu[[i]])
+  #every row may be a new batch level, leaving nothing to score in-sample:
+  #skip the prediction entirely, since predictAll() errors on 0-row newdata
+  if (length(in_idx) > 0){
+    #predict, using fit_data if supplied
+    predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fit_data)
 
-    if (has_sigma){
-      cent_args$sigma <- predModel$sigma[[i]]
-    }
-    if (has_nu){
-      cent_args$nu <- predModel$nu[[i]]
-    }
-    if (has_tau){
-      cent_args$tau <- predModel$tau[[i]]
-    }
+    #look for moments
+    has_sigma <- "sigma" %in% gamlssModel[[2]]
+    has_nu <- "nu" %in% gamlssModel[[2]]
+    has_tau <- "tau" %in% gamlssModel[[2]]
 
-    in_centiles[i] <- do.call(pfun, cent_args)
+    #iterate through in-sample participants
+    for (i in seq_along(predict_me)){
+      cent_args <- list(predict_me[[i]], predModel$mu[[i]])
+
+      if (has_sigma){
+        cent_args$sigma <- predModel$sigma[[i]]
+      }
+      if (has_nu){
+        cent_args$nu <- predModel$nu[[i]]
+      }
+      if (has_tau){
+        cent_args$tau <- predModel$tau[[i]]
+      }
+
+      in_centiles[i] <- do.call(pfun, cent_args)
+    }
   }
 
   #recombine out-of-sample and in-sample centiles into original row order
@@ -482,7 +496,15 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
       #only unseen levels need the offset machinery, so only check for it here
       .require_gamlss2charts("scoring new levels of `batch_term`")
 
-      warning(paste0("New levels of ", batch_term,":\n", new_batches,
+      #coerce to factor for predict_score() if necessary
+      if (!is.factor(data[[batch_term]])){
+        warning(paste0("`", batch_term, "` is ", class(data[[batch_term]])[1],
+                       "; coercing to factor to estimate new-level offsets"))
+        data[[batch_term]] <- factor(data[[batch_term]])
+      }
+
+      warning(paste0("New levels of ", batch_term, "\n",
+                     paste(new_batches, collapse = "\n"),
                      "\nEstimating and removing effects"))
 
       #hold in-sample rows (known batches) for the standard scoring path below
@@ -497,34 +519,41 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
         b_idx      <- which(data[[batch_term]] == batch)
         batch_data <- data[b_idx, , drop = FALSE]   #keep response + predictors
         cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
-                                             type = "cent", adjust = TRUE, rm.term = batch_term)
+                                             type = "cent", adjust = TRUE, 
+                                             rm.term = batch_term,
+                                             traindata = fit_data)
         oos_centiles <- c(oos_centiles, cent)
         oos_idx      <- c(oos_idx, b_idx)
       }
     }
   }
 
-  #predict in-sample params, using fit_data if supplied
-  predModel <- predict(gamlssModel, newdata=newData, data=fit_data, type="parameter")
-
   #get dist type (e.g. GG, BCCG) and write out function
   fname <- gamlssModel$family[[1]]
   pfun <- paste0("p", fname)
 
-  #compute in-sample centiles: evaluate the family CDF at each observed value
-  predModel$q <- predict_me
-  arg_order <- c("q", "mu", "sigma", "nu", "tau")
+  in_centiles <- numeric(0)
 
-  in_centiles <- predModel %>%
-    rowwise() %>%
-    mutate(
-      centile = {
-        # extract all expected args in order
-        args <- pick(any_of(arg_order))
-        do.call(get(pfun), as.list(args))
-      }) %>%
-    ungroup() %>%
-    pull(centile)
+  #every row may be a new batch level, leaving nothing to score in-sample
+  if (length(in_idx) > 0){
+    #predict in-sample params, using fit_data if supplied
+    predModel <- predict(gamlssModel, newdata=newData, data=fit_data, type="parameter")
+
+    #compute in-sample centiles: evaluate the family CDF at each observed value
+    predModel$q <- predict_me
+    arg_order <- c("q", "mu", "sigma", "nu", "tau")
+
+    in_centiles <- predModel %>%
+      rowwise() %>%
+      mutate(
+        centile = {
+          # extract all expected args in order
+          args <- pick(any_of(arg_order))
+          do.call(get(pfun), as.list(args))
+        }) %>%
+      ungroup() %>%
+      pull(centile)
+  }
 
   #recombine out-of-sample and in-sample centiles into original row order
   centiles <- numeric(nrow(data))
