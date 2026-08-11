@@ -1,0 +1,281 @@
+---
+title: "Plotting Centile Fans"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Plotting Centile Fans}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  markup = FALSE,
+  fig.width = 8, 
+  fig.height = 7
+)
+```
+
+```{r setup}
+library(gamlssTools)
+```
+
+This vignette covers `make_centile_fan()` and the other plotting functions.
+It uses two datasets: the built-in iris dataset and a toy dataset simulated below.
+
+```{r}
+set.seed(1234)
+n <- 1000
+
+# Age sampled uniformly on the log scale (birth = 280 days post-conception) so
+# infancy is as densely covered as late adulthood
+logAge <- runif(n, log10(196), log10(280 + 100 * 365.25))  # 28wk gestation to 100y
+df <- data.frame(
+  Age    = round(10^logAge - 280),   # days post-birth
+  logAge = logAge,
+  Sex    = factor(sample(c("Female", "Male"), n, replace = TRUE))
+)
+
+# Study assignment correlated with age: each study recruits around a different point
+# on the logAge scale (2.45 = birth, 2.81 = 1y, 3.32 = 5y, 3.88 = 20y, 4.35 = 60y)
+study_center <- c(Study_A = 2.55, Study_B = 3.15, Study_C = 3.70,
+                  Study_D = 4.15, Study_E = 4.45)
+study_width  <- 0.5                       # larger = more overlap between studies
+study_size   <- c(1, 1, 0.8, 1.3, 0.6)     # relative recruitment volume
+
+w <- outer(df$logAge, study_center, dnorm, sd = study_width)
+w <- sweep(w, 2, study_size, "*")
+df$Study <- factor(colnames(w)[apply(w, 1, function(p) sample.int(length(p), 1, prob = p))],
+                   levels = names(study_center))
+
+# Median trajectory (arbitrary volume-like units): fast perinatal rise,
+# childhood peak, gradual decline through adulthood
+growth  <- plogis((df$logAge - 2.70) / 0.22)
+atrophy <- 1 - 0.38 * plogis((df$logAge - 3.85) / 0.32)
+mu <- 900 * growth * atrophy
+
+# Sex: males ~10% larger, with a small age interaction
+mu <- mu * ifelse(df$Sex == "Male", 1.10 * (1 + 0.04 * (df$logAge - 3.5)), 1)
+
+# Study/scanner offsets (multiplicative), kept modest since study is now
+# partly confounded with age
+mu <- mu * c(Study_A = 1.00, Study_B = 0.92, Study_C = 1.10,
+             Study_D = 0.96, Study_E = 1.06)[df$Study]
+
+# Multiplicative noise, wider in infancy -> heteroscedastic and right-skewed
+sigma <- 0.05 + 0.07 * plogis(-(df$logAge - 3.0) / 0.35)
+df$Pheno <- mu * exp(rnorm(n, 0, sigma))
+```
+
+## Centile Fan Plots
+
+The basic use-case for gamlssTools is plotting gamlss models. Note that while we use a model fit with the original [gamlss](https://cran.r-project.org/web/packages/gamlss/index.html) package, the functions in gamlssTools are also compatible with the newer [gamlss2](https://github.com/gamlss-dev/gamlss2).
+
+We'll start by fitting a simple model on the iris dataset:
+
+```{r}
+#fit gamlss model
+iris_model <- gamlss(formula = Sepal.Width ~ pb(Sepal.Length) + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+
+#basic plot
+iris_fan_plot <- make_centile_fan(iris_model, iris, "Sepal.Length", "Species")
+print(iris_fan_plot)
+```
+
+You can use all the standard ggplot layers to make your plot prettier.
+
+```{r}
+iris_fan_plot +
+  labs(title="Normative Sepal Width by Length",
+  x ="Sepal Length", y = "Sepal Width",
+  color = "Species", fill="Species") +
+  theme_bw() +
+  scale_colour_viridis_d()
+```
+
+You can also plot an average fan across multiple levels of a factor; for instance, plotting the average trajectory across males and females. 
+
+```{r}
+pheno_model <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), sigma.formula= ~ pb(logAge) + Sex, data = df, family=BCCG)
+
+make_centile_fan(pheno_model, df, "logAge", "Sex", 
+                 average_over = TRUE,
+                 x_axis="log_lifespan_fetal")
+```
+One downside is that the points often no longer visually align with the centile lines - we can just remove them
+using the `show_points` argument.
+
+```{r}
+make_centile_fan(pheno_model, df, "logAge", "Sex", 
+                 average_over = TRUE,
+                 show_points = FALSE,
+                 x_axis="log_lifespan_fetal")
+```
+
+### X-axis and Centile Label formatting
+
+`make_centile_fan()` ships with a few pre-built x-axis formats, chosen with `x_axis`.
+Each one assumes the x variable you modeled on (`x_var`) is in particular units:
+
+| `x_axis` | expects `x_var` in | tick marks |
+|---|---|---|
+| `"custom"` (default) | anything | none - format the ggplot yourself |
+| `"lifespan"` | days post-birth | Birth, then every 10 years to 100 |
+| `"log_lifespan"` | log10(days post-birth) | Birth, 1, 2, 5, 10, 20, 50, 100 years |
+| `"lifespan_fetal"` | days post-conception (days post-birth + 280) | Conception, Birth, then every 10 years |
+| `"log_lifespan_fetal"` | log10(days post-conception) | Conception, Birth, 1, 2, 5, 10, 20, 50, 100 years |
+
+Ranges are adjusted automatically to fit the data (i.e. your plot won't go up to 100 years if you're only 
+plotting adolescent data, even if you select `x_axis = "log_lifespan"`)
+
+
+In our example, we fit our model on `logAge` (log10 days post-conception), so we'll use
+`log_lifespan_fetal`:
+
+```{r}
+make_centile_fan(pheno_model, df, "logAge", "Sex", x_axis="log_lifespan_fetal")
+```
+
+You can also apply different functions to rescale the x and y values in your visualization.
+`x_scale` and `y_scale` take a function that is applied to the points and the centile lines just before plotting. 
+
+Here we convert the x-axis back into years and the y-axis into thousands of units. Note that these are purely cosmetic - they rescale what's drawn, not what was fit - and that the axis titles still refer to the original variables, so you'll usually want to set those yourself.
+
+```{r}
+make_centile_fan(pheno_model, df, "logAge", "Sex",
+                 x_scale = function(x) (10^x - 280)/365.25,  #logAge -> years post-birth
+                 y_scale = function(y) y/1000) +
+  labs(x = "Age (years)", y = "Pheno (thousands)")
+```
+
+The centile lines themselves are labeled according to `label_centiles`. The default, `"label"`,
+writes the percentile at the right-hand end of each line (and pads the panel to make room for it).
+That gets crowded fast, in which case `"legend"` maps line thickness to percentile in the legend instead, and
+`"none"` drops the labels altogether (useful when you're layering plots, as below).
+
+```{r}
+make_centile_fan(pheno_model, df, "logAge", "Sex",
+                 x_axis = "log_lifespan_fetal",
+                 label_centiles = "legend")
+```
+
+### Advanced color control
+
+By default `color_var` maps both the points and the centile lines onto a single ggplot color scale. 
+When you want more control, `color_manual` sets colors for the **centile lines** and `point_color_manual` sets
+colors for the **points**. Both take color names or hex codes, and both expect one value per level
+of `color_var`. They can be passed by order or explicitly defined (second example).
+
+If only `color_manual` is supplied, it will be applied to both layers (centile lines AND points)
+
+```{r}
+make_centile_fan(pheno_model, df, "logAge", "Sex",
+                 x_axis = "log_lifespan_fetal",
+                 color_manual = c("#E1BE6A", "#40B0A6"))
+```
+
+Supplying `point_color_manual` allows you to update just the point colors
+
+```{r}
+make_centile_fan(pheno_model, df, "logAge", "Sex",
+                 x_axis = "log_lifespan_fetal",
+                 color_manual = c("Female" = "#E1BE6A", "Male"= "#40B0A6"),
+                 point_color_manual = c("Female" = "grey70", "Male"="grey40"),
+                 color_name = "Sex assigned at birth",
+                 color_labels = c("F", "M"),
+                 label_centiles = "legend")
+```
+
+### Three ways to residualize
+
+Note that these centile fan plots are conditional upon any covariates in your model (i.e., any covariates beyond those shown in the x-axis or via color are held at their respective means/modes). This is very useful for visualizing a trend across age, say, without being bogged down by nuisance effects, like batch or site. This does sometimes lead to a mismatch with the individual data points and centile lines, however, as the points still reflect differences across site that are controlled for in the centile lines. 
+
+```{r}
+make_centile_fan(pheno_model, df, "logAge", "Sex")
+```
+
+You can residualize out the estimated effect of a nuisance covariate (like study or site) from your data points to more cleanly display your data.
+
+```{r}
+make_centile_fan(pheno_model, df, "logAge", "Sex", 
+                 remove_point_effect = "Study", 
+                 x_axis="log_lifespan_fetal")
+```
+
+There are three different arguments for removing a nuisance effect from a plot, and they don't do the same
+thing: two adjust the **data points**, and one adjusts the **centile lines**. To show the difference, we'll
+fit an iris model with a continuous nuisance covariate (`Petal.Width`) alongside the covariates we want
+to plot:
+
+```{r}
+iris_resid_model <- gamlss(formula = Sepal.Width ~ pb(Sepal.Length) + Species + Petal.Width,
+                           sigma.formula = ~ Sepal.Length, data = iris, family = BCCG)
+
+#the centile lines here are conditional on the mean Petal.Width
+make_centile_fan(iris_resid_model, iris, "Sepal.Length", "Species", desiredCentiles = c(0.05, 0.5, 0.95))
+```
+
+**`remove_point_effect`** adjusts the points, setting the nuisance term to its population mean (or mode, for
+a categorical term). This is usually what you want: the points are moved onto the same footing as the
+centile lines, which are already drawn at the mean of that covariate.
+
+```{r}
+make_centile_fan(iris_resid_model, iris, "Sepal.Length", "Species",
+                 remove_point_effect = "Petal.Width", desiredCentiles = c(0.05, 0.5, 0.95))
+```
+
+**`zero_effect`** also adjusts the points, but sets the numeric term to 0 rather than to its mean. Use this
+when 0 is the meaningful reference value for that covariate. This is often used with the last method, setting
+a variable manually using the **`special_term`** argument. This changes the **centile lines** rather than the points by building the prediction grid with the term fixed at a given value.
+
+```{r}
+make_centile_fan(iris_resid_model, iris, "Sepal.Length", "Species",
+                 zero_effect = "Petal.Width", #plot points as if Petal.Width = 0
+                 special_term ="Petal.Width=0", #plot lines as if Petal.Width = 0
+                 desiredCentiles = c(0.05, 0.5, 0.95))
+```
+Use the latter two with caution. 0 often falls outside the range of the data the model was fit on, so
+estimates there can be unstable — as with any extrapolation, the model will happily give you a number
+whether or not it means anything.
+
+### Layering plots
+You can also extract and manipulate the layers created by `make_centile_fan()`. 
+For instance, if you're fitting separate models for each sex but still want to plot them on the same plot:
+
+```{r}
+#fit separate models for each sex
+df_m <- df %>% filter(Sex=="Male")
+df_f <- df %>% filter(Sex=="Female")
+
+m_model <- gamlss(formula = Pheno ~ pb(logAge) + random(Study), sigma.formula= ~ pb(logAge), data = df_m, family=BCCG)
+f_model <- gamlss(formula = Pheno ~ pb(logAge) + random(Study), sigma.formula= ~ pb(logAge), data = df_f, family=BCCG)
+
+#plot by sex
+plot_m <- make_centile_fan(m_model, df_m, "logAge", 
+                           show_points=FALSE, 
+                           x_axis="log_lifespan_fetal",
+                           color_manual="orange",
+                           label_centiles = "none")
+plot_f <- make_centile_fan(f_model, df_f, "logAge", 
+                           show_points=FALSE, 
+                           x_axis="log_lifespan_fetal",
+                           color_manual="green",
+                           label_centiles = "none")
+
+plot_combined <- plot_m
+plot_combined$layers <- c(plot_m$layers, plot_f$layers)
+
+plot_combined +
+ theme_bw() +
+ ggtitle("Male and Female Growth Charts")
+```
+
+### Additional features
+There are many other options you can use to customize/adjust your plots - see the documentation for `make_centile_fan()`.
+There are also a number of wrapper functions that apply different defaults to/otherwise streamline centile plotting. These include:
+
+- `centile_fan_brainchart()`: Plot centiles in the style of Bethlehem, Seidletz & White et al, Nature 2022.
+- `plot_centile_deriv()`: Plot derivative of median centile
+- `plot_centile_cis()`: Plot median with 95% confidence intervals (see Bootstrapping & Confidence Intervals vignette for more)

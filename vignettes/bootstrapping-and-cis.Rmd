@@ -130,8 +130,8 @@ plot_sigma_cis(pheno_model,
 
 ```{r}
 #get true peak
-sim_df <- sim_data(df, "Age", "Sex")
-cent <- centile_predict(pheno_model, sim_df, "Age", desiredCentiles = c(0.5), average_over = TRUE)
+sim_df <- sim_grid(df, "Age", "Sex")
+cent <- centile_fan_values(pheno_model, sim_df, "Age", centiles = c(0.5), average_over = TRUE)
 peak <- age_at_peak(cent[[1]])
 
 #get bootstrapped CIs
@@ -211,8 +211,8 @@ ggplot(sigma_diffs) +
 
 ```{r}
 #get true peak
-sim_df <- sim_data(df, "Age", "Sex")
-cent_by_sex <- centile_predict(pheno_model, sim_df, "Age", desiredCentiles = c(0.5))
+sim_df <- sim_grid(df, "Age", "Sex")
+cent_by_sex <- centile_fan_values(pheno_model, sim_df, "Age", centiles = c(0.5))
 peak_by_sex <- lapply(cent_by_sex, age_at_peak) %>%
   bind_rows(.id = "Sex") %>%
   mutate(Sex = sub("fanCentiles_", "", Sex))
