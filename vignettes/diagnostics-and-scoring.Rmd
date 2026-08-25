@@ -1,0 +1,161 @@
+---
+title: "Model Diagnostics & Centile Scores"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Model Diagnostics & Centile Scores}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  markup = FALSE,
+  fig.width = 8,
+  fig.height = 7
+)
+```
+
+```{r setup}
+library(gamlssTools)
+```
+
+This vignette covers checking how well a model fits and getting centile/z-score values out of it.
+
+We'll use this toy dataset:
+
+```{r}
+set.seed(1234)
+n <- 1000
+
+# Age sampled uniformly on the log scale (birth = 280 days post-conception)
+logAge <- runif(n, log10(196), log10(280 + 100 * 365.25))  # 28wk gestation to 100y
+df <- data.frame(
+  Age    = round(10^logAge - 280),   # days post-birth
+  logAge = logAge,
+  Sex    = factor(sample(c("Female", "Male"), n, replace = TRUE))
+)
+
+# Study assignment correlated with age
+study_center <- c(Study_A = 2.55, Study_B = 3.15, Study_C = 3.70,
+                  Study_D = 4.15, Study_E = 4.45)
+study_width  <- 0.5                       # larger = more overlap between studies
+study_size   <- c(1, 1, 0.8, 1.3, 0.6)     # relative recruitment volume
+
+w <- outer(df$logAge, study_center, dnorm, sd = study_width)
+w <- sweep(w, 2, study_size, "*")
+df$Study <- factor(colnames(w)[apply(w, 1, function(p) sample.int(length(p), 1, prob = p))],
+                   levels = names(study_center))
+
+# Median trajectory (arbitrary volume-like units): fast perinatal rise,
+# childhood peak, gradual decline through adulthood
+growth  <- plogis((df$logAge - 2.70) / 0.22)
+atrophy <- 1 - 0.38 * plogis((df$logAge - 3.85) / 0.32)
+mu <- 900 * growth * atrophy
+
+# Sex: males ~10% larger, with a small age interaction
+mu <- mu * ifelse(df$Sex == "Male", 1.10 * (1 + 0.04 * (df$logAge - 3.5)), 1)
+
+# Study/scanner offsets
+mu <- mu * c(Study_A = 1.00, Study_B = 0.92, Study_C = 1.10,
+             Study_D = 0.96, Study_E = 1.06)[df$Study]
+
+# Multiplicative noise, wider in infancy -> heteroscedastic and right-skewed
+sigma <- 0.05 + 0.07 * plogis(-(df$logAge - 3.0) / 0.35)
+df$Pheno <- mu * exp(rnorm(n, 0, sigma))
+```
+
+And fit a basic model
+```{r}
+pheno_model <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), sigma.formula= ~ pb(logAge) + Sex, data = df, family=BCCG)
+```
+
+## Model Diagnostics
+
+There are several quantitative and qualitative checks you'll likely want to perform on your models.
+
+First, we can return BIC and AIC built-into the gamlss model object (note: will be different when using gamlss2 objects)
+```{r}
+pheno_model$aic #AIC
+pheno_model$sbc #BIC
+```
+
+Another helpful check is the worm plot. `wp.taki()` enhances the built-in `gamlss::wp()` by allowing you to break up plots along chunks of a continuous variable (like age) or by levels of a categorical variable (like sex), so you can make sure the model fits all groups well.
+
+```{r}
+#plot by age
+wp.taki(xvar=df$Age, resid=resid(pheno_model))
+
+#plot by sex
+df$Sex <- as.factor(df$Sex)
+wp.taki(xvar=df$Sex, resid=resid(pheno_model))
+```
+
+You can also check how well the predicted centiles for each point/subject line up with the percentiles themselves - that is, about 5% of subjects' centiles should be <= 0.05.
+
+```{r}
+centile_coverage(pheno_model, df)
+
+#we can also view this by sex or age
+centile_coverage(pheno_model, df, group="Sex")
+centile_coverage(pheno_model, df, interval_var = "Age", n=4)
+```
+
+## Calculating Centiles
+
+Now let's say you want to get the centile values for each subject in your dataset or a new dataset.
+
+We'll start by simulating a small, new dataset.
+```{r}
+# same generative process as above, drawn fresh (study_center, study_width and
+# study_size are reused from the training simulation)
+set.seed(5678)
+n_test <- 100
+
+test_logAge <- runif(n_test, log10(196), log10(280 + 100 * 365.25))
+test_df <- data.frame(
+  Age    = round(10^test_logAge - 280),
+  logAge = test_logAge,
+  Sex    = factor(sample(c("Female", "Male"), n_test, replace = TRUE))
+)
+
+w_test <- outer(test_df$logAge, study_center, dnorm, sd = study_width)
+w_test <- sweep(w_test, 2, study_size, "*")
+test_df$Study <- factor(colnames(w_test)[apply(w_test, 1, function(p) sample.int(length(p), 1, prob = p))],
+                        levels = names(study_center))
+
+test_mu <- 900 * plogis((test_df$logAge - 2.70) / 0.22) *
+  (1 - 0.38 * plogis((test_df$logAge - 3.85) / 0.32))
+test_mu <- test_mu * ifelse(test_df$Sex == "Male", 1.10 * (1 + 0.04 * (test_df$logAge - 3.5)), 1)
+test_mu <- test_mu * c(Study_A = 1.00, Study_B = 0.92, Study_C = 1.10,
+                       Study_D = 0.96, Study_E = 1.06)[test_df$Study]
+
+test_sigma <- 0.05 + 0.07 * plogis(-(test_df$logAge - 3.0) / 0.35)
+test_df$Pheno <- test_mu * exp(rnorm(n_test, 0, test_sigma))
+```
+
+Now we can return the centile values for each subject, as estimated by our model above.
+
+```{r}
+test_df$centiles <- score_centiles(pheno_model, test_df)
+range(test_df$centiles)
+```
+
+You can also return standardized scores, or "pseudo-z-scores"
+
+
+
+Note that we didn't have to hand `score_centiles()` the data the model was fit on. For gamlss models,
+`gamlssTools` is able to calculate centiles without the original data used to fit the model. This is useful 
+in many contexts, including when the model is saved and reloaded and/or when the data can't be shared. 
+
+The exception is a model containing a smooth that can't (currently) be reconstructed this way 
+(`cs()`, `ps()`, `ga()`, `s()`) — those still need the fitting data passed to the `fit_data` argument.
+
+### Out-of-Sample Scoring
+Implementation of out-of-sample scoring is currently pending updates to [gamlss2charts](https://github.com/andy1764/gamlss2charts/tree/dev).
+It requires the `dev` branch of that package, installed with
+`remotes::install_github("andy1764/gamlss2charts@dev")`.
+

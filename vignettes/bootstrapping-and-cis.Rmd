@@ -33,39 +33,57 @@ library(gamlss2)
 We'll start by simulating a toy dataset to use.
 
 ```{r}
+set.seed(1234)
+n <- 1000
+
+# Age sampled uniformly on the log scale (birth = 280 days post-conception) so
+# infancy is as densely covered as late adulthood
+logAge <- runif(n, log10(196), log10(280 + 100 * 365.25))  # 28wk gestation to 100y
 df <- data.frame(
-  Age = sample(0:500, 10000, replace = TRUE),
-  Sex = sample(c("Male", "Female"), 10000, replace = TRUE),
-  Study = factor(sample(c("Study_A", "Study_B", "Study_C"), 10000, replace = TRUE))
+  Age    = round(10^logAge - 280),   # days post-birth
+  logAge = logAge,
+  Sex    = factor(sample(c("Female", "Male"), n, replace = TRUE))
 )
 
-# Encode sex as numeric for interaction
-sex_num <- ifelse(df$Sex == "Male", 0, 1)
+# Study assignment correlated with age: each study recruits around a different point
+# on the logAge scale (2.45 = birth, 2.81 = 1y, 3.32 = 5y, 3.88 = 20y, 4.35 = 60y)
+study_center <- c(Study_A = 2.55, Study_B = 3.15, Study_C = 3.70,
+                  Study_D = 4.15, Study_E = 4.45)
+study_width  <- 0.5                       # larger = more overlap between studies
+study_size   <- c(1, 1, 0.8, 1.3, 0.6)     # relative recruitment volume
 
-# Study effects
-study_effects <- c(Study_A = -3, Study_B = 0, Study_C = 1)
+w <- outer(df$logAge, study_center, dnorm, sd = study_width)
+w <- sweep(w, 2, study_size, "*")
+df$Study <- factor(colnames(w)[apply(w, 1, function(p) sample.int(length(p), 1, prob = p))],
+                   levels = names(study_center))
 
-# Simulate Pheno with:
-# - nonlinear effect of age
-# - main effect of sex
-# - age × sex interaction
-# - site-specific offsets
-# - noise
-df$Pheno <-  (df$Age/25)^2 * (1 + sex_num) +      # age effect + interaction with sex
-             3 * sex_num +                                  # main effect of sex
-             study_effects[df$Study] +                  # study/site effect
-             rnorm(nrow(df), mean = 0, sd = 200) #noise
+# Median trajectory (arbitrary volume-like units): fast perinatal rise,
+# childhood peak, gradual decline through adulthood
+growth  <- plogis((df$logAge - 2.70) / 0.22)
+atrophy <- 1 - 0.38 * plogis((df$logAge - 3.85) / 0.32)
+mu <- 900 * growth * atrophy
 
-# Rescale to 1–500
-df$Pheno <- scales::rescale(df$Pheno, to = c(1, 500))
+# Sex: males ~10% larger, with a small age interaction
+mu <- mu * ifelse(df$Sex == "Male", 1.10 * (1 + 0.04 * (df$logAge - 3.5)), 1)
+
+# Study/scanner offsets (multiplicative), kept modest since study is now
+# partly confounded with age
+mu <- mu * c(Study_A = 1.00, Study_B = 0.92, Study_C = 1.10,
+             Study_D = 0.96, Study_E = 1.06)[df$Study]
+
+# Multiplicative noise, wider in infancy -> heteroscedastic and right-skewed
+sigma <- 0.05 + 0.07 * plogis(-(df$logAge - 3.0) / 0.35)
+df$Pheno <- mu * exp(rnorm(n, 0, sigma))
 ```
 
 Now we'll fit a basic model. Note that this vignette uses the [gamlss2 package](https://github.com/gamlss-dev/gamlss2), since it's very fast, but all `gamlssTools` functions work with the original gamlss package as well.
 
 ```{r}
-pheno_model <- gamlss2(formula = Pheno ~ pb(Age) + Sex + s(Study, bs = "re"), sigma.formula= ~ pb(Age) + Sex, data = df, family=BCCG)
+pheno_model <- gamlss2(formula = Pheno ~ pb(logAge) + logAge*Sex + s(Study, bs = "re"), sigma.formula= ~ pb(logAge) + Sex, data = df, family=BCCG)
+
 #plot
-make_centile_fan(pheno_model, df, "Age", "Sex", remove_point_effect = "Study", desiredCentiles=c(0.05, .5, 0.95)) + 
+make_centile_fan(pheno_model, df, "logAge", "Sex", remove_point_effect = "Study",
+                 desiredCentiles=c(0.05, .5, 0.95)) + 
   theme_bw()
 ```
 
@@ -107,7 +125,7 @@ Now we'll use these models to find confidence intervals around parameters and of
 ```{r}
 plot_centile_cis(pheno_model, 
                  df, 
-                 x_var="Age", 
+                 x_var="logAge", 
                  color_var="Sex", 
                  average_over=TRUE, 
                  boot_list=boot_model_list, 
@@ -119,7 +137,7 @@ sigma...
 ```{r}
 plot_sigma_cis(pheno_model, 
                df, 
-               x_var="Age", 
+               x_var="logAge", 
                color_var="Sex", 
                average_over=TRUE, 
                boot_list=boot_model_list, 
@@ -130,15 +148,15 @@ plot_sigma_cis(pheno_model,
 
 ```{r}
 #get true peak
-sim_df <- sim_grid(df, "Age", "Sex")
-cent <- centile_fan_values(pheno_model, sim_df, "Age", centiles = c(0.5), average_over = TRUE)
+sim_df <- sim_grid(df, "logAge", "Sex")
+cent <- centile_fan_values(pheno_model, sim_df, "logAge", centiles = c(0.5), average_over = TRUE)
 peak <- age_at_peak(cent[[1]])
 
 #get bootstrapped CIs
-peak_cis <- peak_ci(boot_model_list, "Age", "Sex", df=df, average_over=TRUE)[[1]]
+peak_cis <- peak_ci(boot_model_list, "logAge", "Sex", df=df, average_over=TRUE)[[1]]
 
 #add true peak to df
-peak_cis$peak <- peak$Age
+peak_cis$peak <- peak$logAge
 
 peak_cis %>%
   mutate(Pheno="A") %>%
@@ -159,7 +177,7 @@ First, we'll compare the median centile trajectories between males and females:
 ```{r}
 plot_centile_cis(pheno_model, 
                  df, 
-                 x_var="Age", 
+                 x_var="logAge", 
                  color_var="Sex", 
                  boot_list=boot_model_list,
                  ci_type = "simultaneous")
@@ -170,7 +188,7 @@ We can see that the CIs dont overlap, but let's test it and plot the differences
 ```{r}
 diffs <- get_median_diffs(pheno_model, 
                           df, 
-                          "Age", 
+                          "logAge", 
                           "Sex", 
                           boot_list=boot_model_list, 
                           ci_type = "simultaneous", 
@@ -180,20 +198,20 @@ diffs <- get_median_diffs(pheno_model,
 
 #plot
 ggplot(diffs) +
-  geom_line(aes(x=Age, y=Female_minus_Male, color=sig_diff)) +
-  geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = Age), alpha=.3) + 
+  geom_line(aes(x=logAge, y=Female_minus_Male, color=sig_diff)) +
+  geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = logAge), alpha=.3) + 
   theme_linedraw()
 ```
 
 We can do the same with sigma... 
 
 ```{r}
-plot_sigma_cis(pheno_model, df, x_var="Age", color_var="Sex", boot_list=boot_model_list, ci_type = "simultaneous")
+plot_sigma_cis(pheno_model, df, x_var="logAge", color_var="Sex", boot_list=boot_model_list, ci_type = "simultaneous")
 
 
 sigma_diffs <- get_median_diffs(pheno_model, 
                                 df, 
-                                "Age", 
+                                "logAge", 
                                 "Sex", 
                                 boot_list=boot_model_list, 
                                 ci_type = "simultaneous", 
@@ -202,8 +220,8 @@ sigma_diffs <- get_median_diffs(pheno_model,
 
 #plot
 ggplot(sigma_diffs) +
-  geom_line(aes(x=Age, y=Female_minus_Male, color=sig_diff)) +
-  geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = Age), alpha=.3) + 
+  geom_line(aes(x=logAge, y=Female_minus_Male, color=sig_diff)) +
+  geom_ribbon(mapping = aes(ymin = lower, ymax = upper, x = logAge), alpha=.3) + 
   theme_linedraw()
 ```
 
@@ -211,15 +229,15 @@ ggplot(sigma_diffs) +
 
 ```{r}
 #get true peak
-sim_df <- sim_grid(df, "Age", "Sex")
-cent_by_sex <- centile_fan_values(pheno_model, sim_df, "Age", centiles = c(0.5))
+sim_df <- sim_grid(df, "logAge", "Sex")
+cent_by_sex <- centile_fan_values(pheno_model, sim_df, "logAge", centiles = c(0.5))
 peak_by_sex <- lapply(cent_by_sex, age_at_peak) %>%
   bind_rows(.id = "Sex") %>%
   mutate(Sex = sub("fanCentiles_", "", Sex))
 
 
 #get bootstrapped CIs
-peak_cis <- peak_ci(boot_model_list, "Age", "Sex", df=df) %>%
+peak_cis <- peak_ci(boot_model_list, "logAge", "Sex", df=df) %>%
   bind_rows(.id = "Sex") %>%
   mutate(Sex = sub("peak_", "", Sex)) %>%
   select(!y)
@@ -228,7 +246,7 @@ peak_cis <- peak_ci(boot_model_list, "Age", "Sex", df=df) %>%
 peak_cis_full <- full_join(peak_by_sex, peak_cis)
 
 peak_cis_full %>%
-  ggplot(aes(x=Age, y = Sex)) +
+  ggplot(aes(x=logAge, y = Sex)) +
   geom_point(stat="identity") +
   geom_errorbarh(aes(xmin = lower, xmax = upper)) 
 ```
