@@ -10,14 +10,30 @@
 #' estimated from a gamlss model. 
 #' 
 #' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()]. 
-#' Calls [pred_og_centile()]. Already works with both gamlss and gamlss2 objs
+#' Calls [score_centiles()] unless pre-calculated `centiles` are supplied. Already works with both gamlss and gamlss2 objs
+#'
+#' @details
+#' Supplying `centiles` skips the scoring step entirely, which is useful when centiles are expensive to
+#' compute (e.g. large data, or scoring with `fit_data`/`batch_term`) or were produced some other way -
+#' score once with [score_centiles()], then reuse the result across as many groupings as you like.
 #' 
-#' @param gamlssModel gamlss model object
-#' @param data dataframe to assess
+#' @param gamlssModel gamlss model object. Optional if `centiles` are supplied.
+#' @param data dataframe to assess. Optional if `centiles` are supplied as a vector and
+#' neither `group` nor `interval_var` is used.
 #' @param plot whether to plot results (`TRUE`, default) or output as a tibble (`FALSE`)
 #' @param group (optional) name of grouping column
 #' @param interval_var (optional) numeric variable along which to group outputs. Uses [ggplot2::cut_interval], which
 #' requires additional args (`n` or `length`).
+#' @param centiles (optional) pre-calculated centiles, so `data` doesn't have to be re-scored. Either a
+#' numeric vector with one centile per row of `data`, the name of a column of `data`, or the dataframe
+#' returned by [score_centiles()] with `standardize=TRUE` (its `centile` column is used). Supply either
+#' `centiles` or `gamlssModel`, not both.
+#' @param batch_term (optional) variable for which new levels' offsets are estimated and removed when
+#' scoring. Passed to [score_centiles()], so it only applies when scoring from `gamlssModel`.
+#'
+#' @section Optional dependency:
+#' `batch_term` requires the **dev** branch of the suggested package gamlss2charts.
+#' See [gamlssTools-optional].
 #'
 #' @returns ggplot object or tibble (if `plot==FALSE`)
 #'
@@ -45,12 +61,66 @@
 #' #output table only
 #' centile_coverage(pheno_model, df, plot=FALSE, group="Sex", interval_var="Age", n=4)
 #'
+#' #estimate and remove offsets for unseen levels of a batch variable while scoring
+#' centile_coverage(pheno_model, df, group="Study", batch_term="Study")
+#'
+#' #score once, then reuse the centiles across groupings
+#' cents <- score_centiles(pheno_model, df)
+#' centile_coverage(data=df, centiles=cents, group="Sex")
+#' centile_coverage(data=df, centiles=cents, interval_var="Age", n=4)
+#'
+#' #or from a column of the dataframe
+#' df$centile <- cents
+#' centile_coverage(data=df, centiles="centile", group="Study")
+#'
+#' #with no grouping, the centiles alone are enough
+#' centile_coverage(centiles=cents, plot=FALSE)
+#'
 #' @export
-centile_coverage <- function(gamlssModel, data, plot=TRUE, group = NULL, interval_var = NULL, ...) {
+centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group = NULL,
+                             interval_var = NULL, centiles = NULL, batch_term = NULL, ...) {
+  if (is.null(gamlssModel) && is.null(centiles)) {
+    stop("Supply either `gamlssModel` (to score `data`) or pre-calculated `centiles`.")
+  }
+  if (!is.null(gamlssModel) && !is.null(centiles)) {
+    stop("Supply either `gamlssModel` or `centiles`, not both.")
+  }
+  if (!is.null(centiles) && !is.null(batch_term)) {
+    stop("`batch_term` only applies when scoring from `gamlssModel`; `centiles` are already scored.")
+  }
+
   df <- data  #internal alias; the summary below is built from `df`
-  # Predict centiles for original data
-  df$centile <- score_centiles(gamlssModel, df)
-  
+
+  if (is.null(centiles)) {
+    # Predict centiles for original data
+    stopifnot("`data` is required to score centiles from `gamlssModel`" = !is.null(df))
+    df$centile <- score_centiles(gamlssModel, df, batch_term = batch_term)
+  } else {
+    # Accept score_centiles(standardize=TRUE) output, a column name, or a bare vector
+    if (is.data.frame(centiles)) {
+      stopifnot("`centiles` dataframe must have a `centile` column" = "centile" %in% names(centiles))
+      centiles <- centiles[["centile"]]
+    } else if (is.character(centiles) && length(centiles) == 1) {
+      stopifnot("`data` is required when `centiles` names a column" = !is.null(df))
+      stopifnot("`centiles` is not a column of `data`" = centiles %in% names(df))
+      centiles <- df[[centiles]]
+    }
+
+    stopifnot("`centiles` must be numeric" = is.numeric(centiles))
+    stopifnot("`centiles` contains NAs" = !anyNA(centiles))
+    stopifnot("`centiles` must be between 0 and 1" = all(centiles >= 0 & centiles <= 1))
+
+    if (is.null(df)) {
+      #centiles alone are enough when there's nothing to group by
+      stopifnot("`data` is required to use `group` or `interval_var`" =
+                  is.null(group) && is.null(interval_var))
+      df <- data.frame(centile = centiles)
+    } else {
+      stopifnot("`centiles` must have one value per row of `data`" = length(centiles) == nrow(df))
+      df$centile <- centiles
+    }
+  }
+
   # Convert group variable to factor if needed
   if (!is.null(group) && is.numeric(df[[group]])) {
     df[[group]] <- as.factor(df[[group]])

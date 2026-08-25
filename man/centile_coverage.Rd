@@ -6,20 +6,23 @@
 \title{Centile coverage}
 \usage{
 centile_coverage(
-  gamlssModel,
-  data,
+  gamlssModel = NULL,
+  data = NULL,
   plot = TRUE,
   group = NULL,
   interval_var = NULL,
+  centiles = NULL,
+  batch_term = NULL,
   ...
 )
 
 cent_cdf(gamlssModel, df, plot = TRUE, group = NULL, interval_var = NULL, ...)
 }
 \arguments{
-\item{gamlssModel}{gamlss model object}
+\item{gamlssModel}{gamlss model object. Optional if \code{centiles} are supplied.}
 
-\item{data}{dataframe to assess}
+\item{data}{dataframe to assess. Optional if \code{centiles} are supplied as a vector and
+neither \code{group} nor \code{interval_var} is used.}
 
 \item{plot}{whether to plot results (\code{TRUE}, default) or output as a tibble (\code{FALSE})}
 
@@ -27,6 +30,14 @@ cent_cdf(gamlssModel, df, plot = TRUE, group = NULL, interval_var = NULL, ...)
 
 \item{interval_var}{(optional) numeric variable along which to group outputs. Uses \link[ggplot2:cut_interval]{ggplot2::cut_interval}, which
 requires additional args (\code{n} or \code{length}).}
+
+\item{centiles}{(optional) pre-calculated centiles, so \code{data} doesn't have to be re-scored. Either a
+numeric vector with one centile per row of \code{data}, the name of a column of \code{data}, or the dataframe
+returned by \code{\link[=score_centiles]{score_centiles()}} with \code{standardize=TRUE} (its \code{centile} column is used). Supply either
+\code{centiles} or \code{gamlssModel}, not both.}
+
+\item{batch_term}{(optional) variable for which new levels' offsets are estimated and removed when
+scoring. Passed to \code{\link[=score_centiles]{score_centiles()}}, so it only applies when scoring from \code{gamlssModel}.}
 }
 \value{
 ggplot object or tibble (if \code{plot==FALSE})
@@ -37,10 +48,20 @@ estimated from a gamlss model.
 }
 \details{
 Results can be grouped by any variable in the original dataframe. Inspired by output of \code{\link[gamlss:centiles]{gamlss::centiles()}}.
-Calls \code{\link[=pred_og_centile]{pred_og_centile()}}. Already works with both gamlss and gamlss2 objs
+Calls \code{\link[=score_centiles]{score_centiles()}} unless pre-calculated \code{centiles} are supplied. Already works with both gamlss and gamlss2 objs
+
+Supplying \code{centiles} skips the scoring step entirely, which is useful when centiles are expensive to
+compute (e.g. large data, or scoring with \code{fit_data}/\code{batch_term}) or were produced some other way -
+score once with \code{\link[=score_centiles]{score_centiles()}}, then reuse the result across as many groupings as you like.
 
 \code{cent_cdf()} is a deprecated alias for \code{centile_coverage()}.
 }
+\section{Optional dependency}{
+
+\code{batch_term} requires the \strong{dev} branch of the suggested package gamlss2charts.
+See \link{gamlssTools-optional}.
+}
+
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 centile_coverage(iris_model, iris)
@@ -64,5 +85,20 @@ centile_coverage(pheno_model, df, group="Sex", interval_var="Age", n=4)
 
 #output table only
 centile_coverage(pheno_model, df, plot=FALSE, group="Sex", interval_var="Age", n=4)
+
+#estimate and remove offsets for unseen levels of a batch variable while scoring
+centile_coverage(pheno_model, df, group="Study", batch_term="Study")
+
+#score once, then reuse the centiles across groupings
+cents <- score_centiles(pheno_model, df)
+centile_coverage(data=df, centiles=cents, group="Sex")
+centile_coverage(data=df, centiles=cents, interval_var="Age", n=4)
+
+#or from a column of the dataframe
+df$centile <- cents
+centile_coverage(data=df, centiles="centile", group="Study")
+
+#with no grouping, the centiles alone are enough
+centile_coverage(centiles=cents, plot=FALSE)
 
 }

@@ -30,14 +30,28 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
 
 * `gamlss2` fits continue to use gamlss2's own `predict()` and are unaffected.
 
+## Diagnostics
+
+* `centile_coverage()` gains `centiles`, so pre-calculated centiles can be passed in
+  instead of re-scoring the model. Accepts a numeric vector, the name of a column of
+  `data`, or the dataframe returned by `score_centiles(standardize=TRUE)`. `gamlssModel`
+  and `data` are now optional: supply either a model (to score `data`) or `centiles`,
+  and `data` is only needed when grouping with `group`/`interval_var`.
+
+* `centile_coverage()` also gains `batch_term`, passed through to `score_centiles()` so coverage can
+  be checked on data containing unseen levels of a site/study/batch variable. It only applies when
+  scoring from `gamlssModel` - combining it with `centiles` is an error.
+
 ## Out-of-Sample prediction draft
 
 * `score_centiles()` gains `batch_term`, for scoring data containing levels of a
   site/study/batch variable the model was never fit on. Offsets for unseen levels are
   estimated and removed via `gamlss2charts::predict_score()`; rows with known levels
   go through the standard path. HOWEVER, this is validated on and requires the 
-  development version of suggested package gamlss2charts. Full implementation is
-  pending the approval and update of gamlss2charts.
+  `dev` branch of suggested package gamlss2charts
+  (`remotes::install_github("andy1764/gamlss2charts@dev")`), which is what
+  `Remotes:` now points to. Full implementation is pending the approval and
+  update of gamlss2charts.
   
 ## Renamed functions
 
@@ -105,23 +119,21 @@ Breaking changes were restricted to minor unpopular functions and features
 * New `?gamlssTools-optional` help topic documenting which functions require the
   suggested packages, and how to install them.
 
-## Bug fixes
-
-* `list_predictors()` on a `gamlss2` model returned the fake formula's right-hand-side
-  element verbatim for per-moment lookups — an unevaluated call or symbol, not a
-  character vector of terms — breaking downstream callers such as `sim_grid()` and
-  `score_centiles()`. It now returns bare variable names, matching the `gamlss` method.
-
-* `list_predictors()` on a `gamlss2` model now indexes moments by the family's actual
-  parameter order rather than hardcoded positions, so requesting a moment the family
-  does not have (e.g. `tau` on a BCCG fit) gives an informative error instead of a
-  subscript-out-of-bounds.
-
 ## Documentation and internals
 
 * New tests in `tests/testthat/test-datafree.R` covering data-free output against the
   `predictAll()` gold path, data-free eligibility detection, and that every deprecated
   alias still matches its replacement.
+
+* New tests in `tests/testthat/test-list-predictors.R` checking `list_predictors()`
+  against edge-cases.
+
+* New tests in `tests/testthat/test-batch-scoring.R` covering `score_centiles()`'s
+  `batch_term` pathway: routing of known versus unseen levels, row-order preservation
+  when the two are interleaved, all-out-of-sample data, multiple unseen levels,
+  `standardize = TRUE`, and whether an unseen study's offset is actually removed.
+  The tests that estimate an offset skip unless the dev branch of gamlss2charts is
+  installed.
 
 * `make_centile_fan()` documentation substantially expanded, particularly the three
   residualization routes (`remove_point_effect`, `zero_effect`, and `special_term`)

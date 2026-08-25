@@ -20,6 +20,8 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(gamlssTools)
+remotes::install_github("andy1764/gamlss2charts@dev")
+library(gamlss2charts)
 ```
 
 This vignette covers checking how well a model fits and getting centile/z-score values out of it.
@@ -69,7 +71,8 @@ df$Pheno <- mu * exp(rnorm(n, 0, sigma))
 
 And fit a basic model
 ```{r}
-pheno_model <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), sigma.formula= ~ pb(logAge) + Sex, data = df, family=BCCG)
+pheno_model <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), 
+                      sigma.formula= ~ pb(logAge) + Sex, data = df, family=BCCG)
 ```
 
 ## Model Diagnostics
@@ -86,7 +89,7 @@ Another helpful check is the worm plot. `wp.taki()` enhances the built-in `gamls
 
 ```{r}
 #plot by age
-wp.taki(xvar=df$Age, resid=resid(pheno_model))
+wp.taki(xvar=df$logAge, resid=resid(pheno_model))
 
 #plot by sex
 df$Sex <- as.factor(df$Sex)
@@ -100,8 +103,21 @@ centile_coverage(pheno_model, df)
 
 #we can also view this by sex or age
 centile_coverage(pheno_model, df, group="Sex")
-centile_coverage(pheno_model, df, interval_var = "Age", n=4)
+centile_coverage(pheno_model, df, interval_var = "logAge", n=4)
 ```
+
+Each of those calls re-scores every subject. If you've already calculated centiles (or scoring is
+slow), hand them to `centile_coverage()` directly with the `centiles` argument instead of a model:
+
+```{r}
+df$centiles <- score_centiles(pheno_model, df)
+
+centile_coverage(data=df, centiles="centiles", group="Sex")
+```
+
+`centiles` also accepts a plain numeric vector, or the dataframe returned by
+`score_centiles(..., standardize=TRUE)`. `data` is only needed for grouping - with no `group` or
+`interval_var`, the centiles alone are enough (`centile_coverage(centiles=df$centiles)`).
 
 ## Calculating Centiles
 
@@ -109,10 +125,10 @@ Now let's say you want to get the centile values for each subject in your datase
 
 We'll start by simulating a small, new dataset.
 ```{r}
-# same generative process as above, drawn fresh (study_center, study_width and
-# study_size are reused from the training simulation)
 set.seed(5678)
 n_test <- 100
+
+study_center_new <- c(Study_A = 2.55, Study_B = 3.15, Study_New = 4)
 
 test_logAge <- runif(n_test, log10(196), log10(280 + 100 * 365.25))
 test_df <- data.frame(
@@ -121,16 +137,15 @@ test_df <- data.frame(
   Sex    = factor(sample(c("Female", "Male"), n_test, replace = TRUE))
 )
 
-w_test <- outer(test_df$logAge, study_center, dnorm, sd = study_width)
+w_test <- outer(test_df$logAge, study_center_new, dnorm, sd = study_width)
 w_test <- sweep(w_test, 2, study_size, "*")
 test_df$Study <- factor(colnames(w_test)[apply(w_test, 1, function(p) sample.int(length(p), 1, prob = p))],
-                        levels = names(study_center))
+                        levels = names(study_center_new))
 
 test_mu <- 900 * plogis((test_df$logAge - 2.70) / 0.22) *
   (1 - 0.38 * plogis((test_df$logAge - 3.85) / 0.32))
 test_mu <- test_mu * ifelse(test_df$Sex == "Male", 1.10 * (1 + 0.04 * (test_df$logAge - 3.5)), 1)
-test_mu <- test_mu * c(Study_A = 1.00, Study_B = 0.92, Study_C = 1.10,
-                       Study_D = 0.96, Study_E = 1.06)[test_df$Study]
+test_mu <- test_mu * c(Study_A = 1.00, Study_B = 0.92, Study_New = 0.89)[test_df$Study]
 
 test_sigma <- 0.05 + 0.07 * plogis(-(test_df$logAge - 3.0) / 0.35)
 test_df$Pheno <- test_mu * exp(rnorm(n_test, 0, test_sigma))
@@ -138,13 +153,38 @@ test_df$Pheno <- test_mu * exp(rnorm(n_test, 0, test_sigma))
 
 Now we can return the centile values for each subject, as estimated by our model above.
 
+By default, site effects for our new site ('Site_New') will be set to 0.
+
 ```{r}
 test_df$centiles <- score_centiles(pheno_model, test_df)
 range(test_df$centiles)
 ```
+This doesn't produce very good estimates.
+
+```{r}
+centile_coverage(data=test_df, centiles="centiles", group="Study")
+```
+
+Passing the `batch_term` arg enables batch-effect estimation and removal via `gamlss2charts::predict_score()`
+
+```{r}
+test_df$centiles2 <- score_centiles(pheno_model, test_df, batch_term="Study")
+centile_coverage(centiles=test_df$centiles2)
+```
+
+`centile_coverage()` takes `batch_term` too, and hands it straight to `score_centiles()`, so you can
+skip the intermediate step when you only want the coverage:
+
+```{r}
+centile_coverage(pheno_model, test_df, batch_term="Study", group="Study")
+```
+
 
 You can also return standardized scores, or "pseudo-z-scores"
 
+```{r}
+score_centiles(pheno_model, test_df, batch_term="Study", standardize=TRUE)
+```
 
 
 Note that we didn't have to hand `score_centiles()` the data the model was fit on. For gamlss models,
@@ -153,9 +193,4 @@ in many contexts, including when the model is saved and reloaded and/or when the
 
 The exception is a model containing a smooth that can't (currently) be reconstructed this way 
 (`cs()`, `ps()`, `ga()`, `s()`) — those still need the fitting data passed to the `fit_data` argument.
-
-### Out-of-Sample Scoring
-Implementation of out-of-sample scoring is currently pending updates to [gamlss2charts](https://github.com/andy1764/gamlss2charts/tree/dev).
-It requires the `dev` branch of that package, installed with
-`remotes::install_github("andy1764/gamlss2charts@dev")`.
 
