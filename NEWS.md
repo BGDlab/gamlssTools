@@ -42,6 +42,10 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
   be checked on data containing unseen levels of a site/study/batch variable. It only applies when
   scoring from `gamlssModel` - combining it with `centiles` is an error.
 
+* `centile_coverage()` now errors on an unrecognized argument rather than letting `...` swallow it.
+  `...` is only ever passed to `cut_interval()`, so without `interval_var` a misspelled (or
+  not-yet-installed) argument used to disappear silently.
+
 ## Out-of-Sample prediction draft
 
 * `score_centiles()` gains `batch_term`, for scoring data containing levels of a

@@ -88,6 +88,15 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
   if (!is.null(centiles) && !is.null(batch_term)) {
     stop("`batch_term` only applies when scoring from `gamlssModel`; `centiles` are already scored.")
   }
+  #`...` only feeds cut_interval(). Without interval_var it would silently swallow any
+  #unmatched argument - including one this version doesn't have yet - so say so instead.
+  if (is.null(interval_var) && ...length() > 0) {
+    nms <- names(list(...))
+    if (is.null(nms)) nms <- rep("", ...length())
+    nms[nms == ""] <- "<unnamed>"
+    stop("Unused argument(s): ", paste(nms, collapse = ", "),
+         ". `...` is only passed to ggplot2::cut_interval(), and only when `interval_var` is supplied.")
+  }
 
   df <- data  #internal alias; the summary below is built from `df`
 

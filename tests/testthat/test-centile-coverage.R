@@ -78,3 +78,13 @@ test_that("batch_term cannot be combined with pre-calculated centiles", {
   expect_error(centile_coverage(data = f$data, centiles = cents, batch_term = "Study", plot = FALSE),
                "only applies when scoring")
 })
+
+test_that("an unmatched argument errors instead of being swallowed by ...", {
+  f <- fit_cov_model()
+  # the failure mode this guards: calling an older install, where `batch_term` is
+  # not an argument, silently dropped it and scored without batch handling
+  expect_error(centile_coverage(f$model, f$data, plot = FALSE, btch_term = "Study"),
+               "Unused argument")
+  # still forwarded to cut_interval() when interval_var is in play
+  expect_no_error(centile_coverage(f$model, f$data, plot = FALSE, interval_var = "Age", n = 3))
+})
