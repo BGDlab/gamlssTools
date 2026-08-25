@@ -3,6 +3,40 @@
 # misc. helper functions
 
 ################################################
+#' Optional dependencies
+#'
+#' gamlssTools works with only its required dependencies installed. Two packages
+#' are Suggests rather than Imports, because each is needed by a subset of
+#' functions rather than by the package as a whole.
+#'
+#' @details
+#' [gamlss2](https://github.com/gamlss-dev/gamlss2) is required to:
+#'   * fit or work with `gamlss2` model objects at all: every `*.gamlss2` method
+#'     here relies on gamlss2's own `predict()`;
+#'   * call [cohens_f2_local()], which uses `gamlss2::Rsq()` for *both* gamlss and
+#'     gamlss2 fits;
+#'   * call [bootstrap_gamlss()] on a `gamlss2` model, which refits with `gamlss2()`.
+#'
+#' [gamlss2charts](https://github.com/andy1764/gamlss2charts/tree/dev) is required only to
+#' pass `batch_term` to [score_centiles()], which estimates and removes the
+#' offsets of unseen batch levels via `gamlss2charts::predict_score()`. This requires
+#' the **dev** branch of gamlss2charts specifically: the released (master) branch's
+#' `predict_score()` lacks the `traindata` argument and the data-free / random-effect
+#' handling that [score_centiles()] relies on.
+#'
+#' Neither package is on CRAN, so both are listed under `Remotes:` and install with:
+#' ```
+#' remotes::install_github("gamlss-dev/gamlss2")
+#' remotes::install_github("andy1764/gamlss2charts@dev")
+#' ```
+#'
+#' Functions that need a suggested package check for it first and fail with an
+#' install hint, so a missing optional dependency never surfaces as a cryptic
+#' error from deep inside a call stack.
+#'
+#' @name gamlssTools-optional
+#' @keywords internal
+NULL
 
 # ---- internal: optional-dependency guard -------------------------------------
 # gamlss2 and gamlss2charts are Suggests, not Imports: they are needed only by
@@ -34,40 +68,40 @@
 #' @keywords internal
 #' @noRd
 .require_gamlss2charts <- function(what) {
-  .require_pkg("gamlss2charts", what, remote = "andy1764/gamlss2charts")
+  .require_pkg("gamlss2charts", what, remote = "andy1764/gamlss2charts@dev")
 }
 
-#' Optional dependencies
-#'
-#' gamlssTools works with only its required dependencies installed. Two packages
-#' are Suggests rather than Imports, because each is needed by a subset of
-#' functions rather than by the package as a whole.
-#'
-#' @details
-#' [gamlss2](https://github.com/gamlss-dev/gamlss2) is required to:
-#'   * fit or work with `gamlss2` model objects at all: every `*.gamlss2` method
-#'     here relies on gamlss2's own `predict()`;
-#'   * call [cohens_f2_local()], which uses `gamlss2::Rsq()` for *both* gamlss and
-#'     gamlss2 fits;
-#'   * call [bootstrap_gamlss()] on a `gamlss2` model, which refits with `gamlss2()`.
-#'
-#' [gamlss2charts](https://github.com/andy1764/gamlss2charts) is required only to
-#' pass `batch_term` to [score_centiles()], which estimates and removes the
-#' offsets of unseen batch levels via `gamlss2charts::predict_score()`.
-#'
-#' Neither package is on CRAN, so both are listed under `Remotes:` and install with:
-#' ```
-#' remotes::install_github("gamlss-dev/gamlss2")
-#' remotes::install_github("andy1764/gamlss2charts")
-#' ```
-#'
-#' Functions that need a suggested package check for it first and fail with an
-#' install hint, so a missing optional dependency never surfaces as a cryptic
-#' error from deep inside a call stack.
-#'
-#' @name gamlssTools-optional
+# ---- internal: variable names out of a model formula -------------------------
+# helper for list_predictors(). Like all.vars(), but resolves a data object's 
+# column to the column name
 #' @keywords internal
-NULL
+#' @noRd
+.formula_vars <- function(x) {
+  #empty symbols show up as the missing index in `df[, "Age"]`
+  if (is.name(x)) {
+    nm <- as.character(x)
+    return(if (nzchar(nm)) nm else character(0))
+  }
+  #string and numeric literals are not variables (e.g. bs = "re")
+  if (!is.call(x)) return(character(0))
+
+  op <- x[[1]]
+  #`$` indexes with a literal name (df$Age) or, rarely, a string (df$"Age")
+  if (identical(op, quote(`$`))) {
+    idx <- x[[3]]
+    return(if (is.name(idx) || is.character(idx)) as.character(idx) else character(0))
+  }
+  #`[[` indexes with a string. A variable holding the name (df[[v]]) can't be
+  #resolved without evaluating it, so report nothing rather than guess "v".
+  if (identical(op, quote(`[[`))) {
+    idx <- x[[3]]
+    return(if (is.character(idx)) as.character(idx) else character(0))
+  }
+
+  #otherwise recurse into the arguments, skipping the function being called
+  out <- unlist(lapply(as.list(x)[-1], .formula_vars), use.names = FALSE)
+  if (is.null(out)) character(0) else unique(out)
+}
 
 #' Mode
 #'
@@ -300,17 +334,15 @@ list_predictors.gamlss <- function(gamlssModel, moment=c("all", "mu", "sigma", "
   cov_list <- c()
   for (term in terms_list){
     f_string <- paste0(term, ".formula")
-    vars <- all.vars(gamlssModel[[f_string]])
+    #.formula_vars() rather than all.vars(): it resolves `df$col` to "col", so the
+    #data object never enters the list and there is nothing to strip back out
+    vars <- .formula_vars(gamlssModel[[f_string]])
     cov_list <- c(cov_list, vars)
   }
-  
-  #remove y
-  pheno <- gamlssModel$mu.terms[[2]]
-  cov_list <- cov_list[cov_list != pheno]
-  
-  #remove dataset name
-  df_name <- as.character(gamlssModel$call$data)
-  cov_list <- cov_list[cov_list != df_name]
+
+  #remove y (.formula_vars() unwraps a transformed response: log(Pheno) -> "Pheno")
+  pheno <- .formula_vars(gamlssModel$mu.terms[[2]])
+  cov_list <- setdiff(cov_list, pheno)
   #remove NAs
   cov_list <- cov_list[!is.na(cov_list)]
   
@@ -325,7 +357,14 @@ list_predictors.gamlss2 <- function(gamlssModel, moment=c("all", "mu", "sigma", 
   #list moments
   moment <- match.arg(moment)
   if (moment == "all"){
-    return(attributes(gamlssModel$terms)$term.labels)
+    trms <- attributes(gamlssModel$terms)
+    cov_list <- .formula_vars(trms$variables)
+
+    #drop the response
+    if (!is.null(trms$response) && trms$response > 0) {
+      cov_list <- setdiff(cov_list, .formula_vars(trms$variables[[trms$response + 1]]))
+    }
+    return(cov_list)
   }
 
   #moments are stored positionally in the fake formula's rhs, in family order
@@ -343,7 +382,7 @@ list_predictors.gamlss2 <- function(gamlssModel, moment=c("all", "mu", "sigma", 
 
   #each rhs element is an unevaluated call, not a vector of terms, so pull the
   #variable names out of it. Intercept-only moments give character(0).
-  return(all.vars(rhs[[i]]))
+  return(.formula_vars(rhs[[i]]))
 }
 
 #' Get y
