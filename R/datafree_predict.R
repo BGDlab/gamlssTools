@@ -17,7 +17,7 @@
 # TRUE when the model has NO kept smoother of an unsupported type -- i.e. every
 # smooth term is a pb() smooth or a random() effect (purely parametric models,
 # which have no smooth terms, are trivially eligible). `drop.term`, if supplied,
-# is excluded from the check (a smoother on a dropped term does not disqualify).
+# is excluded from the check.
 #' @keywords internal
 #' @noRd
 .datafree_eligible_gamlss <- function(object, drop.term = NULL) {
@@ -33,6 +33,17 @@
   ok
 }
 
+# ---- internal: treat aliased coefficients as zero ----------------------------
+# A rank-deficient fit stores NA for each column it had to drop. Predicting with
+# those NAs in place poisons the whole linear predictor, so replace them with 0
+# (the same result as predict()'s dropping of aliased columns).
+#' @keywords internal
+#' @noRd
+.zap_aliased <- function(b) {
+  b[is.na(b)] <- 0
+  b
+}
+
 # ---- internal: data-free link-scale linear predictor for one parameter -------
 # Rebuilds parameter `p`'s link-scale predictor on `newdata` WITHOUT the original
 # fitting data, optionally dropping `drop.term`. The parametric part is aligned to
@@ -40,7 +51,7 @@
 # is unsafe). Each kept pb() term adds its linear coefficient * x plus the stored
 # interpolation function getSmo(...)$fun(x); each kept random() effect adds the
 # stored per-level BLUP getSmo(...)$coef[level] (unseen levels -> 0, the population
-# value). Only valid when the model is data-free eligible (see .datafree_eligible_gamlss()).
+# value).
 #' @keywords internal
 #' @noRd
 .lp_nodata_gamlss <- function(object, p, newdata, drop.term = NULL) {
@@ -69,14 +80,19 @@
   pfo <- if (length(param_lab)) stats::reformulate(param_lab) else ~1
   mf  <- stats::model.frame(pfo, newdata, na.action = stats::na.pass)
   Xp  <- stats::model.matrix(pfo, mf)
-  lp  <- as.numeric(Xp %*% cf[colnames(Xp)])
+  # aliased (rank-deficient) columns get an NA coefficient from the fit -- e.g.
+  # pb(x) already carries a linear x, so a separate x main effect is redundant.
+  # Zeroing them reproduces predict()'s handling, which drops aliased columns;
+  # left as NA a single one would make every fitted parameter NA.
+  bp  <- .zap_aliased(cf[colnames(Xp)])
+  lp  <- as.numeric(Xp %*% bp)
 
   # pb() smooths: linear part (coef * x) + stored nonlinear interpolation
   for (lab in pb_lab) {
     vars <- all.vars(str2lang(lab))
     if (!is.null(drop.term) && drop.term %in% vars) next   # pb on a dropped term
     v  <- vars[1]
-    lp <- lp + cf[[lab]] * newdata[[v]] +
+    lp <- lp + .zap_aliased(cf[[lab]]) * newdata[[v]] +
       gamlss::getSmo(object, p, which = match(lab, sm))$fun(newdata[[v]])
   }
 
@@ -127,8 +143,7 @@
 
 # ---- internal: dispatcher used by the centile/scoring functions --------------
 # Returns response-scale fitted parameters (predictAll-shaped named list) for
-# `newdata`. Whether the original fitting data is used is decided solely by
-# `data`: when `data` is NULL the parameters are reconstructed WITHOUT it
+# `newdata`. When `data` is NULL the parameters are reconstructed WITHOUT it
 # (data-free); when `data` is supplied it is passed straight to
 # predictAll(), giving the exact data-based prediction. `drop.term` sets that
 # term to its baseline in the data-free path (unused by the predictAll path).
@@ -143,4 +158,24 @@
         " data (cs/ps/ga/s); supply the original fitting data (e.g. `fit_data`)")
   }
   predictAll(object, newdata = newdata, data = data, type = "response")
+}
+
+# ---- internal: levels of a batch variable seen during fitting ----------------
+# Works for both parametric factors and those fit as random effects
+#' @keywords internal
+#' @noRd
+.known_levels_gamlss <- function(object, term) {
+  known <- character()
+  for (p in object$parameters) {
+    known <- union(known, object[[paste0(p, ".xlevels")]][[term]])
+
+    sm <- colnames(object[[paste0(p, ".s")]])
+    if (is.null(sm)) next
+    for (lab in sm[grepl("^random\\(", sm)]) {
+      if (!term %in% all.vars(str2lang(lab))) next
+      blup <- gamlss::getSmo(object, p, which = match(lab, sm))$coef
+      known <- union(known, names(blup))
+    }
+  }
+  known
 }

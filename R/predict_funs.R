@@ -309,8 +309,9 @@ centile_predict <- function(gamlssModel,
 #' @param batch_term (optional) variable for which new levels' offsets are estimated and removed.
 #'
 #' @section Optional dependency:
-#' `batch_term` requires the suggested package gamlss2charts, which supplies
-#' `predict_score()`. Every other use of `score_centiles()` works without it.
+#' `batch_term` requires the **dev** branch of the suggested package gamlss2charts,
+#' which supplies `predict_score()` (`remotes::install_github("andy1764/gamlss2charts@dev")`).
+#' Every other use of `score_centiles()` works without it.
 #' See [gamlssTools-optional].
 #'
 #' @returns either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
@@ -359,10 +360,7 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
 
   #if batch_term supplied, split out and predict at each new batch level
   if (!is.null(batch_term)){
-    known_batches <- character()
-    for (p in gamlssModel$parameters) {
-      known_batches <- union(known_batches, gamlssModel[[paste0(p, ".xlevels")]][[batch_term]])
-    }
+    known_batches <- .known_levels_gamlss(gamlssModel, batch_term)
     #only levels actually present in data (a defined-but-empty factor level is not a batch)
     new_batches <- setdiff(unique(as.character(data[[batch_term]])), known_batches)
     if (length(new_batches) > 0){
