@@ -25,7 +25,7 @@ pred_og_centile(gamlssModel, og.data, get.std.scores = FALSE, new.data = NULL)
 
 \item{standardize}{logical indicating whether to also calculate and return standardized (pseudo z-)scores}
 
-\item{batch_term}{(optional) variable for which new levels' offsets are estimated and removed}
+\item{batch_term}{(optional) variable for which new levels' offsets are estimated and removed.}
 }
 \value{
 either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
@@ -58,8 +58,9 @@ onto \code{standardize}.
 }
 \section{Optional dependency}{
 
-\code{batch_term} requires the suggested package gamlss2charts, which supplies
-\code{predict_score()}. Every other use of \code{score_centiles()} works without it.
+\code{batch_term} requires the \strong{dev} branch of the suggested package gamlss2charts,
+which supplies \code{predict_score()} (\code{remotes::install_github("andy1764/gamlss2charts@dev")}).
+Every other use of \code{score_centiles()} works without it.
 See \link{gamlssTools-optional}.
 }
 

@@ -9,3 +9,7 @@ inst/doc
 # local scratch scripts
 check_nusigma.R
 diagnose_jag.R
+
+# knitr output
+Rplots.pdf
+figure/

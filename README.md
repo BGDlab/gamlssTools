@@ -32,8 +32,9 @@ once and reuse it across plots).
 
 #### Scoring out-of-sample data (in development)
 
-> ⚠️ **This is a draft implementation.** It requires the development version of
-> [gamlss2charts](https://github.com/andy1764/gamlss2charts), pending merge approval.
+> ⚠️ **This is a draft implementation.** It requires the `dev` branch of
+> [gamlss2charts](https://github.com/andy1764/gamlss2charts/tree/dev):
+> `remotes::install_github("andy1764/gamlss2charts@dev")`.
 
 `score_centiles()` can estimate out-of-sample scores (i.e. new levels of a categorical variable that
 were not seen in the training data) by passing `batch_term`:
@@ -44,7 +45,7 @@ score_centiles(model, new_data, batch_term = "Study")
 
 Rows whose `Study` level was in the fitting data are scored normally. For rows with unseen levels, the level's offset is 
 estimated and removed (via `gamlss2charts::predict_score()`) before the centile is computed. 
-See the [gamlss2charts](https://github.com/andy1764/gamlss2charts) documentation for additional details.
+See the [gamlss2charts](https://github.com/andy1764/gamlss2charts/tree/dev) documentation for additional details.
 
 ### Bootstrapping and Confidence Intervals
 
@@ -81,7 +82,7 @@ you can install them via:
 
 ``` r
 remotes::install_github("gamlss-dev/gamlss2")     #needed for all gamlss2 model objects, and for cohens_f2_local()
-remotes::install_github("andy1764/gamlss2charts") #needed only scoring out-of-sample centiles
+remotes::install_github("andy1764/gamlss2charts@dev") #dev branch; needed only for scoring out-of-sample centiles
 ```
 
 Functions that need one of these check for it first and fail with an install hint. See `?gamlssTools-optional`.

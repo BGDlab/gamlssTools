@@ -168,17 +168,14 @@ centile_coverage(data=test_df, centiles="centiles", group="Study")
 Passing the `batch_term` arg enables batch-effect estimation and removal via `gamlss2charts::predict_score()`
 
 ```{r}
+#get centiles 
 test_df$centiles2 <- score_centiles(pheno_model, test_df, batch_term="Study")
-centile_coverage(centiles=test_df$centiles2)
-```
 
-`centile_coverage()` takes `batch_term` too, and hands it straight to `score_centiles()`, so you can
-skip the intermediate step when you only want the coverage:
-
-```{r}
+#check how they look
 centile_coverage(pheno_model, test_df, batch_term="Study", group="Study")
 ```
 
+Much better!
 
 You can also return standardized scores, or "pseudo-z-scores"
 
@@ -187,10 +184,4 @@ score_centiles(pheno_model, test_df, batch_term="Study", standardize=TRUE)
 ```
 
 
-Note that we didn't have to hand `score_centiles()` the data the model was fit on. For gamlss models,
-`gamlssTools` is able to calculate centiles without the original data used to fit the model. This is useful 
-in many contexts, including when the model is saved and reloaded and/or when the data can't be shared. 
-
-The exception is a model containing a smooth that can't (currently) be reconstructed this way 
-(`cs()`, `ps()`, `ga()`, `s()`) — those still need the fitting data passed to the `fit_data` argument.
-
+Note that we didn't have to hand `score_centiles()` the data the model was fit on. For gamlss models, `gamlssTools` is able to calculate centiles without the original data used to fit the model. This is useful in many contexts, including when the model is saved and reloaded and/or when the data can't be shared. 

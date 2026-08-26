@@ -41,6 +41,6 @@ Imports:
 	scales
 Remotes:
 	github::gamlss-dev/gamlss2,
-	github::andy1764/gamlss2charts
+	github::andy1764/gamlss2charts@dev
 Config/testthat/edition: 3
 VignetteBuilder: knitr

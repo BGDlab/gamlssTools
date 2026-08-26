@@ -194,3 +194,24 @@ test_that("a cs() model errors without data; with data it's exact", {
   sim <- suppressMessages(sim_grid(d, "Age", "Sex", m))
   expect_no_error(suppressMessages(centile_fan_values(m, sim, "Age", fit_data = d)))
 })
+
+test_that("aliased (NA) coefficients don't poison the data-free prediction", {
+  d <- sim_datafree()
+  # pb(Age) already carries a linear Age, so the extra Age main effect is
+  # aliased and gamlss stores NA for it
+  m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex + Age * Sex + random(Study),
+                      sigma.formula = ~ pb(Age),
+                      data = d, family = "BCCG", trace = FALSE)
+  expect_true(anyNA(coef(m, "mu")[attr(terms(m$mu.formula), "term.labels") != "random(Study)"]))
+
+  nd   <- d[1:25, ]
+  gold <- gamlss::predictAll(m, newdata = nd, data = d, type = "response")
+  free <- .predictAll_nodata_gamlss(m, nd)
+
+  for (p in m$parameters) {
+    expect_false(anyNA(free[[p]]), info = p)
+    expect_equal(free[[p]], gold[[p]], tolerance = tol, info = p)
+  }
+
+  expect_equal(score_centiles(m, d), gold_centiles(m, d), tolerance = tol)
+})

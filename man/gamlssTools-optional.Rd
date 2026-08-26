@@ -18,14 +18,17 @@ gamlss2 fits;
 \item call \code{\link[=bootstrap_gamlss]{bootstrap_gamlss()}} on a \code{gamlss2} model, which refits with \code{gamlss2()}.
 }
 
-\href{https://github.com/andy1764/gamlss2charts}{gamlss2charts} is required only to
+\href{https://github.com/andy1764/gamlss2charts/tree/dev}{gamlss2charts} is required only to
 pass \code{batch_term} to \code{\link[=score_centiles]{score_centiles()}}, which estimates and removes the
-offsets of unseen batch levels via \code{gamlss2charts::predict_score()}.
+offsets of unseen batch levels via \code{gamlss2charts::predict_score()}. This requires
+the \strong{dev} branch of gamlss2charts specifically: the released (master) branch's
+\code{predict_score()} lacks the \code{traindata} argument and the data-free / random-effect
+handling that \code{\link[=score_centiles]{score_centiles()}} relies on.
 
 Neither package is on CRAN, so both are listed under \verb{Remotes:} and install with:
 
 \if{html}{\out{<div class="sourceCode">}}\preformatted{remotes::install_github("gamlss-dev/gamlss2")
-remotes::install_github("andy1764/gamlss2charts")
+remotes::install_github("andy1764/gamlss2charts@dev")
 }\if{html}{\out{</div>}}
 
 Functions that need a suggested package check for it first and fail with an
