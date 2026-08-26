@@ -110,14 +110,14 @@ Each of those calls re-scores every subject. If you've already calculated centil
 slow), hand them to `centile_coverage()` directly with the `centiles` argument instead of a model:
 
 ```{r}
-df$centiles <- score_centiles(pheno_model, df)
+df$centile <- score_centiles(pheno_model, df)
 
 centile_coverage(data=df, centiles="centiles", group="Sex")
 ```
 
 `centiles` also accepts a plain numeric vector, or the dataframe returned by
 `score_centiles(..., standardize=TRUE)`. `data` is only needed for grouping - with no `group` or
-`interval_var`, the centiles alone are enough (`centile_coverage(centiles=df$centiles)`).
+`interval_var`, the centiles alone are enough (`centile_coverage(centiles=df$centile)`).
 
 ## Calculating Reference Scores
 
@@ -165,8 +165,8 @@ test_df <- test_control %>% filter(Study != "Study_New")
 Now we can return the centile values for each subject, as estimated by our model above.
 
 ```{r}
-test_df$centiles <- score_centiles(pheno_model, test_df)
-range(test_df$centiles)
+test_df$centile <- score_centiles(pheno_model, test_df)
+range(test_df$centile)
 ```
 
 You can check the centile score's coverage (i.e., are 10% of subjects in the 10th percentile or less?) using `centile_coverage()`
@@ -207,7 +207,7 @@ cat("> **gamlss2charts is not installed**, so the remaining chunks are shown but
 If we just stick with the defaults, site effects for our new site will be set to 0, which doesn't produce very good estimates.
 
 ```{r}
-test_control$centiles <- score_centiles(pheno_model, test_control)
+test_control$centile <- score_centiles(pheno_model, test_control)
 centile_coverage(data=test_control, centiles="centiles", group="Study")
 ```
 
@@ -215,8 +215,8 @@ Passing the `batch_term` arg enables batch-effect estimation and removal via `ga
 
 ```{r, eval = has_charts}
 #get centiles 
-test_control$centiles2 <- score_centiles(pheno_model, test_control, batch_term="Study")
-hist(test_control$centiles2)
+test_control$centile2 <- score_centiles(pheno_model, test_control, batch_term="Study")
+hist(test_control$centile2)
 
 #check how they look
 centile_coverage(data=test_control, centiles="centiles2", group="Study")
@@ -235,10 +235,10 @@ You can use your controls to estimate and remove site effects from new batches b
 which accepts a formula/character string defining how reference data should be subsetted from your `data`...
 
 ```{r, eval = has_charts}
-test_new$centiles <- score_centiles(pheno_model, test_new, batch_term="Study", ref_data= ~ dx=="control")
+test_new$centile <- score_centiles(pheno_model, test_new, batch_term="Study", ref_data= ~ dx=="control")
 
 ggplot(test_new) +
-  geom_histogram(aes(x=centiles, fill=dx), position="dodge", alpha=.6) +
+  geom_histogram(aes(x=centile, fill=dx), position="dodge", alpha=.6) +
   theme_minimal()
 ```
 
@@ -249,3 +249,4 @@ scored itself (unless these subjects are also part of your `data` input)
 score_centiles(pheno_model, test_new, batch_term="Study", ref_data=test_control)
 ```
 
+Current testing suggests you need about *75 reference subjects per batch* for good (mean error ~ 1 centile) out-of-sample estimates.

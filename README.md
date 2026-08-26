@@ -68,11 +68,19 @@ The other functions in this package are mostly intended to interact with gamlss 
 - `remove_effects()`: residualize (set to mean/median) or zero out selected terms' contributions before plotting
 
 ## Installation
-You can install the development version of gamlssTools from [GitHub](https://github.com/) with:
+
+You can install the latest version of gamlssTools from [GitHub](https://github.com/BGDlab/gamlssTools) with:
 
 ``` r
 # install.packages("devtools")
 devtools::install_github("BGDlab/gamlssTools", build_vignettes = TRUE) #set build_vignettes to FALSE to save time
+```
+
+You can install the development version using: 
+
+``` r
+# install.packages("devtools")
+devtools::install_github("BGDlab/gamlssTools@dev", build_vignettes = TRUE)
 ```
 
 ### Optional dependencies
@@ -90,8 +98,10 @@ Functions that need one of these check for it first and fail with an install hin
 ## Usage
 
 ### Centile Plotting
+
 To plot a basic centile fan using the `iris` dataset:
-```
+
+``` r
 library(gamlssTools)
 
 #fit gamlss model
@@ -101,10 +111,10 @@ iris_model <- gamlss(formula = Sepal.Width ~ pb(Sepal.Length) + Species, sigma.f
 iris_fan_plot <- make_centile_fan(iris_model, iris, "Sepal.Length", "Species")
 print(iris_fan_plot)
 ```
-![basic_iris_plot](https://github.com/user-attachments/assets/9ae4e535-94b9-4c7d-a0d5-c13331808d81)
 
 You can use all the standard ggplot layers to make your plot prettier.
-```
+
+``` r
 iris_fan_plot +
   labs(title="Normative Sepal Width by Length",
   x ="Sepal Length", y = "Sepal Width",
@@ -113,11 +123,11 @@ iris_fan_plot +
   paletteer::scale_color_paletteer_d("MoMAColors::Smith")
   
 ```
-![707785a4-43fa-4358-8527-480a5a7f2608](https://github.com/user-attachments/assets/704806df-bd43-4fb5-963b-e9338a94c855)
 
 There are also many built-in configuration options, including averaging over categorical variables (like `Species`) 
 or changing how centile lines are labeled: 
-```
+
+``` r
 make_centile_fan(iris_model, iris, "Sepal.Length", "Species", 
       average_over=TRUE, 
       show_points=FALSE,
@@ -126,30 +136,39 @@ make_centile_fan(iris_model, iris, "Sepal.Length", "Species",
       labs(title="Normative Sepal Width by Length",
       x ="Sepal Length", y = "Sepal Width") 
 ```
-![39e44a98-e8cb-4990-9632-79134e5c7f0b](https://github.com/user-attachments/assets/6f048350-c750-49f7-b062-002b34578779)
 
 There are built-in formatting options for the x-axis
 
-```
+``` r
 #simulate data
 n <- 1000
 df <- data.frame(
-Age = sample(-280:36525, n, replace = TRUE),
+Age = sample(-140:36525, n, replace = TRUE),
 Sex = sample(c("Male", "Female"), n, replace = TRUE),
 Study = factor(sample(c("Study_A", "Study_B", "Study_C"), n, replace = TRUE)))
+
+#small study-specific offsets
+study_offset <- c(Study_A = -3, Study_B = 1, Study_C = 3)
 
 #log-age in days post-conception (birth = 280 days)
 df$logAge <- log(df$Age + 280, base = 10)
 df$Pheno <- 6 + 4 * (df$logAge - 2.4) - 1.6 * (df$logAge - 3.6)^2 +
-  ifelse(df$Sex == "Male", 1, 0) + ifelse(df$Sex == "Male", .3, 0) * df$logAge + 
+  ifelse(df$Sex == "Male", 1, 0) + ifelse(df$Sex == "Male", .3, 0) * df$logAge +
+  unname(study_offset[as.character(df$Study)]) +
   rnorm(n, mean = 0, sd = 1)
+
+#keep the raw scale so new data can be mapped onto the same units later
+pheno_raw_range <- range(df$Pheno)
 df$Pheno <- scales::rescale(df$Pheno, to = c(1, 50))
 
 #fit a model on log-age and plot a lifespan-style centile fan
-pheno_model <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), sigma.formula= ~ pb(logAge), data = df, family=BCCG)
-
+pheno_model <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study),
+                      sigma.formula = ~ pb(logAge), data = df,
+                      family = BCTo)
+                      
 make_centile_fan(pheno_model, df, x_var="logAge", color_var="Sex",
     label_centiles="legend",
+    remove_point_effect="Study",
     x_axis="log_lifespan_fetal",
     point_color_manual = c('Female' = "#F4A15BFF", 'Male' = "#8CB3D1FF"),
     color_manual = c("Female" = "#c05f0d", "Male" = "#38688D"))
@@ -157,11 +176,57 @@ make_centile_fan(pheno_model, df, x_var="logAge", color_var="Sex",
 
 There's also a wrapper function for plotting centile fans in the style of [Bethlehem, Seidlitz, & White et al.](https://www.nature.com/articles/s41586-022-04554-y)
 
-```
+``` r
 centile_fan_brainchart(pheno_model, df, x_var="logAge", color_var="Sex")
 ```
 
 ### Reference Scoring
-Section pending!
 
+Individuals' centile scores and standardized "pseudo z-scores" can be calculated using `score_centiles()`.
+
+``` r
+scores <- score_centiles(pheno_model, df, standardize=TRUE)
+df$centile <- scores$centile
+df$std_score <- scores$std_score
+
+#centiles
+ggplot(df) +
+  geom_histogram(aes(x=centile), bins=20) +
+  theme_minimal()
+
+#z-scores  
+ggplot(df) +
+  geom_histogram(aes(x=std_score), bins=20) +
+  theme_minimal()
+```
+
+Out-of-sample scoring estimates (i.e. data from new batches) are handled using [gamlss2charts](https://github.com/andy1764/gamlss2charts).
+
+``` r
+#simulate new data
+n <- 500
+new_df <- data.frame(
+Age = sample(10000:36525, n, replace = TRUE),
+Sex = sample(c("Male", "Female"), n, replace = TRUE))
+new_df$Study <- factor("NEW")
+
+#log-age in days post-conception (birth = 280 days)
+new_df$logAge <- log(new_df$Age + 280, base = 10)
+new_df$Pheno <- 6 + 4 * (new_df$logAge - 2.4) - 1.6 * (new_df$logAge - 3.6)^2 +
+  ifelse(new_df$Sex == "Male", 1, 0) + ifelse(new_df$Sex == "Male", .3, 0) * new_df$logAge -
+  2 + rnorm(n, mean = 0, sd = 1)
+
+#rescale onto the SAME scale as the training data. rescaling new data on its own
+#min/max would put it on different units than the model was fit on, pushing scores
+#into the extreme centiles. values outside the training range map outside [1, 50],
+#which is intended (but note BCT requires the response to stay positive)
+new_df$Pheno <- scales::rescale(new_df$Pheno, to = c(1, 50), from = pheno_raw_range)
+
+#score
+new_df$centile <- score_centiles(pheno_model, new_df, batch_term = "Study")
+
+ggplot(new_df) +
+  geom_histogram(aes(x=centile), bins=20) +
+  theme_minimal()
+```
 
