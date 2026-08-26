@@ -279,6 +279,68 @@ centile_predict <- function(gamlssModel,
                      average_over = average_over)
 }
 
+# ---- internal: resolve `ref_data` into a dataframe of reference rows ---------
+# reformat score_centiles() arg to pass to gamlss2charts
+#' @keywords internal
+#' @noRd
+.resolve_ref_data <- function(ref_data, data, batch_term, model_cols, env = parent.frame()) {
+  if (is.null(ref_data)) return(NULL)
+  stopifnot("`ref_data` requires `batch_term`" = !is.null(batch_term))
+
+  if (is.data.frame(ref_data)) {
+    #external rows never went through score_centiles()'s checks on `data`, so repeat them
+    stopifnot("`ref_data` is missing the response or model covariates" =
+                all(model_cols %in% names(ref_data)))
+    stopifnot("`ref_data` is missing `batch_term`" = batch_term %in% names(ref_data))
+    stopifnot("`ref_data` contains NAs in the response or model covariates" =
+                !anyNA(ref_data[, model_cols]))
+    ref <- ref_data
+  } else {
+    #a condition: evaluate it in `data`. Formulas carry their own environment, so
+    #`~ dx == target` resolves `target` where the user wrote it.
+    if (inherits(ref_data, "formula")) {
+      stopifnot("`ref_data` must be a one-sided formula" = length(ref_data) == 2)
+      mask <- eval(ref_data[[2]], data, environment(ref_data))
+    } else if (is.character(ref_data) && length(ref_data) == 1) {
+      mask <- eval(str2lang(ref_data), data, env)
+    } else {
+      stop("`ref_data` must be a dataframe, a one-sided formula (e.g. `~ dx == \"CN\"`), ",
+           "or a single character string (e.g. \"dx == 'CN'\").")
+    }
+    stopifnot("`ref_data` condition must evaluate to a logical vector" = is.logical(mask))
+    stopifnot("`ref_data` condition must return one value per row of `data`" =
+                length(mask) == nrow(data))
+    #the condition variable need not be a model covariate, so it isn't covered by
+    #the NA check on `data`: refuse to guess whether an NA row is a reference row
+    stopifnot("`ref_data` condition returned NAs" = !anyNA(mask))
+    ref <- data[mask, , drop = FALSE]
+  }
+
+  stopifnot("`ref_data` selected no rows" = nrow(ref) > 0)
+
+  #harmonize levels: subsetting `data` keeps its full level set, and an external
+  #dataframe carrying fewer levels would fail predict_score()'s levels() check
+  ref[[batch_term]] <- factor(as.character(ref[[batch_term]]),
+                              levels = levels(data[[batch_term]]))
+  ref
+}
+
+# ---- internal: reference rows for one batch level ----------------------------
+# `ref` is NULL when no `ref_data` was supplied, in which case predict_score()
+# falls back to using newdata as its own reference (the batch is self-adjusted).
+#' @keywords internal
+#' @noRd
+.batch_ref_rows <- function(ref, batch, batch_term) {
+  if (is.null(ref)) return(NULL)
+  ref_b <- ref[which(ref[[batch_term]] == batch), , drop = FALSE]
+  if (nrow(ref_b) == 0) {
+    stop("`ref_data` selected no rows in level '", batch, "' of `", batch_term,
+         "`. Offsets are estimated within each new batch level, so every new level ",
+         "needs reference rows of its own.")
+  }
+  ref_b
+}
+
 #' Score centiles for observations
 #'
 #' Returns the centile and/or z-score values for observations under a fitted gamlss model
@@ -298,7 +360,7 @@ centile_predict <- function(gamlssModel,
 #' `fit_data` is necessary when the model contains a non-reconstructable smoother
 #' (`cs()`, `ps()`, `ga()`, `s()`). \link[gamlss2]{gamlss2} fits use gamlss2's own `predict()`.
 #' 
-#' Original idea based on Jenna's function [calculatePhenotypeCentile()] (https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
+#' Original idea based on Jenna's function [calculatePhenotypeCentile()](https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
 #' and [gamlss::z.scores()].
 #'
 #' @param gamlssModel gamlss or gamlss2 model object
@@ -307,12 +369,23 @@ centile_predict <- function(gamlssModel,
 #' [gamlss::predictAll()] with those data and range-checks `data` against them.
 #' @param standardize logical indicating whether to also calculate and return standardized (pseudo z-)scores
 #' @param batch_term (optional) variable for which new levels' offsets are estimated and removed.
+#' @param ref_data (optional) reference observations used to estimate each new batch level's
+#' offset, instead of using the whole batch. Either a dataframe, a one-sided formula evaluated
+#' in `data` (e.g. `~ dx == "CN"`), or the equivalent character string. Requires `batch_term`.
 #'
 #' @section Optional dependency:
 #' `batch_term` requires the **dev** branch of the suggested package gamlss2charts,
 #' which supplies `predict_score()` (`remotes::install_github("andy1764/gamlss2charts@dev")`).
 #' Every other use of `score_centiles()` works without it.
 #' See [gamlssTools-optional].
+#' 
+#' @section Reference data:
+#' By default, [gamlss2charts::predict_score()] estimates the offset for a new level of `batch_term`
+#' from all data in the batch. `ref_data` narrows that to a chosen subset - typically controls - 
+#' while still applying the resulting offset to *all* rows of the batch. Offsets are estimated **within** each new
+#' batch level, so the reference is the reference rows *of that batch*, and every new level must
+#' have some; a level with none will error. Rows supplied as an external `ref_data` dataframe 
+#' are only used to fit offsets, not scored.
 #'
 #' @returns either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
 #'
@@ -325,13 +398,26 @@ centile_predict <- function(gamlssModel,
 #' train$Species <- droplevels(train$Species)
 #' iris_model_oos <- gamlss(Sepal.Length ~ Sepal.Width + Species, ~ Species, family = BCCG(), data = train)
 #'
+#' #virginica is an unseen level of Species: estimate and remove its offset
+#' \donttest{
+#' if (requireNamespace("gamlss2charts", quietly = TRUE)) {
+#'   score_centiles(iris_model_oos, iris, batch_term = "Species")
+#'
+#'   #estimate that offset from a chosen subset of each new level (Petal.Length < 5)
+#'   score_centiles(iris_model_oos, iris, batch_term = "Species",
+#'                  ref_data = ~ Petal.Length < 5)
+#' }
+#' }
+#'
 #' @export
-score_centiles <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE, batch_term = NULL){
+score_centiles <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE,
+                           batch_term = NULL, ref_data = NULL){
   UseMethod("score_centiles")
 }
 
 #' @export
-score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE, batch_term=NULL){
+score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE,
+                                  batch_term = NULL, ref_data = NULL){
   pheno <- gamlssModel$mu.terms[[2]]
 
   #subset df cols just to predictors from model
@@ -344,6 +430,9 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
   model_cols <- c(as.character(pheno), predictor_list)
   stopifnot("`data` contains NAs in the response or model covariates" =
               !anyNA(data[, model_cols]))
+
+  #`ref_data` only ever narrows the rows a new batch level's offset is fit on
+  stopifnot("`ref_data` requires `batch_term`" = is.null(ref_data) || !is.null(batch_term))
 
   #if a reference dataset is supplied, confirm scored data is within its covariate range
   if (!is.null(fit_data)) {
@@ -374,6 +463,12 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
         data[[batch_term]] <- factor(data[[batch_term]])
       }
 
+      #resolve reference rows now that `batch_term` is a factor: the helper aligns
+      #`ref_data`'s levels to it
+      #parent.frame() of an S3 method is the caller of the generic, so a character
+      #condition resolves against the variables the user wrote it beside
+      ref <- .resolve_ref_data(ref_data, data, batch_term, model_cols, parent.frame())
+
       warning(paste0("New levels of ", batch_term, ":\n",
                      paste(new_batches, collapse = "\n"),
                      "\nEstimating and removing effects"))
@@ -389,9 +484,13 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
         batch_data <- data[b_idx, , drop = FALSE]   #keep response + predictors
         
         cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
+                                             refdata = .batch_ref_rows(ref, batch, batch_term),
                                              type = "cent", adjust = TRUE, 
                                              rm.term = batch_term,
                                              traindata = fit_data)
+        #predict_score() scores newdata only, in newdata order, whatever refdata holds
+        stopifnot("predict_score() returned the wrong number of centiles" =
+                    length(cent) == length(b_idx))
         oos_centiles <- c(oos_centiles, cent)
         oos_idx      <- c(oos_idx, b_idx)
       }
@@ -404,8 +503,7 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
 
   in_centiles <- numeric(0)
 
-  #every row may be a new batch level, leaving nothing to score in-sample:
-  #skip the prediction entirely, since predictAll() errors on 0-row newdata
+  #check if there's in-sample data and score
   if (length(in_idx) > 0){
     #predict, using fit_data if supplied
     predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fit_data)
@@ -457,7 +555,8 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
 }
 
 #' @export
-score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE, batch_term = NULL){
+score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE,
+                                   batch_term = NULL, ref_data = NULL){
   pheno <- get_y(gamlssModel)
 
   #subset df cols just to predictors from model
@@ -470,6 +569,9 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
   model_cols <- c(as.character(pheno), predictor_list)
   stopifnot("`data` contains NAs in the response or model covariates" =
               !anyNA(data[, model_cols]))
+
+  #`ref_data` only ever narrows the rows a new batch level's offset is fit on
+  stopifnot("`ref_data` requires `batch_term`" = is.null(ref_data) || !is.null(batch_term))
 
   #if a reference dataset is supplied, confirm scored data is within its covariate range
   if (!is.null(fit_data)) {
@@ -501,6 +603,12 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
         data[[batch_term]] <- factor(data[[batch_term]])
       }
 
+      #resolve reference rows now that `batch_term` is a factor: the helper aligns
+      #`ref_data`'s levels to it
+      #parent.frame() of an S3 method is the caller of the generic, so a character
+      #condition resolves against the variables the user wrote it beside
+      ref <- .resolve_ref_data(ref_data, data, batch_term, model_cols, parent.frame())
+
       warning(paste0("New levels of ", batch_term, "\n",
                      paste(new_batches, collapse = "\n"),
                      "\nEstimating and removing effects"))
@@ -511,17 +619,16 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
       predict_me <- data[[pheno]][in_idx]
 
       #score each new batch on its own, tracking original row positions.
-      #predict_score() handles the unseen batch level internally;
-      #adjust=TRUE requires a single batch level, so score one batch at a time.
-      #unlike the gamlss method, predict_score.gamlss2() takes no `traindata`:
-      #a gamlss2 object carries everything predict() needs, so fit_data is
-      #only used for the range check and the in-sample predict() below.
       for (batch in new_batches){
         b_idx      <- which(data[[batch_term]] == batch)
         batch_data <- data[b_idx, , drop = FALSE]   #keep response + predictors
         cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
+                                             refdata = .batch_ref_rows(ref, batch, batch_term),
                                              type = "cent", adjust = TRUE,
                                              rm.term = batch_term)
+        #predict_score() scores newdata only, in newdata order
+        stopifnot("predict_score() returned the wrong number of centiles" =
+                    length(cent) == length(b_idx))
         oos_centiles <- c(oos_centiles, cent)
         oos_idx      <- c(oos_idx, b_idx)
       }
@@ -534,7 +641,7 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
 
   in_centiles <- numeric(0)
 
-  #every row may be a new batch level, leaving nothing to score in-sample
+  #score any in-sample data
   if (length(in_idx) > 0){
     #predict in-sample params, using fit_data if supplied
     predModel <- predict(gamlssModel, newdata=newData, data=fit_data, type="parameter")

@@ -16,12 +16,12 @@ knitr::opts_chunk$set(
   fig.width = 8,
   fig.height = 7
 )
+
+has_charts <- requireNamespace("gamlss2charts", quietly = TRUE)
 ```
 
 ```{r setup}
 library(gamlssTools)
-remotes::install_github("andy1764/gamlss2charts@dev")
-library(gamlss2charts)
 ```
 
 This vignette covers checking how well a model fits and getting centile/z-score values out of it.
@@ -119,69 +119,133 @@ centile_coverage(data=df, centiles="centiles", group="Sex")
 `score_centiles(..., standardize=TRUE)`. `data` is only needed for grouping - with no `group` or
 `interval_var`, the centiles alone are enough (`centile_coverage(centiles=df$centiles)`).
 
-## Calculating Centiles
+## Calculating Reference Scores
 
 Now let's say you want to get the centile values for each subject in your dataset or a new dataset.
 
-We'll start by simulating a small, new dataset.
+We'll start by simulating a new, small dataset.
 ```{r}
 set.seed(5678)
 n_test <- 100
 
 study_center_new <- c(Study_A = 2.55, Study_B = 3.15, Study_New = 4)
+study_size_new   <- c(1, 1, 1)   # one weight per study above
 
 test_logAge <- runif(n_test, log10(196), log10(280 + 100 * 365.25))
-test_df <- data.frame(
+test_new <- data.frame(
   Age    = round(10^test_logAge - 280),
   logAge = test_logAge,
-  Sex    = factor(sample(c("Female", "Male"), n_test, replace = TRUE))
+  Sex    = factor(sample(c("Female", "Male"), n_test, replace = TRUE)),
+  # a clinical variable the model knows nothing about
+  dx     = factor(sample(c("control", "case"), n_test, replace = TRUE),
+                  levels = c("control", "case"))
 )
 
-w_test <- outer(test_df$logAge, study_center_new, dnorm, sd = study_width)
-w_test <- sweep(w_test, 2, study_size, "*")
-test_df$Study <- factor(colnames(w_test)[apply(w_test, 1, function(p) sample.int(length(p), 1, prob = p))],
+w_test <- outer(test_new$logAge, study_center_new, dnorm, sd = study_width)
+w_test <- sweep(w_test, 2, study_size_new, "*")
+test_new$Study <- factor(colnames(w_test)[apply(w_test, 1, function(p) sample.int(length(p), 1, prob = p))],
                         levels = names(study_center_new))
 
-test_mu <- 900 * plogis((test_df$logAge - 2.70) / 0.22) *
-  (1 - 0.38 * plogis((test_df$logAge - 3.85) / 0.32))
-test_mu <- test_mu * ifelse(test_df$Sex == "Male", 1.10 * (1 + 0.04 * (test_df$logAge - 3.5)), 1)
-test_mu <- test_mu * c(Study_A = 1.00, Study_B = 0.92, Study_New = 0.89)[test_df$Study]
+test_mu <- 900 * plogis((test_new$logAge - 2.70) / 0.22) *
+  (1 - 0.38 * plogis((test_new$logAge - 3.85) / 0.32))
+test_mu <- test_mu * ifelse(test_new$Sex == "Male", 1.10 * (1 + 0.04 * (test_new$logAge - 3.5)), 1)
+test_mu <- test_mu * c(Study_A = 1.00, Study_B = 0.92, Study_New = 0.89)[test_new$Study]
 
-test_sigma <- 0.05 + 0.07 * plogis(-(test_df$logAge - 3.0) / 0.35)
-test_df$Pheno <- test_mu * exp(rnorm(n_test, 0, test_sigma))
+# add disease effect
+test_mu <- test_mu * ifelse(test_new$dx == "case", 0.93, 1)
+
+test_sigma <- 0.05 + 0.07 * plogis(-(test_new$logAge - 3.0) / 0.35)
+test_new$Pheno <- test_mu * exp(rnorm(n_test, 0, test_sigma))
+
+#for demo simplicity, we'll save a couple subsets
+test_control <- test_new %>% filter(dx=="control")
+test_df <- test_control %>% filter(Study != "Study_New")
 ```
 
 Now we can return the centile values for each subject, as estimated by our model above.
-
-By default, site effects for our new site ('Site_New') will be set to 0.
 
 ```{r}
 test_df$centiles <- score_centiles(pheno_model, test_df)
 range(test_df$centiles)
 ```
-This doesn't produce very good estimates.
+
+You can check the centile score's coverage (i.e., are 10% of subjects in the 10th percentile or less?) using `centile_coverage()`
 
 ```{r}
 centile_coverage(data=test_df, centiles="centiles", group="Study")
 ```
 
-Passing the `batch_term` arg enables batch-effect estimation and removal via `gamlss2charts::predict_score()`
+You can also return standardized scores, or "pseudo-z-scores"
 
 ```{r}
+score_centiles(pheno_model, test_df, standardize=TRUE)
+```
+
+The same code will work to calculate centiles for the original data the model was fit on.
+
+However, this training data isn't necessary for running `score_centiles()` on new data, which is useful when the model is saved and reloaded and/or when the training data can't be shared.
+
+### Out-of-Sample Centile Scoring
+
+We can also get scores for data from a new site ('Site_New') that wasn't part of the training data our model was fit on.
+
+```{r}
+table(test_control$Study)
+```
+
+
+Out-of-sample scoring is handled by the optional dependency, gamlss2charts, which you can install
+with `remotes::install_github("andy1764/gamlss2charts@dev")`. Everything above works without it;
+only the `batch_term` and `ref_data` chunks below need it.
+
+```{r, echo = FALSE, results = "asis", eval = !has_charts}
+cat("> **gamlss2charts is not installed**, so the remaining chunks are shown but not run.\n",
+    "> Install it with `remotes::install_github(\"andy1764/gamlss2charts@dev\")` and rebuild\n",
+    "> this vignette to see their output.\n", sep = "")
+```
+
+If we just stick with the defaults, site effects for our new site will be set to 0, which doesn't produce very good estimates.
+
+```{r}
+test_control$centiles <- score_centiles(pheno_model, test_control)
+centile_coverage(data=test_control, centiles="centiles", group="Study")
+```
+
+Passing the `batch_term` arg enables batch-effect estimation and removal via `gamlss2charts::predict_score()`
+
+```{r, eval = has_charts}
 #get centiles 
-test_df$centiles2 <- score_centiles(pheno_model, test_df, batch_term="Study")
+test_control$centiles2 <- score_centiles(pheno_model, test_control, batch_term="Study")
+hist(test_control$centiles2)
 
 #check how they look
-centile_coverage(pheno_model, test_df, batch_term="Study", group="Study")
+centile_coverage(data=test_control, centiles="centiles2", group="Study")
 ```
 
 Much better!
 
-You can also return standardized scores, or "pseudo-z-scores"
+We can even specify a subset of the data to be used as a reference, from which batch effects are calculated.
+For example, while you may assume that the controls for your new site should have centiles that are evenly distributed across the range of 0-1. However, this may not be the case with individuals who have psychopatholgy, who may have deviations you want to preserve in their centile scores.
 
 ```{r}
-score_centiles(pheno_model, test_df, batch_term="Study", standardize=TRUE)
+table(test_new$Study, test_new$dx)
 ```
 
+You can use your controls to estimate and remove site effects from new batches by using the `ref_data` argument, 
+which accepts a formula/character string defining how reference data should be subsetted from your `data`...
 
-Note that we didn't have to hand `score_centiles()` the data the model was fit on. For gamlss models, `gamlssTools` is able to calculate centiles without the original data used to fit the model. This is useful in many contexts, including when the model is saved and reloaded and/or when the data can't be shared. 
+```{r, eval = has_charts}
+test_new$centiles <- score_centiles(pheno_model, test_new, batch_term="Study", ref_data= ~ dx=="control")
+
+ggplot(test_new) +
+  geom_histogram(aes(x=centiles, fill=dx), position="dodge", alpha=.6) +
+  theme_minimal()
+```
+
+... Or an entirely new dataframe, which will just be used to calculate batch effects for `data` but not
+scored itself (unless these subjects are also part of your `data` input)
+
+```{r, eval = has_charts}
+score_centiles(pheno_model, test_new, batch_term="Study", ref_data=test_control)
+```
+

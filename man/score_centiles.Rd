@@ -10,7 +10,8 @@ score_centiles(
   data,
   fit_data = NULL,
   standardize = FALSE,
-  batch_term = NULL
+  batch_term = NULL,
+  ref_data = NULL
 )
 
 pred_og_centile(gamlssModel, og.data, get.std.scores = FALSE, new.data = NULL)
@@ -26,6 +27,10 @@ pred_og_centile(gamlssModel, og.data, get.std.scores = FALSE, new.data = NULL)
 \item{standardize}{logical indicating whether to also calculate and return standardized (pseudo z-)scores}
 
 \item{batch_term}{(optional) variable for which new levels' offsets are estimated and removed.}
+
+\item{ref_data}{(optional) reference observations used to estimate each new batch level's
+offset, instead of using the whole batch. Either a dataframe, a one-sided formula evaluated
+in \code{data} (e.g. \code{~ dx == "CN"}), or the equivalent character string. Requires \code{batch_term}.}
 }
 \value{
 either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
@@ -48,7 +53,7 @@ Supplying \code{fit_data} (original fitting data) forces the exact \code{\link[g
 \code{fit_data} is necessary when the model contains a non-reconstructable smoother
 (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \link[gamlss2]{gamlss2} fits use gamlss2's own \code{predict()}.
 
-Original idea based on Jenna's function \code{\link[=calculatePhenotypeCentile]{calculatePhenotypeCentile()}} (https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67)
+Original idea based on Jenna's function \href{https://github.com/jmschabdach/mpr_analysis/blob/70466ccc5f8f91949b22745c227017bf47ab825c/r/lib_mpr_analysis.r#L67}{calculatePhenotypeCentile()}
 and \code{\link[gamlss:z.scores]{gamlss::z.scores()}}.
 
 \code{pred_og_centile()} is a deprecated alias for \code{score_centiles()}. Its \code{og.data}/\code{new.data}
@@ -64,6 +69,16 @@ Every other use of \code{score_centiles()} works without it.
 See \link{gamlssTools-optional}.
 }
 
+\section{Reference data}{
+
+By default, \code{\link[gamlss2charts:predict_score]{gamlss2charts::predict_score()}} estimates the offset for a new level of \code{batch_term}
+from all data in the batch. \code{ref_data} narrows that to a chosen subset - typically controls -
+while still applying the resulting offset to \emph{all} rows of the batch. Offsets are estimated \strong{within} each new
+batch level, so the reference is the reference rows \emph{of that batch}, and every new level must
+have some; a level with none will error. Rows supplied as an external \code{ref_data} dataframe
+are only used to fit offsets, not scored.
+}
+
 \examples{
 iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 score_centiles(iris_model, iris)
@@ -72,5 +87,16 @@ score_centiles(iris_model, iris)
 train <- iris[1:100,]
 train$Species <- droplevels(train$Species)
 iris_model_oos <- gamlss(Sepal.Length ~ Sepal.Width + Species, ~ Species, family = BCCG(), data = train)
+
+#virginica is an unseen level of Species: estimate and remove its offset
+\donttest{
+if (requireNamespace("gamlss2charts", quietly = TRUE)) {
+  score_centiles(iris_model_oos, iris, batch_term = "Species")
+
+  #estimate that offset from a chosen subset of each new level (Petal.Length < 5)
+  score_centiles(iris_model_oos, iris, batch_term = "Species",
+                 ref_data = ~ Petal.Length < 5)
+}
+}
 
 }

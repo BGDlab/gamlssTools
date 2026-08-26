@@ -76,3 +76,16 @@ fit_batch_gamlss2 <- function(train) {
   gamlss2::gamlss2(Pheno ~ pb(Age) + Sex + Study | pb(Age),
                    data = train, family = gamlss.dist::NO, trace = FALSE)
 }
+
+# A diagnosis column that is deliberately *not* a model covariate: controls
+# ("CN") follow the reference model, while cases carry an extra shift, and only
+# in the unseen studies, so the fitting data stays untouched. Estimating a
+# batch's offset from its controls alone should recentre those controls;
+# estimating it from the whole batch should not.
+add_dx <- function(d, cases = c("D", "E"), case_shift = 2, seed = 12) {
+  set.seed(seed)
+  d$dx <- factor(sample(c("CN", "PT"), nrow(d), TRUE), levels = c("CN", "PT"))
+  hit <- d$dx == "PT" & d$Study %in% cases
+  d$Pheno[hit] <- d$Pheno[hit] + case_shift
+  d
+}

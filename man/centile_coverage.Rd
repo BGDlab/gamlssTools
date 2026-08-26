@@ -13,6 +13,7 @@ centile_coverage(
   interval_var = NULL,
   centiles = NULL,
   batch_term = NULL,
+  ref_data = NULL,
   ...
 )
 
@@ -38,6 +39,10 @@ returned by \code{\link[=score_centiles]{score_centiles()}} with \code{standardi
 
 \item{batch_term}{(optional) variable for which new levels' offsets are estimated and removed when
 scoring. Passed to \code{\link[=score_centiles]{score_centiles()}}, so it only applies when scoring from \code{gamlssModel}.}
+
+\item{ref_data}{(optional) reference observations used to estimate each new batch level's offset -
+a dataframe, a one-sided formula evaluated in \code{data} (e.g. \code{~ dx == "CN"}), or the equivalent
+character string. Passed to \code{\link[=score_centiles]{score_centiles()}} and requires \code{batch_term}.}
 }
 \value{
 ggplot object or tibble (if \code{plot==FALSE})

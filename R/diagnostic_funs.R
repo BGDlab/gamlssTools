@@ -30,6 +30,9 @@
 #' `centiles` or `gamlssModel`, not both.
 #' @param batch_term (optional) variable for which new levels' offsets are estimated and removed when
 #' scoring. Passed to [score_centiles()], so it only applies when scoring from `gamlssModel`.
+#' @param ref_data (optional) reference observations used to estimate each new batch level's offset -
+#' a dataframe, a one-sided formula evaluated in `data` (e.g. `~ dx == "CN"`), or the equivalent
+#' character string. Passed to [score_centiles()] and requires `batch_term`.
 #'
 #' @section Optional dependency:
 #' `batch_term` requires the **dev** branch of the suggested package gamlss2charts.
@@ -78,7 +81,8 @@
 #'
 #' @export
 centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group = NULL,
-                             interval_var = NULL, centiles = NULL, batch_term = NULL, ...) {
+                             interval_var = NULL, centiles = NULL, batch_term = NULL,
+                             ref_data = NULL, ...) {
   if (is.null(gamlssModel) && is.null(centiles)) {
     stop("Supply either `gamlssModel` (to score `data`) or pre-calculated `centiles`.")
   }
@@ -87,6 +91,9 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
   }
   if (!is.null(centiles) && !is.null(batch_term)) {
     stop("`batch_term` only applies when scoring from `gamlssModel`; `centiles` are already scored.")
+  }
+  if (!is.null(centiles) && !is.null(ref_data)) {
+    stop("`ref_data` only applies when scoring from `gamlssModel`; `centiles` are already scored.")
   }
   #`...` only feeds cut_interval(). Without interval_var it would silently swallow any
   #unmatched argument - including one this version doesn't have yet - so say so instead.
@@ -103,7 +110,7 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
   if (is.null(centiles)) {
     # Predict centiles for original data
     stopifnot("`data` is required to score centiles from `gamlssModel`" = !is.null(df))
-    df$centile <- score_centiles(gamlssModel, df, batch_term = batch_term)
+    df$centile <- score_centiles(gamlssModel, df, batch_term = batch_term, ref_data = ref_data)
   } else {
     # Accept score_centiles(standardize=TRUE) output, a column name, or a bare vector
     if (is.data.frame(centiles)) {
