@@ -3,9 +3,9 @@ This package is intended to make interacting with and plotting GAMLSS models eas
 that are compatible with both [gamlss()](https://cran.r-project.org/web/packages/gamlss/index.html) and [gamlss2()](https://github.com/gamlss-dev/gamlss2)
 
 There are 3 vignettes that go over these functions in greater detail: 
-- *Plotting Centile Fans*
-- *Model Diagnostics & Scoring*
-- *Bootstrapping & Confidence Intervals*.
+- [Plotting Centile Fans](vignettes/centile-fan-plots.Rmd)
+- [Model Diagnostics & Centile Scores](vignettes/diagnostics-and-scoring.Rmd)
+- [Bootstrapping & Confidence Intervals](vignettes/bootstrapping-and-cis.Rmd)
 
 > **Note:** several functions were renamed in the current version, though the old names still work.
 > See [NEWS.md](NEWS.md) for the full list and other recent updates.
