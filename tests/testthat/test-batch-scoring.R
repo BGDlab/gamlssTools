@@ -114,8 +114,15 @@ test_that("a character batch column is coerced to a factor, with a warning", {
   chr <- s$all
   chr$Study <- as.character(chr$Study)
 
+  #muffle the (expected) new-levels warning only, so expect_warning() still
+  #sees the coercion one: an outer suppressWarnings() would hide both
   expect_warning(
-    out <- suppressWarnings(score_centiles(m, chr, batch_term = "Study")),
+    withCallingHandlers(
+      out <- score_centiles(m, chr, batch_term = "Study"),
+      warning = function(w) {
+        if (!grepl("coercing to factor", conditionMessage(w))) invokeRestart("muffleWarning")
+      }
+    ),
     regexp = "coercing to factor"
   )
   expect_equal(out, suppressWarnings(score_centiles(m, s$all, batch_term = "Study")),
@@ -147,7 +154,7 @@ test_that("supplying fit_data agrees with the data-free path", {
   withfd <- suppressWarnings(
     score_centiles(m, s$all, fit_data = s$train, batch_term = "Study")
   )
-  expect_equal(withfd, free, tolerance = 1e-6)
+  expect_equal(withfd, free, tolerance = 1e-12)
 })
 
 # ---- does it actually remove the batch effect? ------------------------------
@@ -204,13 +211,6 @@ test_that("score_centiles.gamlss2 handles mixed known and unknown levels", {
                tolerance = 1e-8)
 })
 
-# ---- known gap: random() batch terms ----------------------------------------
-
-# A gamlss random(Study) effect is stored under the term "random(Study)", so
-# `Study` never appears in mu.xlevels. score_centiles() reads known levels from
-# xlevels, so for these models *every* level looks new -- including the ones the
-# model was fit on. README and the vignettes both use random(Study), so this is
-# the idiom users are most likely to reach for.
 test_that("levels seen in fitting are not treated as new for a random() model", {
   s <- split_batch(sim_batch())
   m <- fit_batch_random(s$train)

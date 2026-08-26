@@ -513,13 +513,15 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
       #score each new batch on its own, tracking original row positions.
       #predict_score() handles the unseen batch level internally;
       #adjust=TRUE requires a single batch level, so score one batch at a time.
+      #unlike the gamlss method, predict_score.gamlss2() takes no `traindata`:
+      #a gamlss2 object carries everything predict() needs, so fit_data is
+      #only used for the range check and the in-sample predict() below.
       for (batch in new_batches){
         b_idx      <- which(data[[batch_term]] == batch)
         batch_data <- data[b_idx, , drop = FALSE]   #keep response + predictors
         cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
-                                             type = "cent", adjust = TRUE, 
-                                             rm.term = batch_term,
-                                             traindata = fit_data)
+                                             type = "cent", adjust = TRUE,
+                                             rm.term = batch_term)
         oos_centiles <- c(oos_centiles, cent)
         oos_idx      <- c(oos_idx, b_idx)
       }
