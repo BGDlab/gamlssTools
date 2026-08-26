@@ -204,8 +204,8 @@ ggplot(df) +
   geom_histogram(aes(x=std_score), bins=20) +
   theme_minimal()
 ```
-<img width="200" height="200" alt="hist1" src="https://github.com/user-attachments/assets/389d16a4-c2e6-448d-8b21-8523219746a8" />
-<img width="200" height="200" alt="hist2" src="https://github.com/user-attachments/assets/1dd69967-4942-41f2-b43e-09c4af520bf4" />
+<img width="400" height="400" alt="hist1" src="https://github.com/user-attachments/assets/389d16a4-c2e6-448d-8b21-8523219746a8" />
+<img width="400" height="400" alt="hist2" src="https://github.com/user-attachments/assets/1dd69967-4942-41f2-b43e-09c4af520bf4" />
 
 
 Out-of-sample scoring estimates (i.e. data from new batches) are handled using [gamlss2charts](https://github.com/andy1764/gamlss2charts).
@@ -237,5 +237,5 @@ ggplot(new_df) +
   geom_histogram(aes(x=centile), bins=20) +
   theme_minimal()
 ```
-<img width="200" height="200" alt="hist3" src="https://github.com/user-attachments/assets/b610e8ec-bf81-47e1-ace3-080a842c9716" />
+<img width="400" height="400" alt="hist3" src="https://github.com/user-attachments/assets/b610e8ec-bf81-47e1-ace3-080a842c9716" />
 
