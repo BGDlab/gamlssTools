@@ -111,6 +111,7 @@ iris_model <- gamlss(formula = Sepal.Width ~ pb(Sepal.Length) + Species, sigma.f
 iris_fan_plot <- make_centile_fan(iris_model, iris, "Sepal.Length", "Species")
 print(iris_fan_plot)
 ```
+<img width="3000" height="2100" alt="iris_plot1" src="https://github.com/user-attachments/assets/b844fed7-e736-4a1a-b6c3-ccfadf96bb69" />
 
 You can use all the standard ggplot layers to make your plot prettier.
 
@@ -123,6 +124,7 @@ iris_fan_plot +
   paletteer::scale_color_paletteer_d("MoMAColors::Smith")
   
 ```
+<img width="3000" height="2100" alt="iris_plot2" src="https://github.com/user-attachments/assets/29fb2e47-e3bd-4b1c-b2f8-c74bb3f6ac52" />
 
 There are also many built-in configuration options, including averaging over categorical variables (like `Species`) 
 or changing how centile lines are labeled: 
@@ -136,6 +138,7 @@ make_centile_fan(iris_model, iris, "Sepal.Length", "Species",
       labs(title="Normative Sepal Width by Length",
       x ="Sepal Length", y = "Sepal Width") 
 ```
+<img width="3000" height="2100" alt="iris_plot3" src="https://github.com/user-attachments/assets/aeae149f-6712-4e24-b6d6-0f9e7d1f00b2" />
 
 There are built-in formatting options for the x-axis
 
@@ -173,12 +176,14 @@ make_centile_fan(pheno_model, df, x_var="logAge", color_var="Sex",
     point_color_manual = c('Female' = "#F4A15BFF", 'Male' = "#8CB3D1FF"),
     color_manual = c("Female" = "#c05f0d", "Male" = "#38688D"))
 ```
+<img width="3000" height="2100" alt="pheno_plt1" src="https://github.com/user-attachments/assets/aeaa1cca-8530-4610-bbf6-d596697b2889" />
 
 There's also a wrapper function for plotting centile fans in the style of [Bethlehem, Seidlitz, & White et al.](https://www.nature.com/articles/s41586-022-04554-y)
 
 ``` r
 centile_fan_brainchart(pheno_model, df, x_var="logAge", color_var="Sex")
 ```
+<img width="3000" height="2100" alt="pheno_plt2" src="https://github.com/user-attachments/assets/b51079ca-ec0e-4a37-b365-d0833d8d86d7" />
 
 ### Reference Scoring
 
@@ -199,6 +204,9 @@ ggplot(df) +
   geom_histogram(aes(x=std_score), bins=20) +
   theme_minimal()
 ```
+<img width="1200" height="1200" alt="hist1" src="https://github.com/user-attachments/assets/389d16a4-c2e6-448d-8b21-8523219746a8" />
+<img width="1200" height="1200" alt="hist2" src="https://github.com/user-attachments/assets/1dd69967-4942-41f2-b43e-09c4af520bf4" />
+
 
 Out-of-sample scoring estimates (i.e. data from new batches) are handled using [gamlss2charts](https://github.com/andy1764/gamlss2charts).
 
@@ -229,4 +237,5 @@ ggplot(new_df) +
   geom_histogram(aes(x=centile), bins=20) +
   theme_minimal()
 ```
+<img width="1200" height="1200" alt="hist3" src="https://github.com/user-attachments/assets/b610e8ec-bf81-47e1-ace3-080a842c9716" />
 
