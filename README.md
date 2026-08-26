@@ -133,8 +133,7 @@ or changing how centile lines are labeled:
 make_centile_fan(iris_model, iris, "Sepal.Length", "Species", 
       average_over=TRUE, 
       show_points=FALSE,
-      label_centiles="legend",
-      ) +
+      label_centiles="legend") +
       labs(title="Normative Sepal Width by Length",
       x ="Sepal Length", y = "Sepal Width") 
 ```
@@ -223,11 +222,6 @@ new_df$logAge <- log(new_df$Age + 280, base = 10)
 new_df$Pheno <- 6 + 4 * (new_df$logAge - 2.4) - 1.6 * (new_df$logAge - 3.6)^2 +
   ifelse(new_df$Sex == "Male", 1, 0) + ifelse(new_df$Sex == "Male", .3, 0) * new_df$logAge -
   2 + rnorm(n, mean = 0, sd = 1)
-
-#rescale onto the SAME scale as the training data. rescaling new data on its own
-#min/max would put it on different units than the model was fit on, pushing scores
-#into the extreme centiles. values outside the training range map outside [1, 50],
-#which is intended (but note BCT requires the response to stay positive)
 new_df$Pheno <- scales::rescale(new_df$Pheno, to = c(1, 50), from = pheno_raw_range)
 
 #score
