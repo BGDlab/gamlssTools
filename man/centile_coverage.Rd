@@ -14,6 +14,7 @@ centile_coverage(
   centiles = NULL,
   batch_term = NULL,
   ref_data = NULL,
+  min_ref = 5,
   ...
 )
 
@@ -43,6 +44,11 @@ scoring. Passed to \code{\link[=score_centiles]{score_centiles()}}, so it only a
 \item{ref_data}{(optional) reference observations used to estimate each new batch level's offset -
 a dataframe, a one-sided formula evaluated in \code{data} (e.g. \code{~ dx == "CN"}), or the equivalent
 character string. Passed to \code{\link[=score_centiles]{score_centiles()}} and requires \code{batch_term}.}
+
+\item{min_ref}{(optional) minimum number of reference rows a new batch level needs before its
+offset is trusted. Passed to \code{\link[=score_centiles]{score_centiles()}}, so it only applies when scoring from
+\code{gamlssModel}. Levels below the threshold score as \code{NA} and are dropped from the coverage
+summary, with a warning; see \code{\link[=score_centiles]{score_centiles()}}.}
 }
 \value{
 ggplot object or tibble (if \code{plot==FALSE})

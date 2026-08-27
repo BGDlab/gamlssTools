@@ -33,6 +33,10 @@
 #' @param ref_data (optional) reference observations used to estimate each new batch level's offset -
 #' a dataframe, a one-sided formula evaluated in `data` (e.g. `~ dx == "CN"`), or the equivalent
 #' character string. Passed to [score_centiles()] and requires `batch_term`.
+#' @param min_ref (optional) minimum number of reference rows a new batch level needs before its
+#' offset is trusted. Passed to [score_centiles()], so it only applies when scoring from
+#' `gamlssModel`. Levels below the threshold score as `NA` and are dropped from the coverage
+#' summary, with a warning; see [score_centiles()].
 #'
 #' @section Optional dependency:
 #' `batch_term` requires the **dev** branch of the suggested package gamlss2charts.
@@ -82,7 +86,7 @@
 #' @export
 centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group = NULL,
                              interval_var = NULL, centiles = NULL, batch_term = NULL,
-                             ref_data = NULL, ...) {
+                             ref_data = NULL, min_ref = 5, ...) {
   if (is.null(gamlssModel) && is.null(centiles)) {
     stop("Supply either `gamlssModel` (to score `data`) or pre-calculated `centiles`.")
   }
@@ -94,6 +98,9 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
   }
   if (!is.null(centiles) && !is.null(ref_data)) {
     stop("`ref_data` only applies when scoring from `gamlssModel`; `centiles` are already scored.")
+  }
+  if (!is.null(centiles) && !missing(min_ref)) {
+    stop("`min_ref` only applies when scoring from `gamlssModel`; `centiles` are already scored.")
   }
   #`...` only feeds cut_interval(). Without interval_var it would silently swallow any
   #unmatched argument - including one this version doesn't have yet - so say so instead.
@@ -110,7 +117,8 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
   if (is.null(centiles)) {
     # Predict centiles for original data
     stopifnot("`data` is required to score centiles from `gamlssModel`" = !is.null(df))
-    df$centile <- score_centiles(gamlssModel, df, batch_term = batch_term, ref_data = ref_data)
+    df$centile <- score_centiles(gamlssModel, df, batch_term = batch_term,
+                                 ref_data = ref_data, min_ref = min_ref)
   } else {
     # Accept score_centiles(standardize=TRUE) output, a column name, or a bare vector
     if (is.data.frame(centiles)) {
@@ -123,8 +131,10 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
     }
 
     stopifnot("`centiles` must be numeric" = is.numeric(centiles))
-    stopifnot("`centiles` contains NAs" = !anyNA(centiles))
-    stopifnot("`centiles` must be between 0 and 1" = all(centiles >= 0 & centiles <= 1))
+    #NAs are what `min_ref` returns for an under-referenced batch, so a re-used
+    #score_centiles() result may legitimately carry them: they are dropped below
+    stopifnot("`centiles` must be between 0 and 1" =
+                all(centiles >= 0 & centiles <= 1, na.rm = TRUE))
 
     if (is.null(df)) {
       #centiles alone are enough when there's nothing to group by
@@ -135,6 +145,16 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
       stopifnot("`centiles` must have one value per row of `data`" = length(centiles) == nrow(df))
       df$centile <- centiles
     }
+  }
+
+  #rows that could not be scored (an under-referenced batch under `min_ref`) carry no
+  #coverage information, so drop them rather than poisoning every summary they land in
+  if (anyNA(df$centile)) {
+    n_na <- sum(is.na(df$centile))
+    warning(n_na, " of ", nrow(df), " row(s) have NA centiles and are excluded from the ",
+            "coverage summary", call. = FALSE)
+    df <- df[!is.na(df$centile), , drop = FALSE]
+    stopifnot("no rows have a non-NA centile" = nrow(df) > 0)
   }
 
   # Convert group variable to factor if needed

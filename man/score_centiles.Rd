@@ -11,7 +11,8 @@ score_centiles(
   fit_data = NULL,
   standardize = FALSE,
   batch_term = NULL,
-  ref_data = NULL
+  ref_data = NULL,
+  min_ref = 5
 )
 
 pred_og_centile(gamlssModel, og.data, get.std.scores = FALSE, new.data = NULL)
@@ -31,6 +32,9 @@ pred_og_centile(gamlssModel, og.data, get.std.scores = FALSE, new.data = NULL)
 \item{ref_data}{(optional) reference observations used to estimate each new batch level's
 offset, instead of using the whole batch. Either a dataframe, a one-sided formula evaluated
 in \code{data} (e.g. \code{~ dx == "CN"}), or the equivalent character string. Requires \code{batch_term}.}
+
+\item{min_ref}{(optional) specifies the minimum number of datapoints necessary to deliver trustworthy
+batch estimates, otherwise returns \code{NA}. Defaults to 5, though 75 was found to be optimal in testing.}
 }
 \value{
 either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
@@ -75,8 +79,8 @@ By default, \code{\link[gamlss2charts:predict_score]{gamlss2charts::predict_scor
 from all data in the batch. \code{ref_data} narrows that to a chosen subset - typically controls -
 while still applying the resulting offset to \emph{all} rows of the batch. Offsets are estimated \strong{within} each new
 batch level, so the reference is the reference rows \emph{of that batch}, and every new level must
-have some; a level with none will error. Rows supplied as an external \code{ref_data} dataframe
-are only used to fit offsets, not scored.
+have some; a level with too few - fewer than \code{min_ref}, none at all included - scores \code{NA}.
+Rows supplied as an external \code{ref_data} dataframe are only used to fit offsets, not scored.
 }
 
 \examples{

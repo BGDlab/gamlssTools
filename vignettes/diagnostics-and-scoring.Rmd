@@ -112,7 +112,7 @@ slow), hand them to `centile_coverage()` directly with the `centiles` argument i
 ```{r}
 df$centile <- score_centiles(pheno_model, df)
 
-centile_coverage(data=df, centiles="centiles", group="Sex")
+centile_coverage(data=df, centiles="centile", group="Sex")
 ```
 
 `centiles` also accepts a plain numeric vector, or the dataframe returned by
@@ -172,7 +172,7 @@ range(test_df$centile)
 You can check the centile score's coverage (i.e., are 10% of subjects in the 10th percentile or less?) using `centile_coverage()`
 
 ```{r}
-centile_coverage(data=test_df, centiles="centiles", group="Study")
+centile_coverage(data=test_df, centiles="centile", group="Study")
 ```
 
 You can also return standardized scores, or "pseudo-z-scores"
@@ -193,7 +193,6 @@ We can also get scores for data from a new site ('Site_New') that wasn't part of
 table(test_control$Study)
 ```
 
-
 Out-of-sample scoring is handled by the optional dependency, gamlss2charts, which you can install
 with `remotes::install_github("andy1764/gamlss2charts@dev")`. Everything above works without it;
 only the `batch_term` and `ref_data` chunks below need it.
@@ -208,7 +207,7 @@ If we just stick with the defaults, site effects for our new site will be set to
 
 ```{r}
 test_control$centile <- score_centiles(pheno_model, test_control)
-centile_coverage(data=test_control, centiles="centiles", group="Study")
+centile_coverage(data=test_control, centiles="centile", group="Study")
 ```
 
 Passing the `batch_term` arg enables batch-effect estimation and removal via `gamlss2charts::predict_score()`
@@ -219,7 +218,7 @@ test_control$centile2 <- score_centiles(pheno_model, test_control, batch_term="S
 hist(test_control$centile2)
 
 #check how they look
-centile_coverage(data=test_control, centiles="centiles2", group="Study")
+centile_coverage(data=test_control, centiles="centile2", group="Study")
 ```
 
 Much better!
@@ -249,4 +248,24 @@ scored itself (unless these subjects are also part of your `data` input)
 score_centiles(pheno_model, test_new, batch_term="Study", ref_data=test_control)
 ```
 
-Current testing suggests you need about *75 reference subjects per batch* for good (mean error ~ 1 centile) out-of-sample estimates.
+How many data points do you need to calculate batch effects? Current testing suggests you need about *75 reference subjects per batch* for good (mean error ~ 1 centile) out-of-sample estimates. You can set `score_centiles()` to automatically return `NA` for any batches that are below a specified threshold and therefore unlikely to be reliable.
+
+```{r, eval = has_charts}
+test_control %>%
+  filter(Study == "Study_New") %>%
+  nrow()
+
+# min_ref < N: all data is scored
+test_new$centile_min10 <- score_centiles(pheno_model, test_new, batch_term="Study", ref_data=test_control, min_ref = 10)
+
+# min_ref > N: return NA for small batches
+test_new$centile_min25 <- score_centiles(pheno_model, test_new, batch_term="Study", ref_data=test_control, min_ref = 25)
+
+sum(is.na(test_new$centile_min10))
+sum(is.na(test_new$centile_min25))
+
+#number of unscored centiles = sample size for Study_New
+sum(is.na(test_new$centile_min25)) == sum(test_new$Study == "Study_New")
+```
+
+

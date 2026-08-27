@@ -91,7 +91,7 @@ test_that("several unseen levels are each scored, in the right rows", {
   alone  <- suppressWarnings(score_centiles(m, d_only, batch_term = "Study"))
   expect_equal(alone[d_only$Study == "D"],
                out[s$all$Study == "D"],
-               tolerance = 1e-8)
+               tolerance = 1e-12)
 })
 
 test_that("data consisting entirely of unseen levels scores without error", {
@@ -218,4 +218,123 @@ test_that("levels seen in fitting are not treated as new for a random() model", 
   expect_no_warning(
     try(score_centiles(m, s$train, batch_term = "Study"), silent = TRUE)
   )
+})
+
+# ---- min_ref: refuse to score a batch too thin to back its own offset -------
+
+test_that("min_ref is validated before anything else happens", {
+  s <- split_batch(sim_batch())
+  m <- fit_batch_gamlss(s$train)
+
+  for (bad in list("5", NA_real_, -1, c(5, 10), NULL)) {
+    expect_error(score_centiles(m, s$all, batch_term = "Study", min_ref = bad),
+                 regexp = "single non-negative number")
+  }
+})
+
+test_that("a batch that clears min_ref is scored normally when no ref_data is given", {
+  skip_if_no_charts_dev()
+  s <- split_batch(sim_batch())
+  m <- fit_batch_gamlss(s$train)
+
+  #with no ref_data the batch backs its own offset, so the count that matters is
+  #the batch's own size - 200 rows here, well clear of any of these thresholds
+  out <- suppressWarnings(score_centiles(m, s$all, batch_term = "Study"))
+  expect_false(anyNA(out))
+  expect_equal(out,
+               suppressWarnings(score_centiles(m, s$all, batch_term = "Study", min_ref = 1)),
+               tolerance = 1e-12)
+  expect_equal(out,
+               suppressWarnings(score_centiles(m, s$all, batch_term = "Study", min_ref = 200)),
+               tolerance = 1e-12)
+})
+
+test_that("an under-referenced batch scores NA in exactly its own rows", {
+  skip_if_no_charts_dev()
+  s <- split_batch(sim_batch())
+  m <- fit_batch_gamlss(s$train)
+  thin <- thin_batch(s$all, level = "D", n = 3)   # E stays at full size
+
+  out <- suppressWarnings(score_centiles(m, thin, batch_term = "Study", min_ref = 10))
+
+  expect_length(out, nrow(thin))
+  expect_equal(which(is.na(out)), which(thin$Study == "D"))
+  expect_true(all(is.finite(out[thin$Study != "D"])))
+
+  #dropping one level below the threshold must not disturb the others: the rows
+  #that are still scored have to match what they score to on their own
+  keep <- thin$Study != "D"
+  expect_equal(out[keep],
+               suppressWarnings(score_centiles(m, thin[keep, , drop = FALSE],
+                                               batch_term = "Study")),
+               tolerance = 1e-8)
+})
+
+test_that("the min_ref warning names the level, the count and the threshold", {
+  skip_if_no_charts_dev()
+  s <- split_batch(sim_batch())
+  m <- fit_batch_gamlss(s$train)
+  thin <- thin_batch(s$all, level = "D", n = 3)
+
+  expect_warning(
+    withCallingHandlers(
+      score_centiles(m, thin, batch_term = "Study", min_ref = 10),
+      warning = function(w) {
+        if (!grepl("min_ref", conditionMessage(w))) invokeRestart("muffleWarning")
+      }
+    ),
+    regexp = "Only 3 reference row\\(s\\) in level 'D' of `Study` \\(min_ref = 10\\)"
+  )
+})
+
+test_that("min_ref counts reference rows, not batch rows, when ref_data is given", {
+  skip_if_no_charts_dev()
+  s <- split_batch(sim_batch())
+  m <- fit_batch_gamlss(s$train)
+  d <- add_dx(s$all)
+
+  #a threshold the full batch clears easily but its control subset does not
+  n_cn <- sum(d$Study == "D" & d$dx == "CN")
+  thresh <- n_cn + 1
+  expect_gt(sum(d$Study == "D"), thresh)
+
+  out <- suppressWarnings(score_centiles(m, d, batch_term = "Study",
+                                         ref_data = ~ dx == "CN", min_ref = thresh))
+  expect_true(all(is.na(out[d$Study == "D"])))
+
+  #the same batch is scored once the threshold drops to what the controls supply
+  ok <- suppressWarnings(score_centiles(m, d, batch_term = "Study",
+                                        ref_data = ~ dx == "CN", min_ref = n_cn))
+  expect_true(all(is.finite(ok[d$Study == "D"])))
+})
+
+test_that("standardize = TRUE returns NA in both columns for a skipped batch", {
+  skip_if_no_charts_dev()
+  s <- split_batch(sim_batch())
+  m <- fit_batch_gamlss(s$train)
+  thin <- thin_batch(s$all, level = "D", n = 3)
+
+  out <- suppressWarnings(
+    score_centiles(m, thin, batch_term = "Study", min_ref = 10, standardize = TRUE))
+
+  na_rows <- thin$Study == "D"
+  expect_true(all(is.na(out$centile[na_rows])))
+  expect_true(all(is.na(out$std_score[na_rows])))
+  expect_true(all(is.finite(out$std_score[!na_rows])))
+})
+
+test_that("score_centiles.gamlss2 honours min_ref too", {
+  skip_if_not_installed("gamlss2")
+  skip_if_no_charts_dev()
+
+  s <- split_batch(sim_batch())
+  m2 <- fit_batch_gamlss2(s$train)
+  thin <- thin_batch(s$all, level = "D", n = 3)
+
+  out <- suppressWarnings(score_centiles(m2, thin, batch_term = "Study", min_ref = 10))
+  expect_equal(which(is.na(out)), which(thin$Study == "D"))
+  expect_true(all(is.finite(out[thin$Study != "D"])))
+
+  expect_false(anyNA(
+    suppressWarnings(score_centiles(m2, s$all, batch_term = "Study", min_ref = 200))))
 })

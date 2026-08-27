@@ -327,17 +327,12 @@ centile_predict <- function(gamlssModel,
 
 # ---- internal: reference rows for one batch level ----------------------------
 # `ref` is NULL when no `ref_data` was supplied, in which case predict_score()
-# falls back to using newdata as its own reference (the batch is self-adjusted).
+# falls back to using newdata as its own reference
 #' @keywords internal
 #' @noRd
 .batch_ref_rows <- function(ref, batch, batch_term) {
   if (is.null(ref)) return(NULL)
   ref_b <- ref[which(ref[[batch_term]] == batch), , drop = FALSE]
-  if (nrow(ref_b) == 0) {
-    stop("`ref_data` selected no rows in level '", batch, "' of `", batch_term,
-         "`. Offsets are estimated within each new batch level, so every new level ",
-         "needs reference rows of its own.")
-  }
   ref_b
 }
 
@@ -372,6 +367,8 @@ centile_predict <- function(gamlssModel,
 #' @param ref_data (optional) reference observations used to estimate each new batch level's
 #' offset, instead of using the whole batch. Either a dataframe, a one-sided formula evaluated
 #' in `data` (e.g. `~ dx == "CN"`), or the equivalent character string. Requires `batch_term`.
+#' @param min_ref (optional) specifies the minimum number of datapoints necessary to deliver trustworthy
+#' batch estimates, otherwise returns `NA`. Defaults to 5, though 75 was found to be optimal in testing.
 #'
 #' @section Optional dependency:
 #' `batch_term` requires the **dev** branch of the suggested package gamlss2charts,
@@ -384,8 +381,8 @@ centile_predict <- function(gamlssModel,
 #' from all data in the batch. `ref_data` narrows that to a chosen subset - typically controls - 
 #' while still applying the resulting offset to *all* rows of the batch. Offsets are estimated **within** each new
 #' batch level, so the reference is the reference rows *of that batch*, and every new level must
-#' have some; a level with none will error. Rows supplied as an external `ref_data` dataframe 
-#' are only used to fit offsets, not scored.
+#' have some; a level with too few - fewer than `min_ref`, none at all included - scores `NA`.
+#' Rows supplied as an external `ref_data` dataframe are only used to fit offsets, not scored.
 #'
 #' @returns either vector listing centiles for every datapoint OR dataframe with centiles and z-scores
 #'
@@ -411,13 +408,13 @@ centile_predict <- function(gamlssModel,
 #'
 #' @export
 score_centiles <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE,
-                           batch_term = NULL, ref_data = NULL){
+                           batch_term = NULL, ref_data = NULL, min_ref = 5){
   UseMethod("score_centiles")
 }
 
 #' @export
 score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE,
-                                  batch_term = NULL, ref_data = NULL){
+                                  batch_term = NULL, ref_data = NULL, min_ref = 5){
   pheno <- gamlssModel$mu.terms[[2]]
 
   #subset df cols just to predictors from model
@@ -433,6 +430,10 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
 
   #`ref_data` only ever narrows the rows a new batch level's offset is fit on
   stopifnot("`ref_data` requires `batch_term`" = is.null(ref_data) || !is.null(batch_term))
+
+  #`min_ref` gates the offset fit, so it has to be a usable count before the loop
+  stopifnot("`min_ref` must be a single non-negative number" =
+              is.numeric(min_ref) && length(min_ref) == 1 && !is.na(min_ref) && min_ref >= 0)
 
   #if a reference dataset is supplied, confirm scored data is within its covariate range
   if (!is.null(fit_data)) {
@@ -463,10 +464,7 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
         data[[batch_term]] <- factor(data[[batch_term]])
       }
 
-      #resolve reference rows now that `batch_term` is a factor: the helper aligns
-      #`ref_data`'s levels to it
-      #parent.frame() of an S3 method is the caller of the generic, so a character
-      #condition resolves against the variables the user wrote it beside
+      #resolve reference rows now that `batch_term` is a factor
       ref <- .resolve_ref_data(ref_data, data, batch_term, model_cols, parent.frame())
 
       warning(paste0("New levels of ", batch_term, ":\n",
@@ -483,14 +481,26 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
         b_idx      <- which(data[[batch_term]] == batch)
         batch_data <- data[b_idx, , drop = FALSE]   #keep response + predictors
         
-        cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
-                                             refdata = .batch_ref_rows(ref, batch, batch_term),
-                                             type = "cent", adjust = TRUE, 
-                                             rm.term = batch_term,
-                                             traindata = fit_data)
-        #predict_score() scores newdata only, in newdata order, whatever refdata holds
-        stopifnot("predict_score() returned the wrong number of centiles" =
-                    length(cent) == length(b_idx))
+        #check min number of rows for offset calc.
+        batch_ref <- .batch_ref_rows(ref, batch, batch_term)
+        n_ref <- if (is.null(batch_ref)) nrow(batch_data) else nrow(batch_ref)
+
+        #no reference rows at all can never back an offset, whatever `min_ref` says
+        if (n_ref == 0 || n_ref < min_ref){
+          warning(paste0("Only ", n_ref, " reference row(s) in level '", batch, "' of `",
+                         batch_term, "` (min_ref = ", min_ref, "); returning NA"),
+                  call. = FALSE)
+          cent <- rep(NA_real_, length(b_idx))
+        } else {
+          #predict_score() scores newdata only, in newdata order, whatever refdata holds
+          cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
+                                               refdata = batch_ref,
+                                               type = "cent", adjust = TRUE,
+                                               rm.term = batch_term,
+                                               traindata = fit_data)
+          stopifnot("predict_score() returned the wrong number of centiles" =
+                      length(cent) == length(b_idx))
+        }
         oos_centiles <- c(oos_centiles, cent)
         oos_idx      <- c(oos_idx, b_idx)
       }
@@ -556,7 +566,7 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
 
 #' @export
 score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE,
-                                   batch_term = NULL, ref_data = NULL){
+                                   batch_term = NULL, ref_data = NULL, min_ref = 5){
   pheno <- get_y(gamlssModel)
 
   #subset df cols just to predictors from model
@@ -572,6 +582,10 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
 
   #`ref_data` only ever narrows the rows a new batch level's offset is fit on
   stopifnot("`ref_data` requires `batch_term`" = is.null(ref_data) || !is.null(batch_term))
+
+  #`min_ref` gates the offset fit, so it has to be a usable count before the loop
+  stopifnot("`min_ref` must be a single non-negative number" =
+              is.numeric(min_ref) && length(min_ref) == 1 && !is.na(min_ref) && min_ref >= 0)
 
   #if a reference dataset is supplied, confirm scored data is within its covariate range
   if (!is.null(fit_data)) {
@@ -603,10 +617,7 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
         data[[batch_term]] <- factor(data[[batch_term]])
       }
 
-      #resolve reference rows now that `batch_term` is a factor: the helper aligns
-      #`ref_data`'s levels to it
-      #parent.frame() of an S3 method is the caller of the generic, so a character
-      #condition resolves against the variables the user wrote it beside
+      #resolve reference rows now that `batch_term` is a facto
       ref <- .resolve_ref_data(ref_data, data, batch_term, model_cols, parent.frame())
 
       warning(paste0("New levels of ", batch_term, "\n",
@@ -622,13 +633,26 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
       for (batch in new_batches){
         b_idx      <- which(data[[batch_term]] == batch)
         batch_data <- data[b_idx, , drop = FALSE]   #keep response + predictors
-        cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
-                                             refdata = .batch_ref_rows(ref, batch, batch_term),
-                                             type = "cent", adjust = TRUE,
-                                             rm.term = batch_term)
-        #predict_score() scores newdata only, in newdata order
-        stopifnot("predict_score() returned the wrong number of centiles" =
-                    length(cent) == length(b_idx))
+        batch_ref <- .batch_ref_rows(ref, batch, batch_term)
+        
+        #check min number of rows for offset calc.
+        n_ref <- if (is.null(batch_ref)) nrow(batch_data) else nrow(batch_ref)
+        #no reference rows at all can never back an offset, whatever `min_ref` says
+        if (n_ref == 0 || n_ref < min_ref){
+          warning(paste0("Only ", n_ref, " reference row(s) in level '", batch, "' of `",
+                         batch_term, "` (min_ref = ", min_ref, "); returning NA"),
+                  call. = FALSE)
+          cent <- rep(NA_real_, length(b_idx))
+        } else {
+          
+          #predict_score() scores newdata only, in newdata order
+          cent <- gamlss2charts::predict_score(gamlssModel, newdata = batch_data,
+                                               refdata = batch_ref,
+                                               type = "cent", adjust = TRUE,
+                                               rm.term = batch_term)
+          stopifnot("predict_score() returned the wrong number of centiles" =
+                      length(cent) == length(b_idx))
+        }
         oos_centiles <- c(oos_centiles, cent)
         oos_idx      <- c(oos_idx, b_idx)
       }

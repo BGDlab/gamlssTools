@@ -46,19 +46,26 @@ test_that("NAs in the condition are refused rather than read as FALSE", {
   )
 })
 
-test_that("a new batch level with no reference rows is an error that names it", {
+test_that("a new batch level with no reference rows scores NA, and only that level", {
   skip_if_no_charts_dev()
   s <- split_batch(sim_batch())
   m <- fit_batch_gamlss(s$train)
   d <- add_dx(s$all)
 
   # offsets are estimated within each batch, so E having controls elsewhere in
-  # `data` does not help it
-  expect_error(
-    suppressWarnings(score_centiles(m, d, batch_term = "Study",
-                                    ref_data = ~ dx == "CN" & Study != "E")),
-    regexp = "no rows in level 'E'"
-  )
+  # `data` does not help it: it has nothing of its own to fit an offset on
+  out <- suppressWarnings(score_centiles(m, d, batch_term = "Study",
+                                         ref_data = ~ dx == "CN" & Study != "E"))
+  expect_equal(which(is.na(out)), which(d$Study == "E"))
+  expect_true(all(is.finite(out[d$Study != "E"])))
+
+  # zero reference rows stays unscorable however low the threshold goes
+  expect_true(all(is.na(suppressWarnings(
+    score_centiles(m, d, batch_term = "Study",
+                   ref_data = ~ dx == "CN" & Study != "E", min_ref = 0)
+  )[d$Study == "E"])))
+
+  # but a condition matching nothing anywhere is a mistake worth stopping on
   expect_error(
     suppressWarnings(score_centiles(m, d, batch_term = "Study", ref_data = ~ dx == "nope")),
     regexp = "selected no rows"

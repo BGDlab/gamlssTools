@@ -50,9 +50,31 @@ test_that("bad centile input errors informatively", {
   expect_error(centile_coverage(data = f$data, centiles = cents[1:10], plot = FALSE), "one value per row")
   expect_error(centile_coverage(data = f$data, centiles = "not_a_column", plot = FALSE), "not a column")
   expect_error(centile_coverage(centiles = cents, group = "Sex", plot = FALSE), "`data` is required")
-  cents[3] <- NA
-  expect_error(centile_coverage(data = f$data, centiles = cents, plot = FALSE), "NAs")
   expect_error(centile_coverage(data = f$data, centiles = rep(2, nrow(f$data)), plot = FALSE), "between 0 and 1")
+})
+
+test_that("NA centiles are dropped with a warning rather than rejected", {
+  #NA is what `min_ref` returns for an under-referenced batch, so a re-used
+  #score_centiles() result may legitimately carry them
+  f <- fit_cov_model()
+  cents <- score_centiles(f$model, f$data)
+  cents[3] <- NA
+
+  expect_warning(out <- centile_coverage(data = f$data, centiles = cents, plot = FALSE),
+                 regexp = "1 of .* NA centiles")
+
+  #the answer must be exactly the one from scoring those rows out of the data entirely
+  keep <- !is.na(cents)
+  expect_equal(out,
+               centile_coverage(data = f$data[keep, , drop = FALSE],
+                                centiles = cents[keep], plot = FALSE))
+
+  #and nothing left to summarise is an error, not an empty tibble
+  expect_error(
+    suppressWarnings(centile_coverage(data = f$data,
+                                      centiles = rep(NA_real_, nrow(f$data)), plot = FALSE)),
+    regexp = "non-NA centile"
+  )
 })
 
 test_that("batch_term is passed through to score_centiles()", {
@@ -77,6 +99,39 @@ test_that("batch_term cannot be combined with pre-calculated centiles", {
   cents <- score_centiles(f$model, f$data)
   expect_error(centile_coverage(data = f$data, centiles = cents, batch_term = "Study", plot = FALSE),
                "only applies when scoring")
+})
+
+test_that("min_ref cannot be combined with pre-calculated centiles", {
+  f <- fit_cov_model()
+  cents <- score_centiles(f$model, f$data)
+  expect_error(centile_coverage(data = f$data, centiles = cents, min_ref = 10, plot = FALSE),
+               "only applies when scoring")
+})
+
+test_that("min_ref is passed through to score_centiles()", {
+  skip_if_no_charts_dev()
+
+  s <- split_batch(sim_batch())
+  m <- fit_batch_gamlss(s$train)
+  thin <- thin_batch(s$all, level = "D", n = 3)
+
+  #a threshold D cannot clear, but every other level can
+  cents <- suppressWarnings(score_centiles(m, thin, batch_term = "Study", min_ref = 10))
+  expect_true(all(is.na(cents[thin$Study == "D"])))
+
+  #scoring inside centile_coverage() must give what pre-scoring outside it gives
+  expect_equal(
+    suppressWarnings(centile_coverage(m, thin, plot = FALSE, batch_term = "Study", min_ref = 10)),
+    suppressWarnings(centile_coverage(data = thin, centiles = cents, plot = FALSE))
+  )
+
+  #and it changes the answer: at min_ref = 1 the thin study is scored and kept
+  lax <- suppressWarnings(
+    centile_coverage(m, thin, plot = FALSE, batch_term = "Study", min_ref = 1, group = "Study"))
+  strict <- suppressWarnings(
+    centile_coverage(m, thin, plot = FALSE, batch_term = "Study", min_ref = 10, group = "Study"))
+  expect_true("D" %in% lax$Study)
+  expect_false("D" %in% strict$Study)
 })
 
 test_that("an unmatched argument errors instead of being swallowed by ...", {

@@ -89,3 +89,12 @@ add_dx <- function(d, cases = c("D", "E"), case_shift = 2, seed = 12) {
   d$Pheno[hit] <- d$Pheno[hit] + case_shift
   d
 }
+
+# Keep every row of `d` except `level`, of which only the first `n` survive. Used
+# to build a batch too thin to back its own offset, without touching the others.
+thin_batch <- function(d, level = "D", n = 3) {
+  lev <- which(d$Study == level)
+  drop <- lev[-seq_len(min(n, length(lev)))]
+  if (length(drop) == 0) return(d)
+  d[-drop, , drop = FALSE]
+}
