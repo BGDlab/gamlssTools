@@ -72,9 +72,10 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
   is not confused with surviving covariate data (and vice versa) when `grid_n`
   happens to match the sample size.
 
-* `check_equivalent()` confirms a sanitized model reproduces the original's
-  standardized scores on a covariate grid, so you can verify `grid_n` and the
-  `pb()` ranges before sharing. It compares z-scores -- `qnorm()` of the centile,
+* `compare_zscores()` reports the largest disagreement, in z units, between the
+  scores two `gamlss` models assign to the same covariate grid -- most often a
+  model and a sanitized copy of it, so you can verify `grid_n` and the `pb()`
+  ranges before sharing. It compares z-scores -- `qnorm()` of the centile,
   as in `score_centiles(standardize = TRUE)` -- rather than raw distribution
   parameters: a score is what collaborators consume and is dimensionless,
   whereas an absolute tolerance on `mu` is meaningless without knowing the
@@ -90,21 +91,23 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
   and 5.3e-09 at 2000. Per-parameter differences are attached as the
   `"parameters"` attribute.
 
-* `check_equivalent()` warns when `newdata` coincides with the rebuilt spline's
+* `compare_zscores()` warns when `newdata` coincides with the rebuilt spline's
   own grid. A natural spline reproduces its nodes exactly, so such a comparison
   reports 0 regardless of how good the rebuild is. This is easy to hit by
   accident: `sim_grid()` returns 500 points over the covariate range and
   `grid_n` defaults to 500, computed by the same `seq()`, so passing `sim_grid()`
   output straight in aliases onto every node. Use any other number of points.
 
-* `check_equivalent()` gains `fit_data`. By default the original model is
-  predicted data-free, isolating what sanitizing changed; supplying `fit_data`
-  takes the reference from `predictAll()` with the fitting data in scope
-  instead, validating the whole chain a collaborator depends on (data-based ->
-  data-free -> sanitized) in one number. Note that on some fits `predictAll()`
-  refits to make "safe" predictions and its own answer differs from the
-  reconstruction by more than sanitizing does, so the two references are worth
-  running separately.
+* `compare_zscores()` takes a prediction path per model, `reference_data` and
+  `comparison_data`. Left `NULL` a model is reconstructed data-free; given its
+  fitting data it goes through `predictAll()` with the data in scope. That makes
+  one function cover verifying a sanitized model (both `NULL`, isolating what
+  sanitizing changed), validating the whole chain a collaborator depends on
+  (`reference_data` only: data-based -> data-free -> sanitized in one number),
+  comparing a model against its own data-free prediction with no sanitizing
+  involved, and comparing two different models of the same outcome. The two
+  models need not share a family; each is scored under its own, which is
+  possible only because the comparison is in z units.
 
   Pass a *dense* grid either way: the error is pointwise, and on one ~11 edf fit
   50 observed rows reported 4.6e-07 where a 2000-point grid over the same range
@@ -121,7 +124,7 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
 * `sanitize_gamlss()` warns when `grid_n` looks too coarse for a smooth's
   effective degrees of freedom (fewer than `points_per_edf = 200` grid points
   per edf). How faithful a rebuilt smooth is depends on how wiggly it is, and
-  `grid_n` now defaults to 2000 so that the result meets `check_equivalent()`'s
+  `grid_n` now defaults to 2000 so that the result meets `compare_zscores()`'s
   1e-6 tolerance: a smooth spending 6.5 edf measured 1.7e-06 at `grid_n = 500`
   against 5.3e-09 at 2000, and one spending 12.8 edf needed the full 2000 to
   reach 9.1e-07. Reaching 1e-6 took roughly 100-160 points per edf across the

@@ -21,7 +21,7 @@ test_that("sanitized models predict identically to the original", {
   for (p in m$parameters)
     expect_equal(free[[p]], gold[[p]], tolerance = 1e-6, info = p)
 
-  # check_equivalent() reports centile differences (dimensionless), so the
+  # compare_zscores() reports centile differences (dimensionless), so the
   # threshold needs no rescaling for the response
   dense <- data.frame(Age = seq(min(d$Age), max(d$Age), length.out = 1234),
                       Sex = factor("M", levels = levels(d$Sex)),
@@ -29,7 +29,7 @@ test_that("sanitized models predict identically to the original", {
   # grid_n = 500 measures ~1.7e-06 here, which does NOT meet the documented
   # default tol of 1e-6; 2000 does (~5e-09). Assert against the real default.
   fine <- sanitize_gamlss(m)          # default grid_n = 2000
-  res  <- check_equivalent(m, fine, dense, quiet = TRUE)
+  res  <- compare_zscores(m, fine, dense, quiet = TRUE)
   expect_true(all(res < 1e-6))
   expect_named(res, c("c1", "c5", "c25", "c50", "c75", "c95", "c99"))
   expect_named(attr(res, "parameters"), m$parameters)
@@ -40,7 +40,7 @@ test_that("sanitized models predict identically to the original", {
   expect_lt(max(res) / min(res), 3)
 })
 
-test_that("check_equivalent() can compare against the data-based path", {
+test_that("compare_zscores() can compare against the data-based path", {
   d <- sim_datafree()
   m <- fit_sanitize_model(d)
   clean <- sanitize_gamlss(m)
@@ -51,10 +51,10 @@ test_that("check_equivalent() can compare against the data-based path", {
                       Study = factor("A", levels = levels(d$Study)))
 
   # default reference is data-free prediction from the original model
-  free <- check_equivalent(m, clean, dense, quiet = TRUE)
+  free <- compare_zscores(m, clean, dense, quiet = TRUE)
   # fit_data switches the reference to predictAll() with the data in scope,
   # validating data-based -> data-free -> sanitized in one number
-  full <- suppressWarnings(check_equivalent(m, clean, dense, fit_data = d, quiet = TRUE))
+  full <- suppressWarnings(compare_zscores(m, clean, dense, reference_data = d, quiet = TRUE))
 
   expect_named(full, names(free))
   expect_true(all(full < 1e-4))       # grid_n = 500 here; this tests the path, not the tolerance
@@ -70,13 +70,60 @@ test_that("sanitize refuses a data-dependent parametric term", {
   # the offending term is named, per parameter
   expect_error(sanitize_gamlss(m), regexp = "mu: poly\\(Age, 2\\)")
 
-  # this is the case check_equivalent() cannot see on its default reference:
+  # this is the case compare_zscores() cannot see on its default reference:
   # both models rebuild the same wrong basis, so the comparison looks clean.
   # the screen is what stops such a model being shared at all.
   d2 <- transform(d, p1 = stats::poly(d$Age, 2)[, 1], p2 = stats::poly(d$Age, 2)[, 2])
   m2 <- gamlss::gamlss(Pheno ~ pb(Age) + p1 + p2 + Sex, data = d2,
                        family = "NO", trace = FALSE)
   expect_no_error(sanitize_gamlss(m2))
+})
+
+test_that("compare_zscores() takes a prediction path per model", {
+  d <- sim_datafree()
+  m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d, family = "NO",
+                      trace = FALSE)
+  nd <- data.frame(Age = seq(min(d$Age), max(d$Age), length.out = 997),
+                   Sex = factor("M", levels = levels(d$Sex)))
+
+  # both models data-based: the same call twice, so exactly identical
+  both <- compare_zscores(m, m, nd, reference_data = d, comparison_data = d,
+                          quiet = TRUE)
+  expect_true(all(both == 0))
+
+  # one side data-based, the other data-free: no sanitizing involved, so this
+  # measures only what gamlss's own prediction machinery contributes. For a
+  # pb() + factor model the two paths coincide to machine precision.
+  path <- compare_zscores(m, m, nd, reference_data = d, quiet = TRUE)
+  expect_true(all(path < 1e-10))
+
+  # the argument is per model, so it can be given on either side
+  flip <- compare_zscores(m, m, nd, comparison_data = d, quiet = TRUE)
+  expect_equal(unname(flip), unname(path), tolerance = 1e-12)
+})
+
+test_that("compare_zscores() scores each model under its own family", {
+  d <- sim_datafree()
+  nd <- data.frame(Age = seq(min(d$Age), max(d$Age), length.out = 997),
+                   Sex = factor("M", levels = levels(d$Sex)),
+                   Study = factor("A", levels = levels(d$Study)))
+
+  bccg <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, sigma.formula = ~ pb(Age),
+                         data = d, family = "BCCG", trace = FALSE)
+  no   <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d, family = "NO",
+                         trace = FALSE)
+
+  res <- compare_zscores(bccg, no, nd, tol = 0.1, quiet = TRUE)
+
+  # two genuinely different fits disagree by a visible amount
+  expect_gt(max(res), 1e-3)
+
+  # only the moments both families have are comparable; BCCG's nu has no
+  # counterpart in NO and must not appear
+  expect_named(attr(res, "parameters"), c("mu", "sigma"))
+
+  # a model compared with itself is still exactly 0 under this path
+  expect_true(all(compare_zscores(bccg, bccg, nd, quiet = TRUE) == 0))
 })
 
 test_that("no length-n vector survives sanitizing", {
@@ -218,8 +265,8 @@ test_that("sanitize warns when grid_n is too coarse for a smooth's edf", {
                  regexp = "may be too coarse")
   expect_no_warning(fine <- sanitize_gamlss(m, grid_n = 3000))
 
-  coarse_err <- max(check_equivalent(m, clean, dense, quiet = TRUE))
-  fine_err   <- max(check_equivalent(m, fine,  dense, quiet = TRUE))
+  coarse_err <- max(compare_zscores(m, clean, dense, quiet = TRUE))
+  fine_err   <- max(compare_zscores(m, fine,  dense, quiet = TRUE))
 
   # the finer grid is materially better -- ~4.5e-06 vs ~1.5e-08 when measured
   expect_gt(coarse_err, 100 * fine_err)
@@ -299,7 +346,7 @@ test_that("audit_gamlss() refuses non-gamlss objects", {
   expect_no_error(audit_gamlss(clean, quiet = TRUE))
 })
 
-test_that("check_equivalent() warns when newdata aliases the rebuild grid", {
+test_that("compare_zscores() warns when newdata aliases the rebuild grid", {
   d <- sim_datafree()
   m <- fit_sanitize_model(d)
   clean <- suppressWarnings(sanitize_gamlss(m, grid_n = 500))
@@ -310,7 +357,7 @@ test_that("check_equivalent() warns when newdata aliases the rebuild grid", {
   on_grid <- data.frame(Age = nodes,
                         Sex = factor("M", levels = levels(d$Sex)),
                         Study = factor("A", levels = levels(d$Study)))
-  expect_warning(res <- check_equivalent(m, clean, on_grid, quiet = TRUE),
+  expect_warning(res <- compare_zscores(m, clean, on_grid, quiet = TRUE),
                  regexp = "grid nodes")
   # and the reason the warning matters: the aliased check reports nothing
   expect_true(all(res == 0))
@@ -319,6 +366,6 @@ test_that("check_equivalent() warns when newdata aliases the rebuild grid", {
   off <- data.frame(Age = seq(min(nodes), max(nodes), length.out = 997),
                     Sex = factor("M", levels = levels(d$Sex)),
                     Study = factor("A", levels = levels(d$Study)))
-  expect_no_warning(res2 <- check_equivalent(m, clean, off, quiet = TRUE))
+  expect_no_warning(res2 <- compare_zscores(m, clean, off, quiet = TRUE))
   expect_true(all(res2 > 0))
 })

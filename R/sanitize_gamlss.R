@@ -4,7 +4,7 @@
 # with collaborators who need data-free prediction, without shipping anything
 # from which the original training data could be reconstructed.
 #
-# Verify the result with audit_gamlss() and check_equivalent()
+# Verify the result with audit_gamlss() and compare_zscores()
 # before it leaves your machine.
 
 ################################################
@@ -61,34 +61,27 @@
 #' `.coefficients`, `.coefSmo`, `.xlevels`, and fit summaries such as the
 #' deviances and AIC). Within each smoother, the `pb()` interpolation function 
 #' is rebuilt on a regular grid (its closure otherwise holds the sorted covariate 
-#' values) and the `random()` effect's grouping column, fitted values and standard 
+#' values) and `random()` effect's grouping column, fitted values and standard 
 #' errors are removed.
 #'
 #' Because right now only `pb()` and `random()` smooths can be reconstructed without the
 #' original data, models containing any other smoother (`cs()`, `ps()`, `ga()`,
-#' `s()`) are rejected.
-#'
-#' Parametric terms whose columns are computed from the data as a whole --
-#' `poly()`, `ns()`, `bs()`, `scale()`, `cut()` -- are rejected too. Their basis
-#' cannot be rebuilt on new data without the fitting data, so the stored
-#' coefficients would be applied to a different basis and the predictions would
-#' be silently wrong. Note that [check_equivalent()] cannot catch this on its
-#' default reference, because both models would make the same mistake. Precompute
-#' such a term as plain columns and refit, exactly as for `pb(log(Age))`.
+#' `s()`) or parametric terms whose models are computed from the whole data 
+#' (`poly()`, `ns()`, `bs()`, `scale()`, `cut()`) are rejected.
 #' 
 #' @details
 #' pb() smooths are reconstructed over a grid of size `grid_n`. How much you need
 #' depends on how wiggly the smooth is/how many edf are used. A warning is raised when
-#' `grid_n` looks too coarse for a smooth's edf. The default is 50 datapoints per edf, 
-#' which can be changed using the `points_per_edf` arg. The default 50 is a coarse heuristic
-#' calibrated on a handful of fits and subject to change! Always be sure to confirm 
-#' model fit is retained using [check_equivalent()]. Quantile smooths (i.e. 
-#' `pb.control(quantiles = TRUE)`) have not been tested for datasharing/reconstruction
-#' accuracy and thus are not currently supported.
+#' `grid_n` looks too coarse for a smooth's edf. The default based on testing is 
+#' 200 datapoints per edf, but this can be changed using the `points_per_edf` arg.
+#' Always be sure to confirm model fit is retained using [compare_zscores()]. 
+#' 
+#' Quantile smooths (i.e. `pb.control(quantiles = TRUE)`) have not been tested for 
+#' datasharing/reconstruction accuracy and thus are not currently supported.
 #'
 #' @section What still gets shared:
 #' Sanitizing is not anonymisation, and a few small things survive by
-#' necessity. Inspect them by eye before sharing:
+#' necessity. Inspect them before sharing:
 #'
 #' * `<param>.xlevels` -- the levels of every factor covariate, including rare
 #'   ones.
@@ -115,7 +108,7 @@
 #' for (nm in names(clean)) { cat("\n==== ", nm, " ====\n"); audit_gamlss(clean[[nm]]) }
 #'
 #' ## 4. confirm predictions are unchanged
-#' for (nm in names(clean)) check_equivalent(models[[nm]], clean[[nm]], grid[[1]])
+#' for (nm in names(clean)) compare_zscores(models[[nm]], clean[[nm]], grid[[1]])
 #'
 #' ## 5. inspect the surviving disclosive bits before sending
 #' for (nm in names(clean)) {
@@ -131,34 +124,23 @@
 #'
 #' @param gamlssModel a fitted `gamlss` model object.
 #' @param grid_n number of grid points used to rebuild each `pb()` interpolation
-#' function. Defaults to 2000. Higher is more faithful and larger on disk. How
-#' much you need depends on how wiggly the smooth is, and the default is set to
-#' meet [check_equivalent()]'s `tol` of 1e-6 z units across the fits measured:
-#' a smooth spending 6.5 edf reached 1.7e-06 at `grid_n = 500` but 5.3e-09 at
-#' 2000, and one spending 12.8 edf needed the full 2000 to reach 9.1e-07.
+#' function. Defaults to 2000. Higher is more faithful to wigglier smooths but
+#' makes the stored object larger.
 #' @param xranges optional named list of covariate ranges, e.g.
-#' `list(age_days = c(0, 36500))`. Use this when you would rather declare the
-#' range yourself than have it read off the fitted smooth (the fitted range is
-#' the min/max of your data). A declared range is also written back over the
-#' smooth's stored knots.
+#' `list(age_days = c(0, 36500))`, rather than retaining data min/max.
 #' @param random_level_map optional named character vector mapping old level ->
 #' new label, for pseudonymising `random()` grouping levels. Must cover every
 #' level of every `random()` term.
 #' @param keep_call logical, whether to keep `gamlssModel$call`. Defaults to
 #' `FALSE`: the call can name your data object or embed a subsetting expression.
 #' @param points_per_edf grid points per effective degree of freedom below which
-#' `grid_n` is warned about. Defaults to 200. Reaching [check_equivalent()]'s
-#' default `tol` of 1e-6 took roughly 100-160 points per edf across the fits
-#' measured, so 200 leaves margin and errs toward warning. It is a coarse
-#' heuristic calibrated on a handful of fits, not a guarantee --
-#' [check_equivalent()] remains the authoritative check. Set to 0 to silence
-#' the warning.
+#' `grid_n` is warned about. Defaults to 200. Set to 0 to silence the warning.
 #'
 #' @returns a `gamlss` object carrying only the components needed for data-free
 #' prediction, with a `"sanitized"` attribute recording the settings used (to
 #' inspect, run `attr(clean_mod, "sanitized")`)
 #'
-#' @seealso [audit_gamlss()] to check the result, [check_equivalent()] to
+#' @seealso [audit_gamlss()] to check the result, [compare_zscores()] to
 #' confirm predictions are unchanged.
 #'
 #' @examples
@@ -170,7 +152,7 @@
 #' audit_gamlss(clean)
 #'
 #' grid <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
-#' check_equivalent(iris_model, clean, grid[[1]])
+#' compare_zscores(iris_model, clean, grid[[1]])
 #'
 #' @export
 sanitize_gamlss <- function(gamlssModel,
@@ -185,9 +167,7 @@ sanitize_gamlss <- function(gamlssModel,
   if (length(datadep))
     stop("this model contains parametric term(s) whose columns are computed ",
          "from the data as a whole -- ", paste(datadep, collapse = "; "),
-         ". Their basis cannot be rebuilt on new data without the fitting data, ",
-         "so predictions from the sanitized model would be silently wrong. ",
-         "Precompute the basis as plain columns and refit.", call. = FALSE)
+         ". Precompute the basis as plain columns and refit.", call. = FALSE)
   if (!.datafree_eligible_gamlss(gamlssModel))
     stop("this model contains a smoother other than pb()/random(); ",
          "gamlssTools cannot predict from it without the original data")
@@ -225,7 +205,6 @@ sanitize_gamlss <- function(gamlssModel,
 
   for (p in params) {
 
-    ## .s -- only the column names are read (to locate/label smooth terms).
     ## Throw away the n x k matrix of per-observation smooth contributions.
     s_nm <- paste0(p, ".s")
     if (!is.null(out[[s_nm]])) {
@@ -283,7 +262,7 @@ sanitize_gamlss <- function(gamlssModel,
   if (length(low_res))
     warning("grid_n = ", grid_n, " may be too coarse for: ",
             paste(low_res, collapse = "; "),
-            ". Confirm with check_equivalent() and raise grid_n if the ",
+            ". Confirm with compare_zscores() and raise grid_n if the ",
             "predictions differ.", call. = FALSE)
 
   class(out) <- class(gamlssModel)
@@ -387,12 +366,6 @@ audit_gamlss <- function(x, max_len = 50, max_depth = 15,
 
     if (is.environment(v)) {
       if (environmentName(v) %in% safe_envs) return(invisible(NULL))
-      ## Environments have reference semantics and routinely form cycles: an
-      ## unsanitized fit's formula environment holds the fitting frame, which
-      ## holds the model, whose formula points back. Without this check the walk
-      ## re-traverses the same objects along every path and the cost explodes
-      ## exponentially with max_depth (~20x per two levels), which reads as a
-      ## hang rather than an error.
       if (any(vapply(seen, identical, logical(1), v))) return(invisible(NULL))
       seen[[length(seen) + 1L]] <<- v
       for (nm in ls(v, all.names = TRUE))
@@ -438,190 +411,67 @@ audit_gamlss <- function(x, max_len = 50, max_depth = 15,
 }
 
 
-#' Confirm a sanitized gamlss model scores like the original
-#'
-#' Compares the standardized scores (z-scores) the two models assign to the same
-#' observations, on a covariate grid you supply, and reports the largest
-#' disagreement at each of several reference centiles. Run this before sharing:
-#' it is what tells you `grid_n` was high enough and the `pb()` x ranges were
-#' right.
-#'
-#' Scores rather than raw distribution parameters, because a score is what
-#' collaborators actually consume and it is dimensionless. An absolute tolerance
-#' on `mu` is meaningless without knowing your response's scale -- multiply your
-#' outcome by 10,000 and `mu`'s error multiplies by 10,000 too -- and a single
-#' tolerance cannot suit `mu`, `sigma` and `nu` at once, since they live on
-#' different scales within one model. Score error is invariant to all of that.
-#'
-#' z-scores rather than the centiles they come from, because centile differences
-#' are compressed in the tails. The same underlying discrepancy that shifts a
-#' score by a given amount produces a large centile difference near the median
-#' and a vanishing one at the extremes, so a centile-based tolerance silently
-#' under-weights exactly the tail errors that matter most for screening. In
-#' z units the error is roughly flat across the distribution -- for a location
-#' shift it is simply `d mu / sigma` -- so one threshold means the same thing
-#' everywhere. The transform is `qnorm(centile)`, matching
-#' [score_centiles()] with `standardize = TRUE`.
-#'
-#' For each requested centile the reference model's own quantile function gives
-#' the response value at that centile; both models are then asked what score
-#' they assign to it. Taking the reference model's quantiles (rather than the
-#' nominal centile) as the comparison point cancels the round-trip error of
-#' `q<family>()` / `p<family>()`, so what remains is the disagreement between the
-#' models.
-#'
-#' @section Which reference to compare against:
-#' By default the original model is predicted data-free, so the check isolates
-#' what sanitizing changed. Supply `fit_data` and the reference instead
-#' comes from `gamlss::predictAll()` with the original fitting data in scope --
-#' the exact, data-based path. That validates the whole chain your collaborator
-#' depends on (data-based -> data-free -> sanitized) in one number, and is the
-#' stronger check to run before sharing. The sanitized model is always predicted
-#' data-free; predicting it any other way is not possible, which is the point of
-#' it.
-#'
-#' @param gamlssModel the original fitted `gamlss` model.
-#' @param sanitizedModel the output of [sanitize_gamlss()] applied to it.
-#' @param newdata a covariate grid to compare on. Should be DENSE and span the
-#' full range you expect collaborators to predict over -- the error is
-#' pointwise, so a handful of scattered rows understates it and is not a check.
-#' It must also not coincide with the rebuilt spline's own grid, which the
-#' spline reproduces exactly: [sim_grid()] returns 500 points over the covariate
-#' range and `grid_n` defaults to 500, so passing `sim_grid()` output directly
-#' aliases onto every node and reports 0. Use any other number of points; a
-#' warning is raised if this is detected.
-#' @param centiles the reference centiles at which to place the comparison
-#' points, as values between 0 and 1. Defaults to
-#' `c(0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)`. They locate *where* in the
-#' distribution each comparison is made; the reported differences are in z
-#' units, which run roughly flat across them.
-#' @param tol maximum acceptable score difference, in z units -- that is, in
-#' standard deviations, since `qnorm()` puts the score on the standard normal
-#' scale. Defaults to 1e-6: no observation's z-score moves by more than a
-#' millionth of a standard deviation. Unlike a tolerance on the distribution
-#' parameters, this does not need rescaling for your response. Note that
-#' `grid_n = 500` is not always enough to reach it -- a smooth spending ~6.5 edf
-#' measured 1.7e-06 at `grid_n = 500` and 5.3e-09 at 2000 -- so expect to raise
-#' `grid_n` rather than to loosen this.
-#' @param fit_data the original fitting data. When supplied, the reference
-#' scores come from `predictAll()` with the data in scope rather than from
-#' data-free prediction; see "Which reference to compare against".
-#' @param quiet logical, suppress printed output. Defaults to `FALSE`.
-#'
-#' @returns a named numeric vector of maximum absolute z-score differences, one
-#' per reference centile, invisibly. The per-parameter differences are attached
-#' as the `"parameters"` attribute for diagnosing which moment is responsible.
-#'
-#' @seealso [sanitize_gamlss()], [sim_grid()], [score_centiles()]
-#'
-#' @examples
-#' iris_model <- gamlss(Sepal.Width ~ pb(Sepal.Length) + Species,
-#'                      data = iris, family = NO, trace = FALSE)
-#' clean <- sanitize_gamlss(iris_model)
-#'
-#' # Evaluate OFF the rebuild grid. sim_grid() returns 500 points and grid_n
-#' # defaults to 500, so sim_grid() output aliases exactly onto the rebuilt
-#' # spline's nodes -- where it is exact by construction -- and the check would
-#' # report 0. Any count other than grid_n avoids this; check_equivalent()
-#' # warns if you hit it.
-#' nd <- data.frame(
-#'   Sepal.Length = seq(min(iris$Sepal.Length), max(iris$Sepal.Length),
-#'                      length.out = 997),
-#'   Species      = factor("setosa", levels = levels(iris$Species)))
-#'
-#' # what sanitizing alone changed
-#' check_equivalent(iris_model, clean, nd)
-#'
-#' # the whole chain, against the exact data-based path
-#' check_equivalent(iris_model, clean, nd, fit_data = iris)
-#'
-#' @export
-check_equivalent <- function(gamlssModel, sanitizedModel, newdata,
-                             cent_to_check = c(0.01, 0.05, 0.25, 0.5,
-                                          0.75, 0.95, 0.99),
-                             tol      = 1e-6,
-                             fit_data = NULL,
-                             quiet    = FALSE) {
 
-  stopifnot(inherits(gamlssModel, "gamlss"), inherits(sanitizedModel, "gamlss"))
-  if (any(cent_to_check <= 0 | cent_to_check >= 1))
-    stop("centiles must be strictly between 0 and 1", call. = FALSE)
-
-  fname <- gamlssModel$family[[1]]
-  qfun  <- get(paste0("q", fname))
-  pfun  <- get(paste0("p", fname))
-
-  ## reference: data-based when fit_data is supplied, data-free otherwise.
-  ## the sanitized model can only ever be predicted data-free.
-  ref <- .predict_params_gamlss(gamlssModel, newdata, data = fit_data)
-  san <- .predictAll_nodata_gamlss(sanitizedModel, newdata)
-
-  ## A rebuilt pb() spline reproduces its own grid nodes EXACTLY, so evaluation
-  ## points that coincide with those nodes measure nothing at all. sim_grid()
-  ## returns 500 points spanning the covariate range and grid_n defaults to 500,
-  ## computed by the same seq() -- so in the most obvious workflow every point
-  ## aliases onto a node and the check silently reports perfect agreement.
-  aliased <- list()
-  for (pp in sanitizedModel$parameters) {
-    labs <- colnames(sanitizedModel[[paste0(pp, ".s")]])
-    smos <- sanitizedModel[[paste0(pp, ".coefSmo")]]
-    for (i in seq_along(smos)) {
-      if (!inherits(smos[[i]], "pb")) next
-      v <- .smooth_arg(labs[i])
-      if (is.null(v) || !is.name(v)) next
-      v <- as.character(v)
-      if (is.null(newdata[[v]])) next
-      nodes <- environment(smos[[i]]$fun)$z$x
-      if (is.null(nodes)) next
-      hit <- mean(newdata[[v]] %in% nodes)
-      if (hit > 0.5)
-        aliased[[v]] <- sprintf("%s (%.0f%% of points)", v, 100 * hit)
-    }
-  }
-  if (length(aliased))
-    warning("newdata lands on the rebuilt spline's own grid nodes: ",
-            paste(unlist(aliased), collapse = ", "),
-            ". The spline reproduces its nodes exactly, so this check ",
-            "understates the error -- very likely reporting 0. Evaluate ",
-            "somewhere else: seq(lo, hi, length.out = n) with n not equal to ",
-            "grid_n (grid_n + 1 is enough), or midpoints of your grid.",
-            call. = FALSE)
-
-  moments <- intersect(c("mu", "sigma", "nu", "tau"), names(ref))
-  args_for <- function(nm, value, pars){
-    c(stats::setNames(list(value), nm), pars[moments])
-  }
-
-  res <- vapply(cent_to_check, function(cent) {
-    y  <- do.call(qfun, args_for("p", cent, ref))   # response value at `cent`
-    ## qnorm() of the centile, matching score_centiles(standardize = TRUE)
-    zr <- stats::qnorm(do.call(pfun, args_for("q", y, ref)))
-    zs <- stats::qnorm(do.call(pfun, args_for("q", y, san)))
-    ok <- is.finite(zr) & is.finite(zs)
-    if (!any(ok)) return(NA_real_)
-    max(abs(zr[ok] - zs[ok]))
-  }, numeric(1))
-  names(res) <- paste0("c", format(cent_to_check * 100, trim = TRUE))
-
-  par_diff <- vapply(moments, function(p) max(abs(ref[[p]] - san[[p]])),
-                     numeric(1))
-  attr(res, "parameters") <- par_diff
-
-  if (!quiet) {
-    cat("reference: ",
-        if (is.null(fit_data)) "data-free prediction from the original model"
-        else "predictAll() with the original fitting data",
-        "\n", sep = "")
-    cat("max |z-score difference| at each reference centile:\n")
-    print(res)
-    if (anyNA(res))
-      cat("NOTE: some centiles could not be evaluated (non-finite quantiles)\n")
-    if (all(res < tol, na.rm = TRUE)) {
+#' Compare reference scores between gamlss models
+#' 
+#' Compare either the z-scores that two models assign the same observations OR compare
+#' the predicted values of y at each centile. 
+#' 
+#' Cannot currently handle `data` that contains out-of-sample observations (i.e.
+#' new batches)
+#' 
+compare_scores <- function(gamlssModel1, 
+                            gamlssModel2, 
+                            data = NULL,
+                            sim_grid_list = NULL,
+                            cent_to_check = c(0.01, 0.05, 0.25, 0.5,
+                                              0.75, 0.95, 0.99),
+                            tol = 1e-6,
+                            fit_data1 = NULL, 
+                            fit_data2 = NULL){
+  
+  stopifnot(inherits(gamlssModel1, "gamlss"), inherits(gamlssModel2, "gamlss"))
+  
+  #compare z-scores
+  if (!is.null(data)){
+    std1 <- score_centiles(gamlssModel1, data, fit_data = fit_data1, standardize = TRUE)$std_score
+    std2 <- score_centiles(gamlssModel2, data, fit_data = fit_data2, standardize = TRUE)$std_score
+    
+    #get max diff
+    if (max(abs(std1 - std2)) < tol) {
       cat("OK: z-scores match within ", tol, "\n", sep = "")
     } else {
-      cat("MISMATCH -- raise grid_n or check the pb() x ranges\n")
-      cat("per-parameter max |difference|:\n"); print(par_diff)
+      diff <- abs(std1 - std2)
+      cat("Difference EXCEEDS tol = ", tol, "\n",
+          "Max abs diff = ", max(diff), "\n"
+          "Mean abs diff = ", mean(diff))
     }
   }
-  invisible(res)
+  
+  #compare y at each centile
+  if (!is.null(sim_grid_list)){
+    # Predict phenotype values for each simulated level of factor_var
+    for (factor_level in names(sim_grid_list)) {
+      sub_df <- sim_grid_list[[factor_level]]
+      
+      # Predict centiles (data-free by default; fit_data forces predictAll path)
+      pred_df1 <- .predict_params_gamlss(gamlssModel1, newdata = sub_df, data = fit_data1)
+      fanCentiles1 <- lapply(cent_to_check, 
+                             .centile_value, 
+                             params = pred_df1, 
+                             q_func = paste0("q", gamlssModel1$family[1]), 
+                             n_param = length(gamlssModel1$parameters))
+      
+      pred_df2 <- .predict_params_gamlss(gamlssModel2, newdata = sub_df, data = fit_data2)
+      fanCentiles2 <- lapply(cent_to_check, 
+                             .centile_value, 
+                             params = pred_df2, 
+                             q_func = paste0("q", gamlssModel2$family[1]), 
+                             n_param = length(gamlssModel2$parameters))
+      
+      #compare w/in factor level
+      all.equal(fanCentiles1, fanCentiles2, tolerance=tol)
+    }
+  }
+  
 }

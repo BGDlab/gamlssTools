@@ -42,7 +42,7 @@
 # ~0.2 SD of the response for a poly(Age, 2) term, and worse on a grid that does
 # not span the fitting range).
 #
-# These terms also defeat the DEFAULT reference in check_equivalent(): the
+# These terms also defeat the DEFAULT reference in compare_zscores(): the
 # original and the sanitized model are then both predicted data-free and make the
 # SAME mistake, so the comparison looks clean. Refusing them up front is what
 # keeps that check honest.

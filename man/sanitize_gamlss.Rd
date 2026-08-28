@@ -19,7 +19,7 @@ sanitize_gamlss(
 \item{grid_n}{number of grid points used to rebuild each \code{pb()} interpolation
 function. Defaults to 2000. Higher is more faithful and larger on disk. How
 much you need depends on how wiggly the smooth is, and the default is set to
-meet \code{\link[=check_equivalent]{check_equivalent()}}'s \code{tol} of 1e-6 z units across the fits measured:
+meet \code{\link[=compare_zscores]{compare_zscores()}}'s \code{tol} of 1e-6 z units across the fits measured:
 a smooth spending 6.5 edf reached 1.7e-06 at \code{grid_n = 500} but 5.3e-09 at
 2000, and one spending 12.8 edf needed the full 2000 to reach 9.1e-07.}
 
@@ -37,11 +37,11 @@ level of every \code{random()} term.}
 \code{FALSE}: the call can name your data object or embed a subsetting expression.}
 
 \item{points_per_edf}{grid points per effective degree of freedom below which
-\code{grid_n} is warned about. Defaults to 200. Reaching \code{\link[=check_equivalent]{check_equivalent()}}'s
+\code{grid_n} is warned about. Defaults to 200. Reaching \code{\link[=compare_zscores]{compare_zscores()}}'s
 default \code{tol} of 1e-6 took roughly 100-160 points per edf across the fits
 measured, so 200 leaves margin and errs toward warning. It is a coarse
 heuristic calibrated on a handful of fits, not a guarantee --
-\code{\link[=check_equivalent]{check_equivalent()}} remains the authoritative check. Set to 0 to silence
+\code{\link[=compare_zscores]{compare_zscores()}} remains the authoritative check. Set to 0 to silence
 the warning.}
 }
 \value{
@@ -71,7 +71,7 @@ Parametric terms whose columns are computed from the data as a whole --
 \code{poly()}, \code{ns()}, \code{bs()}, \code{scale()}, \code{cut()} -- are rejected too. Their basis
 cannot be rebuilt on new data without the fitting data, so the stored
 coefficients would be applied to a different basis and the predictions would
-be silently wrong. Note that \code{\link[=check_equivalent]{check_equivalent()}} cannot catch this on its
+be silently wrong. Note that \code{\link[=compare_zscores]{compare_zscores()}} cannot catch this on its
 default reference, because both models would make the same mistake. Precompute
 such a term as plain columns and refit, exactly as for \code{pb(log(Age))}.
 
@@ -80,7 +80,7 @@ depends on how wiggly the smooth is/how many edf are used. A warning is raised w
 \code{grid_n} looks too coarse for a smooth's edf. The default is 50 datapoints per edf,
 which can be changed using the \code{points_per_edf} arg. The default 50 is a coarse heuristic
 calibrated on a handful of fits and subject to change! Always be sure to confirm
-model fit is retained using \code{\link[=check_equivalent]{check_equivalent()}}. Quantile smooths (i.e.
+model fit is retained using \code{\link[=compare_zscores]{compare_zscores()}}. Quantile smooths (i.e.
 \code{pb.control(quantiles = TRUE)}) have not been tested for datasharing/reconstruction
 accuracy and thus are not currently supported.
 }
@@ -117,7 +117,7 @@ clean <- lapply(models, sanitize_gamlss,
 for (nm in names(clean)) \{ cat("\\n==== ", nm, " ====\\n"); audit_gamlss(clean[[nm]]) \}
 
 ## 4. confirm predictions are unchanged
-for (nm in names(clean)) check_equivalent(models[[nm]], clean[[nm]], grid[[1]])
+for (nm in names(clean)) compare_zscores(models[[nm]], clean[[nm]], grid[[1]])
 
 ## 5. inspect the surviving disclosive bits before sending
 for (nm in names(clean)) \{
@@ -141,10 +141,10 @@ clean <- sanitize_gamlss(iris_model, xranges = list(Sepal.Length = c(4, 8)))
 audit_gamlss(clean)
 
 grid <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
-check_equivalent(iris_model, clean, grid[[1]])
+compare_zscores(iris_model, clean, grid[[1]])
 
 }
 \seealso{
-\code{\link[=audit_gamlss]{audit_gamlss()}} to check the result, \code{\link[=check_equivalent]{check_equivalent()}} to
+\code{\link[=audit_gamlss]{audit_gamlss()}} to check the result, \code{\link[=compare_zscores]{compare_zscores()}} to
 confirm predictions are unchanged.
 }

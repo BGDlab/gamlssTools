@@ -58,12 +58,14 @@ reconstruct the training data. The result still works with `score_centiles()`, `
 clean <- sanitize_gamlss(model, xranges = list(age_days = c(0, 36500)))
 
 audit_gamlss(clean)                       # anything per-observation left?
-check_equivalent(model, clean, grid[[1]]) # do predictions still match?
+compare_zscores(model, clean, grid[[1]])  # do predictions still match?
 ```
 
 `audit_gamlss()` walks the object -- lists, attributes and closure environments -- and reports any
-surviving long vector. `check_equivalent()` confirms the sanitized model reproduces the original's
-fitted parameters. A few small things survive by necessity (factor levels, `random()` level names, the
+surviving long vector. `compare_zscores()` reports the largest difference, in z units, between the scores the two models
+assign to the same grid. Either model can be predicted with its fitting data in scope
+(`reference_data` / `comparison_data`) or without it, so the same function also compares two
+different models of one outcome, or a model against its own data-free prediction. A few small things survive by necessity (factor levels, `random()` level names, the
 fitting `N`, and each smooth's covariate range); see `?sanitize_gamlss` for the full list and check them
 by eye before sharing.
 
