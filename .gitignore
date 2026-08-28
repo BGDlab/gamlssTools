@@ -5,6 +5,7 @@
 inst/doc
 *.Rcheck/
 ..Rcheck/
+figs/
 
 # local scratch scripts
 check_nusigma.R
