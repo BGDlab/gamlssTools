@@ -29,6 +29,7 @@ Suggests:
     gamlss2,
     gamlss2charts
 Imports:
+	utils,
 	tibble,
 	tidyr,
 	foreach,

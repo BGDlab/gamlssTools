@@ -47,6 +47,26 @@ Rows whose `Study` level was in the fitting data are scored normally. For rows w
 estimated and removed (via `gamlss2charts::predict_score()`) before the centile is computed. 
 See the [gamlss2charts](https://github.com/andy1764/gamlss2charts/tree/dev) documentation for additional details.
 
+### Sharing models
+
+`sanitize_gamlss()` strips every per-observation component out of a fitted gamlss model while keeping
+data-free prediction intact, so a model can be shared with collaborators who should not be able to
+reconstruct the training data. The result still works with `score_centiles()`, `centile_fan_values()`,
+`make_centile_fan()` and the rest of the prediction functions.
+
+``` r
+clean <- sanitize_gamlss(model, xranges = list(age_days = c(0, 36500)))
+
+audit_gamlss(clean)                       # anything per-observation left?
+check_equivalent(model, clean, grid[[1]]) # do predictions still match?
+```
+
+`audit_gamlss()` walks the object -- lists, attributes and closure environments -- and reports any
+surviving long vector. `check_equivalent()` confirms the sanitized model reproduces the original's
+fitted parameters. A few small things survive by necessity (factor levels, `random()` level names, the
+fitting `N`, and each smooth's covariate range); see `?sanitize_gamlss` for the full list and check them
+by eye before sharing.
+
 ### Bootstrapping and Confidence Intervals
 
 Several functions borrow from/adapt from the [gamlss-dev suite](https://github.com/gamlss-dev) to easily fit models to bootstrapped samples

@@ -215,3 +215,122 @@ test_that("aliased (NA) coefficients don't poison the data-free prediction", {
 
   expect_equal(score_centiles(m, d), gold_centiles(m, d), tolerance = tol)
 })
+
+test_that("smooths on a transformed covariate are not data-free eligible", {
+  d <- sim_datafree()
+
+  # pb(log(Age)) stores a smooth of log(Age), but reconstruction would evaluate
+  # it at raw Age -- silently wrong. It must be reported ineligible.
+  m <- gamlss::gamlss(Pheno ~ pb(log(Age)) + Sex, data = d, family = "NO",
+                      trace = FALSE)
+  expect_false(.datafree_eligible_gamlss(m))
+
+  # so the dispatcher refuses rather than returning wrong numbers ...
+  nd <- d[1:25, ]
+  expect_error(.predict_params_gamlss(m, newdata = nd), regexp = "bare column name")
+
+  # ... and with the data supplied it matches predictAll() exactly
+  free <- .predict_params_gamlss(m, newdata = nd, data = d)
+  gold <- gamlss::predictAll(m, newdata = nd, data = d, type = "response")
+  expect_equal(free$mu, gold$mu, tolerance = tol)
+
+  # the same model with the transform precomputed as a column IS eligible
+  d$logAge <- log(d$Age)
+  m2 <- gamlss::gamlss(Pheno ~ pb(logAge) + Sex, data = d, family = "NO",
+                       trace = FALSE)
+  expect_true(.datafree_eligible_gamlss(m2))
+  expect_equal(.predictAll_nodata_gamlss(m2, d[1:25, ])$mu,
+               gamlss::predictAll(m2, newdata = d[1:25, ], data = d,
+                                  type = "response")$mu,
+               tolerance = tol)
+})
+
+test_that("data-dependent parametric terms are not data-free eligible", {
+  d <- sim_datafree()
+
+  # poly()/ns()/bs()/scale()/cut() build their columns from the whole covariate
+  # vector, so rebuilding them on newdata alone gives a different basis to the
+  # one that was fitted -- the stored coefficients then mean something else.
+  m <- gamlss::gamlss(Pheno ~ pb(Age) + poly(Age, 2) + Sex, data = d,
+                      family = "NO", trace = FALSE)
+  expect_false(.datafree_eligible_gamlss(m))
+
+  # the dispatcher refuses rather than returning wrong numbers ...
+  nd <- d[1:25, ]
+  expect_error(.predict_params_gamlss(m, newdata = nd), regexp = "computed from the data")
+
+  # ... and with the data supplied it still matches predictAll()
+  free <- suppressWarnings(.predict_params_gamlss(m, newdata = nd, data = d))
+  gold <- suppressWarnings(gamlss::predictAll(m, newdata = nd, data = d,
+                                              type = "response"))
+  expect_equal(free$mu, gold$mu, tolerance = tol)
+
+  # how wrong the data-free path would have been, had it not been refused:
+  # a grid that does not match the fitting distribution shifts the rebuilt basis
+  grid <- data.frame(Age = seq(1, 6, length.out = 100),
+                     Sex = factor("M", levels = levels(d$Sex)))
+  wrong <- .predictAll_nodata_gamlss(m, grid)$mu
+  right <- suppressWarnings(gamlss::predictAll(m, newdata = grid, data = d,
+                                               type = "response")$mu)
+  expect_gt(max(abs(wrong - right)), 0.1)     # measured ~0.75, vs sd(Pheno) ~0.93
+
+  # the same fit with the basis precomputed as plain columns IS eligible
+  P <- stats::poly(d$Age, 2)
+  d2 <- transform(d, p1 = P[, 1], p2 = P[, 2])
+  m2 <- gamlss::gamlss(Pheno ~ pb(Age) + p1 + p2 + Sex, data = d2,
+                       family = "NO", trace = FALSE)
+  expect_true(.datafree_eligible_gamlss(m2))
+})
+
+test_that("the data-dependent screen looks in the right places", {
+  d <- sim_datafree()
+
+  # a sigma formula is screened too
+  m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, sigma.formula = ~ poly(Age, 2),
+                      data = d, family = "NO", trace = FALSE)
+  expect_false(.datafree_eligible_gamlss(m))
+  expect_match(.datadep_labels(m), "^sigma: ")
+
+  # pointwise transforms are fine -- I(Age^2) is computed row by row
+  m2 <- gamlss::gamlss(Pheno ~ pb(Age) + I(Age^2) + Sex, data = d,
+                       family = "NO", trace = FALSE)
+  expect_true(.datafree_eligible_gamlss(m2))
+  expect_length(.datadep_labels(m2), 0)
+
+  # pb() is immune: its knots live in the smoother, not in the model matrix
+  m3 <- gamlss::gamlss(Pheno ~ pb(Age, control = pb.control(inter = 40)) + Sex,
+                       data = d, family = "NO", trace = FALSE)
+  expect_length(.datadep_labels(m3), 0)
+
+  # drop.term excuses a term that is about to be zeroed out anyway
+  expect_length(.datadep_labels(m, drop.term = "Age"), 0)
+})
+
+test_that(".called_funs finds nested and namespaced calls", {
+  f <- function(x) .called_funs(str2lang(x))
+  expect_true("ns"   %in% f("splines::ns(Age, 3)"))
+  expect_true("poly" %in% f("poly(Age, 2):Sex"))
+  expect_true("cut"  %in% f("I(cut(Age, 3))"))
+  # a bare column, and a column that merely shares a name with a screened
+  # function, are not calls to it
+  expect_length(f("Age"), 0)
+  expect_false("scale" %in% f("I(scale + 1)"))
+})
+
+test_that(".smooth_arg finds the covariate wherever it sits in the call", {
+  bare <- c("pb(Age)", "pb(Age, df = 3)", "pb(x = Age, df = 3)",
+            "pb(Age, control = pb.control(inter = 40))",
+            "random(Study)", "random(Study, df = 2)")
+  for (lab in bare) {
+    a <- .smooth_arg(lab)
+    expect_true(is.name(a), info = lab)
+    expect_equal(as.character(a), if (grepl("^random", lab)) "Study" else "Age",
+                 info = lab)
+  }
+
+  for (lab in c("pb(log(Age))", "pb(I(Age^2))"))
+    expect_false(is.name(.smooth_arg(lab)), info = lab)
+
+  # not a supported smoother at all
+  expect_null(.smooth_arg("cs(Age)"))
+})

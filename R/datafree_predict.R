@@ -13,19 +13,111 @@
 
 ################################################
 
+# ---- internal: the covariate a smoother is applied to ------------------------
+# Returns a smooth term label's first argument as a language object, or NULL if
+# the label is not a pb()/random() call. match.call() is used so that the
+# covariate is found wherever it sits: pb(Age), pb(x = Age, df = 3) and
+# pb(Age, control = pb.control(inter = 40)) all resolve to `Age`.
+#' @keywords internal
+#' @noRd
+.smooth_arg <- function(lab) {
+  e <- tryCatch(str2lang(lab), error = function(err) NULL)
+  if (is.null(e) || !is.call(e)) return(NULL)
+  fn <- switch(as.character(e[[1]]),
+               pb     = gamlss::pb,
+               random = gamlss::random,
+               NULL)
+  if (is.null(fn)) return(NULL)
+  mc <- tryCatch(match.call(fn, e), error = function(err) NULL)
+  if (is.null(mc)) return(NULL)
+  mc$x
+}
+
+# ---- internal: parametric terms whose columns are computed from the data -----
+# poly(), ns(), bs(), scale() and cut() derive their columns from the WHOLE
+# covariate vector rather than row by row, so the same term evaluated on newdata
+# is a DIFFERENT basis to the one that was fitted. Data-free prediction rebuilds
+# the parametric design from newdata alone, which would apply the stored
+# coefficients to the wrong basis and return silently wrong numbers (measured at
+# ~0.2 SD of the response for a poly(Age, 2) term, and worse on a grid that does
+# not span the fitting range).
+#
+# These terms also defeat the DEFAULT reference in check_equivalent(): the
+# original and the sanitized model are then both predicted data-free and make the
+# SAME mistake, so the comparison looks clean. Refusing them up front is what
+# keeps that check honest.
+#
+# pb() is not affected. It returns the raw covariate into the model frame and
+# keeps its knots, penalty and lambda inside the smoother, which is predicted
+# from its stored interpolation function rather than from a rebuilt basis.
+#
+# The fix is the same as for pb(log(Age)): precompute the basis as plain columns
+# and put those in the formula.
+.datadep_funs <- c("poly", "ns", "bs", "scale", "cut")
+
+# ---- internal: every function called anywhere in a term label ----------------
+# Recurses, so nested and namespaced calls are seen too: splines::ns(Age, 3) and
+# poly(Age, 2):Sex both report "ns" / "poly". Only call heads are collected, so a
+# column merely NAMED scale is not mistaken for a call to scale().
+#' @keywords internal
+#' @noRd
+.called_funs <- function(e) {
+  if (!is.call(e)) return(character())
+  fn <- e[[1]]
+  nm <- if (is.name(fn)) as.character(fn)
+        else if (is.call(fn) && as.character(fn[[1]]) %in% c("::", ":::"))
+          as.character(fn[[3]])
+        else character()
+  c(nm, unlist(lapply(as.list(e)[-1], .called_funs), use.names = FALSE))
+}
+
+# ---- internal: the data-dependent parametric terms in a fit ------------------
+# Returns them labelled "<parameter>: <term>", empty when there are none. Smooth
+# terms are skipped -- they are screened by the bare-name rule below instead.
+#' @keywords internal
+#' @noRd
+.datadep_labels <- function(object, drop.term = NULL) {
+  out <- character()
+  for (p in object$parameters) {
+    fo <- object[[paste0(p, ".formula")]]
+    if (is.null(fo)) next
+    tl <- attr(stats::terms(fo), "term.labels")
+    sm <- colnames(object[[paste0(p, ".s")]])
+    for (lab in setdiff(tl, sm)) {
+      e <- tryCatch(str2lang(lab), error = function(err) NULL)
+      if (is.null(e) || !is.call(e)) next
+      if (!any(.called_funs(e) %in% .datadep_funs)) next
+      if (!is.null(drop.term) && drop.term %in% all.vars(e)) next
+      out <- c(out, paste0(p, ": ", lab))
+    }
+  }
+  out
+}
+
 # ---- internal: is a gamlss fit eligible for data-free prediction? ------------
-# TRUE when the model has NO kept smoother of an unsupported type -- i.e. every
-# smooth term is a pb() smooth or a random() effect (purely parametric models,
-# which have no smooth terms, are trivially eligible). `drop.term`, if supplied,
-# is excluded from the check.
+# TRUE when every kept smooth term is a pb() smooth or a random() effect applied
+# to a BARE COLUMN NAME (purely parametric models, which have no smooth terms,
+# are trivially eligible). `drop.term`, if supplied, is excluded from the check.
+#
+# The bare-name requirement matters. Reconstruction evaluates the stored
+# interpolation function at newdata[[v]], where v is the covariate named in the
+# label -- so a smooth of a TRANSFORMED covariate, pb(log(Age)), would be fed
+# raw Age and silently return wrong values. Such a model is reported ineligible
+# so the caller falls back to predictAll() with the original data. Precompute
+# the transform as a column, pb(logAge), to stay on the data-free path.
+#
+# A fit carrying a data-dependent PARAMETRIC term is refused for the same
+# reason -- see .datadep_labels() above.
 #' @keywords internal
 #' @noRd
 .datafree_eligible_gamlss <- function(object, drop.term = NULL) {
   ok <- TRUE
+  if (length(.datadep_labels(object, drop.term = drop.term))) ok <- FALSE
   for (p in object$parameters) {
     sm <- colnames(object[[paste0(p, ".s")]])
     for (lab in sm) {
-      supported <- grepl("^pb\\(", lab) || grepl("^random\\(", lab)
+      arg       <- .smooth_arg(lab)
+      supported <- !is.null(arg) && is.name(arg)
       dropped   <- !is.null(drop.term) && drop.term %in% all.vars(str2lang(lab))
       if (!supported && !dropped) ok <- FALSE
     }
@@ -154,8 +246,13 @@
     return(.predictAll_nodata_gamlss(object, newdata, drop.term = drop.term))
   }
   if (is.null(data)) {
-    stop("Model contains a smoother that can't be reconstructed without the original",
-        " data (cs/ps/ga/s); supply the original fitting data (e.g. `fit_data`)")
+    stop("Model contains a term that can't be reconstructed without the ",
+         "original data -- an unsupported smoother (cs/ps/ga/s), a ",
+         "pb()/random() applied to an expression rather than a bare column name ",
+         "(e.g. pb(log(Age)); precompute it as a column to avoid this), or a ",
+         "parametric term whose columns are computed from the data ",
+         "(poly/ns/bs/scale/cut; likewise precompute it). ",
+         "Supply the original fitting data (e.g. `fit_data`)")
   }
   predictAll(object, newdata = newdata, data = data, type = "response")
 }
