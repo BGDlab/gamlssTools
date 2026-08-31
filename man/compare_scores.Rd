@@ -19,41 +19,53 @@ compare_scores(
 \item{gamlssModel1, gamlssModel2}{the two fitted \code{gamlss} models to compare.}
 
 \item{data}{dataframe of observations to score with both models, for the
-z-score comparison. Must contain the response and every covariate both models
-need. Supply this, \code{sim_grid_list}, or both -- at least one is required.}
+z-score comparison. Supply this, \code{sim_grid_list}, or both}
 
 \item{sim_grid_list}{output of \code{\link[=sim_grid]{sim_grid()}}: a named list of covariate grids,
 one per level of the factor it was built over. Used for the centile
-comparison, which needs no response.}
+comparison. A warning is raised if the grid coincides with a rebuilt \code{pb()}
+spline's own nodes, which it reproduces exactly: comparing only there reports
+0 however poor the rebuild is. \code{\link[=sim_grid]{sim_grid()}} returns 500 points spanning the
+covariate range, so this happens whenever a model was sanitized with
+\code{grid_n = 500}. Any other number of points avoids it.}
 
 \item{cent_to_check}{centiles at which to compare predicted values, as values
 between 0 and 1. Only used with \code{sim_grid_list}.}
 
-\item{tol}{tolerance for both comparisons, in z units -- that is, in standard
-deviations, so it means the same thing on either path and needs no rescaling
-for your response. The centile comparison divides each difference in
-predicted y by the reference model's local response-scale SD before applying
-\code{tol}. Both paths report a \emph{maximum} absolute difference, so neither can
-average a single badly reproduced point away.}
+\item{tol}{tolerance for both comparisons, in z units}
 
-\item{fit_data1, fit_data2}{the fitting data for each model. Supplied per
-model, so a data-based reference can be compared against a data-free one:
-when \code{NULL} that model is predicted data-free, otherwise it is predicted with
-its data in scope.}
+\item{fit_data1, fit_data2}{the fitting data for each model. If \code{NULL}(default)
+that model is predicted data-free.}
 }
 \value{
-invisibly, a list with the components the call produced: \code{z}, a
+invisibly, a list with the components the call produced: \code{z_diffs}, a
 named numeric of the \code{max} and \code{mean} absolute z-score difference; and
-\code{centiles}, a named list holding, for each level of \code{sim_grid_list}, the
+\code{centile_diff}, a named list holding, for each level of \code{sim_grid_list}, the
 maximum absolute z difference at each centile checked.
 }
 \description{
-Compare either the z-scores that two models assign the same observations OR compare
+Compare either the z-scores that two models assign the same observations and/or compare
 the predicted values of y at each centile.
 }
 \details{
 Cannot currently handle \code{data} that contains out-of-sample observations (i.e.
 new batches)
+}
+\examples{
+#compare regular and datafree prediction path
+iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+sim_df_list <- sim_grid(iris, "Sepal.Length", "Species")
+
+compare_scores(iris_model, iris_model, data=iris, sim_grid_list=sim_df_list, fit_data1=iris, fit_data2=NULL)
+
+#compare regular model object and 'sanitized' model object
+clean_mod <- sanitize_gamlss(iris_model)
+compare_scores(iris_model, clean_mod, data=iris, sim_grid_list=sim_df_list)
+
+#compare two different models of the same outcome var
+iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + random(Species), sigma.formula = ~ Sepal.Length, data=iris)
+compare_scores(iris_model, iris_model2, data=iris, sim_grid_list=sim_df_list)
+
 }
 \seealso{
 \code{\link[=sanitize_gamlss]{sanitize_gamlss()}}, \code{\link[=score_centiles]{score_centiles()}}, \code{\link[=sim_grid]{sim_grid()}}

@@ -17,7 +17,6 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
   directly from the stored fit: parametric terms from `coef()` and `model.matrix()`,
   `pb()` smooths from their stored linear coefficient plus stored interpolation 
   function, and `random()` effects from their stored per-level BLUPs. 
-  This mirrors the approach taken by the gamlss2charts package.
 
 * Data-free prediction is now the default for `gamlss` fits in `score_centiles()`,
   `centile_fan_values()`, `sigma_values()`, `remove_effects()`, `make_centile_fan()`,
@@ -25,31 +24,10 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
   data) forces the exact `gamlss::predictAll()` path instead.
 
 * Models containing a smoother that cannot be reconstructed this way (`cs()`, `ps()`,
-  `ga()`, `s()`) are detected up front and raise an informative error asking for
-  `fit_data`, rather than failing obscurely.
-
-* Models containing a parametric term whose columns are computed from the data as a
-  whole (`poly()`, `ns()`, `bs()`, `scale()`, `cut()`) are likewise detected up front.
-  Such a term is a different basis every time it is rebuilt, so applying the stored
-  coefficients to a basis rebuilt from `newdata` alone gives silently wrong
-  predictions. Precompute the basis as plain columns and refit to stay on the
-  data-free path, as for `pb(log(Age))`.
+  `ga()`, `s()`) and/or a parametric term whose columns are computed from the data as a
+  whole (`poly()`, `ns()`, `bs()`, `scale()`, `cut()`) are detected up front and ask for `fit_data`.
 
 * `gamlss2` fits continue to use gamlss2's own `predict()` and are unaffected.
-
-## Bug fixes
-
-* Data-free prediction returned silently wrong values for models with a smooth
-  on a *transformed* covariate, e.g. `pb(log(Age))`. The covariate was resolved
-  with `all.vars(...)[1]`, yielding `Age`, so the stored interpolation function
-  -- a smooth of `log(Age)` -- was evaluated at raw `Age`. On a converged test
-  fit this put fitted `mu` in the range 6.07-25.97 where `predictAll()` gives
-  5.02-8.43: a maximum error of 17.5 on a response whose SD is 0.93, with no
-  error or warning. `.datafree_eligible_gamlss()` now resolves the covariate
-  with `match.call()` and requires it to be a bare column name, so such models
-  fall back to the exact `predictAll()` path (or raise an informative error)
-  instead. Precomputing the transform as a column, `pb(logAge)`, keeps a model
-  on the data-free path and is exact to ~7e-15.
 
 ## Sharing models
 
@@ -66,73 +44,10 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
   data-free (`cs()`, `ps()`, `ga()`, `s()`) are refused.
 
 * `audit_gamlss()` recursively walks an object -- lists, attributes and closure
-  environments -- and reports every atomic vector longer than `max_len`,
-  flagging those of length exactly `n`. `pb()` interpolation functions are
-  checked for an evenly spaced grid rather than by length, so a rebuilt smooth
-  is not confused with surviving covariate data (and vice versa) when `grid_n`
-  happens to match the sample size.
-
-* `compare_scores()` reports the largest disagreement between two `gamlss`
-  models -- most often a model and a sanitized copy of it, so you can verify
-  `grid_n` and the `pb()` ranges before sharing. It offers two comparisons, and
-  will run either or both: give `data` to compare the z-scores the models assign
-  to a set of observations, and/or `sim_grid_list` (the output of `sim_grid()`)
-  to compare the values of y they predict at each centile.
-
-  Both are reported in z units -- `qnorm()` of the centile, as in
-  `score_centiles(standardize = TRUE)` -- rather than in raw distribution
-  parameters or on the response's own scale. A score is what collaborators
-  consume and is dimensionless, whereas an absolute tolerance on `mu` is
-  meaningless without knowing the response's scale (multiply the outcome by
-  10,000 and `mu`'s error multiplies by 10,000 too), and no single tolerance
-  suits `mu`, `sigma` and `nu` at once. z-scores rather than the centiles they
-  derive from because centile differences are compressed in the tails, so a
-  centile tolerance under-weights exactly the tail errors that matter for
-  screening; in z units the error runs roughly flat across the distribution
-  (measured spread 1.8x, against ~21x in centile units). For the centile
-  comparison each difference in predicted y is divided by the reference model's
-  local response-scale SD, taken as the half-width of its +/-1 SD interval from
-  its own quantile function -- `sigma` will not do, since in the BCCG family and
-  its relatives it is a coefficient of variation and `nu`'s skew makes
-  `mu * sigma` the wrong width. Both paths report a maximum, so neither can
-  average a single badly reproduced point away.
-
-  `tol` therefore means the same thing on either path and defaults to 1e-6 --
-  a millionth of a standard deviation. Note that `grid_n = 500` does not always
-  reach it: a smooth spending ~6.5 edf measured 1.7e-06 at `grid_n = 500` and
-  5.3e-09 at 2000.
-
-* `compare_scores()` takes a prediction path per model, `fit_data1` and
-  `fit_data2`. Left `NULL` a model is reconstructed data-free; given its fitting
-  data it goes through `predictAll()` with the data in scope. That makes one
-  function cover verifying a sanitized model (both `NULL`, isolating what
-  sanitizing changed), validating the whole chain a collaborator depends on
-  (`fit_data1` only: data-based -> data-free -> sanitized in one number),
-  comparing a model against its own data-free prediction with no sanitizing
-  involved, and comparing two different models of the same outcome. The two
-  models need not share a family; each is scored under its own, which is
-  possible only because the comparison is in z units.
-
-  Pass a *dense* grid either way: the error is pointwise, and on one ~11 edf fit
-  50 observed rows reported 4.6e-07 where a 2000-point grid over the same range
-  reported 5.8e-06.
-
-* `sanitize_gamlss()` refuses models whose `pb()` smooths were fitted with
-  `pb.control(quantiles = TRUE)`. Such a fit places its knots at sample
-  quantiles of the covariate rather than on an even grid, and the knot vector is
-  stored in the model: on a default `inter = 20` fit, 18 of the 24 stored knots
-  are exact quantiles of the fitting data. That describes the covariate's
-  distribution rather than just its range, so the model is rejected rather than
-  sanitized. Refit with the default evenly spaced knots to share it.
-
-* `sanitize_gamlss()` warns when `grid_n` looks too coarse for a smooth's
-  effective degrees of freedom (fewer than `points_per_edf = 200` grid points
-  per edf). How faithful a rebuilt smooth is depends on how wiggly it is, and
-  `grid_n` now defaults to 2000 so that the result meets `compare_scores()`'s
-  1e-6 tolerance: a smooth spending 6.5 edf measured 1.7e-06 at `grid_n = 500`
-  against 5.3e-09 at 2000, and one spending 12.8 edf needed the full 2000 to
-  reach 9.1e-07. Reaching 1e-6 took roughly 100-160 points per edf across the
-  fits measured, so the 200 threshold errs toward warning.
+  environments -- and reports every atomic vector of length exactly `n`. 
+  `pb()` interpolation functions are checked for an evenly spaced grid rather than 
+  by length, so a rebuilt smooth is not confused with surviving covariate data 
+  (and vice versa) when `grid_n` happens to match the sample size.
 
 ## Diagnostics
 
@@ -145,12 +60,12 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
 * `centile_coverage()` also gains `batch_term`, passed through to `score_centiles()` so coverage can
   be checked on data containing unseen levels of a site/study/batch variable. It only applies when
   scoring from `gamlssModel` - combining it with `centiles` is an error.
+  
+* added `compare_scores()` to compare the predicted z-scores of a dataframe and/or predicted
+  centile values across two models (or the same model predicted datafree and/or 'sanitized' for)
+  sharing.
 
-* `centile_coverage()` now errors on an unrecognized argument rather than letting `...` swallow it.
-  `...` is only ever passed to `cut_interval()`, so without `interval_var` a misspelled (or
-  not-yet-installed) argument used to disappear silently.
-
-## Out-of-Sample prediction draft
+## Out-of-Sample Prediction
 
 * `score_centiles()` gains `batch_term`, for scoring data containing levels of a
   site/study/batch variable the model was never fit on. Offsets for unseen levels are

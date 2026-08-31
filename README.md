@@ -30,7 +30,11 @@ Related functions include `centile_fan_values()` and `sigma_values()` (the value
 `pheno_at_centiles()` (the phenotype value at a given centile), and `sim_grid()` (build a prediction grid
 once and reuse it across plots).
 
-#### Scoring out-of-sample data (in development)
+`score_centiles()` is useful for comparing the centile/z-scores predicted from two different gamlss models.
+Either model can be predicted with its fitting data in scope (`fit_data1` / `fit_data2`) or without it, 
+so the same function also compares two different models of one outcome, or a model against its own data-free prediction. 
+
+#### Scoring out-of-sample data
 
 > ⚠️ **This is a draft implementation.** It requires the `dev` branch of
 > [gamlss2charts](https://github.com/andy1764/gamlss2charts/tree/dev):
@@ -53,23 +57,6 @@ See the [gamlss2charts](https://github.com/andy1764/gamlss2charts/tree/dev) docu
 data-free prediction intact, so a model can be shared with collaborators who should not be able to
 reconstruct the training data. The result still works with `score_centiles()`, `centile_fan_values()`,
 `make_centile_fan()` and the rest of the prediction functions.
-
-``` r
-clean <- sanitize_gamlss(model, xranges = list(age_days = c(0, 36500)))
-
-audit_gamlss(clean)                              # anything per-observation left?
-compare_scores(model, clean, data = df)          # same z-scores for these observations?
-compare_scores(model, clean, sim_grid_list = grid)  # same y at each centile?
-```
-
-`audit_gamlss()` walks the object -- lists, attributes and closure environments -- and reports any
-surviving long vector. `compare_scores()` reports the largest difference between two models, in z units:
-give `data` to compare the z-scores they assign to a set of observations, `sim_grid_list` to compare the
-y values they predict at each centile, or both. Either model can be predicted with its fitting data in
-scope (`fit_data1` / `fit_data2`) or without it, so the same function also compares two
-different models of one outcome, or a model against its own data-free prediction. A few small things survive by necessity (factor levels, `random()` level names, the
-fitting `N`, and each smooth's covariate range); see `?sanitize_gamlss` for the full list and check them
-by eye before sharing.
 
 ### Bootstrapping and Confidence Intervals
 

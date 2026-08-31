@@ -50,6 +50,41 @@
   diff(range(dk)) <= 1e-8 * max(abs(dk))
 }
 
+# ---- internal: evaluation points that sit on a rebuilt spline's own nodes ----
+# A rebuilt pb() spline reproduces its grid nodes exactly, so a comparison made
+# only at those nodes measures nothing and reports 0 however bad the rebuild is.
+# Easy to hit by accident: sim_grid() returns 500 points spanning the covariate
+# range, so a model sanitized with grid_n = 500 aliases onto every one of them.
+#
+# Only EVENLY SPACED node sets count. An unsanitized fit's splinefun holds the
+# observed covariate values, which are uneven -- scoring the fitting data against
+# those is a genuine comparison, not a vacuous one, and must not be flagged.
+#' @keywords internal
+#' @noRd
+.aliased_covariates <- function(object, newdata, min_frac = 0.5) {
+  hits <- list()
+  for (p in object$parameters) {
+    labs <- colnames(object[[paste0(p, ".s")]])
+    smos <- object[[paste0(p, ".coefSmo")]]
+    for (i in seq_along(smos)) {
+      if (!inherits(smos[[i]], "pb")) next
+      v <- .smooth_arg(labs[i])
+      if (is.null(v) || !is.name(v)) next
+      v <- as.character(v)
+      if (is.null(newdata[[v]])) next
+      nodes <- environment(smos[[i]]$fun)$z$x
+      if (is.null(nodes) || length(nodes) < 4) next
+      dx <- diff(nodes)
+      if (diff(range(dx)) > 1e-8 * max(abs(dx))) next   # not a rebuilt grid
+      frac <- mean(newdata[[v]] %in% nodes)
+      if (frac > min_frac)
+        hits[[v]] <- sprintf("%s (%.0f%% of points)", v, 100 * frac)
+    }
+  }
+  unlist(hits, use.names = FALSE)
+}
+
+
 #' Strip per-observation data out of a fitted gamlss model
 #'
 #' Returns a copy of `gamlssModel` that still supports data-free prediction (i.e.
@@ -425,19 +460,38 @@ audit_gamlss <- function(x, max_len = 50, max_depth = 15,
 #' z-score comparison. Supply this, `sim_grid_list`, or both
 #' @param sim_grid_list output of [sim_grid()]: a named list of covariate grids,
 #' one per level of the factor it was built over. Used for the centile
-#' comparison.
+#' comparison. A warning is raised if the grid coincides with a rebuilt `pb()`
+#' spline's own nodes, which it reproduces exactly: comparing only there reports
+#' 0 however poor the rebuild is. [sim_grid()] returns 500 points spanning the
+#' covariate range, so this happens whenever a model was sanitized with
+#' `grid_n = 500`. Any other number of points avoids it.
 #' @param cent_to_check centiles at which to compare predicted values, as values
 #' between 0 and 1. Only used with `sim_grid_list`.
 #' @param tol tolerance for both comparisons, in z units
 #' @param fit_data1,fit_data2 the fitting data for each model. If `NULL`(default) 
 #' that model is predicted data-free.
 #'
-#' @returns invisibly, a list with the components the call produced: `z`, a
+#' @returns invisibly, a list with the components the call produced: `z_diffs`, a
 #' named numeric of the `max` and `mean` absolute z-score difference; and
-#' `centiles`, a named list holding, for each level of `sim_grid_list`, the
+#' `centile_diff`, a named list holding, for each level of `sim_grid_list`, the
 #' maximum absolute z difference at each centile checked.
 #'
 #' @seealso [sanitize_gamlss()], [score_centiles()], [sim_grid()]
+#' 
+#' @examples
+#' #compare regular and datafree prediction path
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+#' sim_df_list <- sim_grid(iris, "Sepal.Length", "Species")
+#' 
+#' compare_scores(iris_model, iris_model, data=iris, sim_grid_list=sim_df_list, fit_data1=iris, fit_data2=NULL)
+#' 
+#' #compare regular model object and 'sanitized' model object
+#' clean_mod <- sanitize_gamlss(iris_model)
+#' compare_scores(iris_model, clean_mod, data=iris, sim_grid_list=sim_df_list)
+#' 
+#' #compare two different models of the same outcome var
+#' iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + random(Species), sigma.formula = ~ Sepal.Length, data=iris)
+#' compare_scores(iris_model, iris_model2, data=iris, sim_grid_list=sim_df_list)
 #'
 #' @export
 compare_scores <- function(gamlssModel1,
@@ -455,6 +509,23 @@ compare_scores <- function(gamlssModel1,
     stop("nothing to compare: supply `data` to compare z-scores for a set of ",
          "observations, `sim_grid_list` to compare predicted values at each ",
          "centile, or both", call. = FALSE)
+
+  ## Refuse to report a comparison that cannot see anything: if the points being
+  ## compared are the rebuilt spline's own nodes, it reproduces them exactly and
+  ## every difference is 0 regardless of how faithful the rebuild is.
+  aliased <- character()
+  for (df in c(if (!is.null(data)) list(data), sim_grid_list))
+    for (mod in list(gamlssModel1, gamlssModel2))
+      aliased <- c(aliased, .aliased_covariates(mod, df))
+  aliased <- unique(aliased)
+  if (length(aliased))
+    warning("the points being compared land on a rebuilt spline's own grid ",
+            "nodes: ", paste(aliased, collapse = ", "),
+            ". The spline reproduces its nodes exactly, so this comparison ",
+            "understates the difference -- very likely reporting 0. Compare ",
+            "somewhere else: build the grid with a number of points other than ",
+            "grid_n (grid_n + 1 is enough), or sanitize at a different grid_n.",
+            call. = FALSE)
 
   out <- list()
 
@@ -499,27 +570,21 @@ compare_scores <- function(gamlssModel1,
                              q_func = paste0("q", gamlssModel2$family[1]),
                              n_param = length(gamlssModel2$parameters))
 
-      # Put the difference on the z scale, so `tol` means the same thing here as
-      # it does for the z-score comparison above. The local response-scale SD is
-      # read off the REFERENCE model's own quantile function as the half-width
-      # of its +/-1 SD interval. sigma cannot be used directly: in the BCCG
-      # family and its relatives sigma is a coefficient of variation, and the
-      # skew from nu makes mu * sigma the wrong width.
+      # Put diff on the z scale. The local response-scale SD is
+      # read off the gamlssModel1's own quantile function as the half-width
+      # of its +/-1 SD interval to work across distribution families
       sd_local <- (q_val1(stats::pnorm(1)) - q_val1(stats::pnorm(-1))) / 2
       if (any(!is.finite(sd_local)) || any(sd_local <= 0))
-        stop("could not put level '", factor_level, "' on the z scale: the ",
-             "reference model's +/-1 SD interval is not finite and positive ",
-             "everywhere on this grid", call. = FALSE)
+        stop("could not put level '", factor_level, "' on the z scale", call. = FALSE)
 
-      # max, not mean, so a single badly reproduced covariate value cannot be
-      # averaged away -- matching the z-score comparison above
+      # get max diff
       cent_res[[factor_level]] <- stats::setNames(
         vapply(seq_along(cent_to_check),
                function(i) max(abs(fanCentiles1[[i]] - fanCentiles2[[i]]) / sd_local),
                numeric(1)),
         cent_nms)
     }
-    out$centiles <- cent_res
+    out$centile_diff <- cent_res
 
     worst <- max(unlist(cent_res))
     if (worst < tol) {
