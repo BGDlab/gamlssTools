@@ -99,7 +99,7 @@ clean <- lapply(models, sanitize_gamlss,
 for (nm in names(clean)) \{ cat("\\n==== ", nm, " ====\\n"); audit_gamlss(clean[[nm]]) \}
 
 ## 4. confirm predictions are unchanged
-for (nm in names(clean)) compare_scores(models[[nm]], clean[[nm]], grid[[1]])
+for (nm in names(clean)) compare_scores(models[[nm]], clean[[nm]], sim_grid_list = grid)
 
 ## 5. inspect the surviving disclosive bits before sending
 for (nm in names(clean)) \{
@@ -110,7 +110,6 @@ for (nm in names(clean)) \{
 
 ## 6. save
 saveRDS(clean, "models_shareable.rds")
-saveRDS(grid,  "prediction_grid.rds")
 }\if{html}{\out{</div>}}
 }
 
@@ -122,8 +121,9 @@ iris_model <- gamlss(Sepal.Width ~ pb(Sepal.Length) + Species,
 clean <- sanitize_gamlss(iris_model, xranges = list(Sepal.Length = c(4, 8)))
 audit_gamlss(clean)
 
+#compare outputs
 grid <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
-compare_scores(iris_model, clean, grid[[1]])
+compare_scores(iris_model, clean, data = iris, sim_grid_list = grid)
 
 }
 \seealso{

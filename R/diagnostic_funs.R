@@ -437,3 +437,170 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
   out$outliers <- n_outer
   return(out)
 }
+
+#' Compare reference scores between gamlss models
+#'
+#' Compare either the z-scores that two models assign the same observations and/or compare
+#' the predicted values of y at each centile.
+#'
+#' Warning: not currently set up to handle/tested with `data` that contains 
+#' out-of-sample observations (i.e. new batches).
+#'
+#' @param gamlssModel1,gamlssModel2 the two fitted `gamlss` models to compare.
+#' @param data dataframe of observations to score with both models, for the
+#' z-score comparison. Supply this, `sim_grid_list`, or both
+#' @param sim_grid_list output of [sim_grid()]: a named list of covariate grids,
+#' one per level of the factor it was built over. Used for the centile
+#' comparison.
+#' @param cent_to_check centiles at which to compare predicted values, as values
+#' between 0 and 1. Only used with `sim_grid_list`.
+#' @param tol tolerance for both comparisons, in z units
+#' @param fit_data1,fit_data2 the fitting data for each model. If `NULL`(default) 
+#' that model is predicted data-free.
+#'
+#' @returns invisibly, a list with the components the call produced: `z_diffs`, a
+#' named numeric of the `max` and `mean` absolute z-score difference; and
+#' `centile_diff`, a named list holding, for each level of `sim_grid_list`, the
+#' maximum absolute z difference at each centile checked.
+#'
+#' @seealso [sanitize_gamlss()], [score_centiles()], [sim_grid()]
+#' 
+#' @examples
+#' #compare regular and datafree prediction path
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
+#' sim_df_list <- sim_grid(iris, "Sepal.Length", "Species")
+#' 
+#' compare_scores(iris_model, iris_model, data=iris, sim_grid_list=sim_df_list, fit_data1=iris, fit_data2=NULL)
+#' 
+#' #compare regular model object and 'sanitized' model object
+#' clean_mod <- sanitize_gamlss(iris_model)
+#' compare_scores(iris_model, clean_mod, data=iris, sim_grid_list=sim_df_list)
+#' 
+#' #compare two different models of the same outcome var
+#' iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + random(Species), sigma.formula = ~ Sepal.Length, data=iris)
+#' compare_scores(iris_model, iris_model2, data=iris, sim_grid_list=sim_df_list)
+#'
+#' @export
+compare_scores <- function(gamlssModel1,
+                           gamlssModel2,
+                           data = NULL,
+                           sim_grid_list = NULL,
+                           cent_to_check = c(0.01, 0.05, 0.25, 0.5,
+                                             0.75, 0.95, 0.99),
+                           tol = 1e-6,
+                           fit_data1 = NULL,
+                           fit_data2 = NULL){
+  
+  stopifnot(inherits(gamlssModel1, "gamlss"), inherits(gamlssModel2, "gamlss"))
+  if (is.null(data) && is.null(sim_grid_list))
+    stop("nothing to compare: supply `data` to compare z-scores for a set of ",
+         "observations, `sim_grid_list` to compare predicted values at each ",
+         "centile, or both", call. = FALSE)
+  
+  ## if the points being compared are the rebuilt spline's own nodes, it reproduces them exactly and
+  ## every difference is 0 regardless of how faithful the rebuild is.
+  aliased <- character()
+  for (df in c(if (!is.null(data)) list(data), sim_grid_list))
+    for (mod in list(gamlssModel1, gamlssModel2))
+      aliased <- c(aliased, .aliased_covariates(mod, df))
+  aliased <- unique(aliased)
+  if (length(aliased))
+    warning("the points being compared land on a rebuilt spline's own grid ",
+            "nodes. The spline reproduces its nodes exactly, so this comparison ",
+            "isn't useful. Rerun sim_grid() with different x_range param OR rerun",
+            "sanitize_gamlss() with a different grid_n so they are no longer identical",
+            call. = FALSE)
+  
+  out <- list()
+  
+  #compare z-scores
+  if (!is.null(data)){
+    std1 <- score_centiles(gamlssModel1, data, fit_data = fit_data1, standardize = TRUE)$std_score
+    std2 <- score_centiles(gamlssModel2, data, fit_data = fit_data2, standardize = TRUE)$std_score
+    
+    stopifnot(length(std1) == length(std2))
+    
+    ## check for NAs
+    bad <- !(is.finite(std1) & is.finite(std2))
+    if (any(bad))
+      stop(sum(bad), " of ", length(bad), " observation(s) could not be scored ",
+           "by both models. compare_scores() cannot handle out-of-sample ",
+           "observations. Restrict `data` to rows whose levels both models saw.", call. = FALSE)
+    
+    #get max diff
+    diff  <- abs(std1 - std2)
+    out$z_diffs <- c(max = max(diff), mean = mean(diff))
+    
+    if (max(diff) < tol) {
+      cat("OK: z-scores match within ", tol, "\n", sep = "")
+    } else {
+      cat("Difference EXCEEDS tol = ", tol, "\n",
+          "Max abs diff = ", max(diff), "\n",
+          "Mean abs diff = ", mean(diff), "\n", sep = "")
+    }
+  }
+  
+  #compare y at each centile
+  if (!is.null(sim_grid_list)){
+    cent_res <- list()
+    cent_nms <- paste0("c", format(cent_to_check * 100, trim = TRUE))
+    
+    # Predict phenotype values for each simulated level of factor_var
+    for (factor_level in names(sim_grid_list)) {
+      sub_df <- sim_grid_list[[factor_level]]
+      
+      # Predict centiles (data-free by default; fit_data forces predictAll path)
+      pred_df1 <- .predict_params_gamlss(gamlssModel1, newdata = sub_df, data = fit_data1)
+      q_val1   <- function(cent) .centile_value(cent, params = pred_df1,
+                                                q_func  = paste0("q", gamlssModel1$family[1]),
+                                                n_param = length(gamlssModel1$parameters))
+      fanCentiles1 <- lapply(cent_to_check, q_val1)
+      
+      pred_df2 <- .predict_params_gamlss(gamlssModel2, newdata = sub_df, data = fit_data2)
+      fanCentiles2 <- lapply(cent_to_check,
+                             .centile_value,
+                             params = pred_df2,
+                             q_func = paste0("q", gamlssModel2$family[1]),
+                             n_param = length(gamlssModel2$parameters))
+      
+      # Put diff on the z scale. The local response-scale SD is
+      # read off the gamlssModel1's own quantile function as the half-width
+      # of its +/-1 SD interval to work across distribution families
+      sd_local <- (q_val1(stats::pnorm(1)) - q_val1(stats::pnorm(-1))) / 2
+      if (any(!is.finite(sd_local)) || any(sd_local <= 0))
+        stop("could not put level '", factor_level, "' on the z scale", call. = FALSE)
+      
+      # get max diff
+      cent_res[[factor_level]] <- stats::setNames(
+        vapply(seq_along(cent_to_check),
+               function(i) max(abs(fanCentiles1[[i]] - fanCentiles2[[i]]) / sd_local),
+               numeric(1)),
+        cent_nms)
+      
+      if (any(!is.finite(cent_res[[factor_level]])))
+        stop("level '", factor_level, "' of sim_grid_list produced non-finite ",
+             "differences; check that both models can predict every row of it",
+             call. = FALSE)
+    }
+    out$centile_diff <- cent_res
+    
+    worst <- max(unlist(cent_res))
+    if (worst < tol) {
+      cat("OK: predicted values at each centile match within ", tol,
+          " (max |z difference| = ", format(worst), ")\n", sep = "")
+    } else {
+      bad <- vapply(cent_res, max, numeric(1))
+      cat("Difference EXCEEDS tol = ", tol, " at ", sum(bad >= tol), " of ",
+          length(bad), " level(s) of sim_grid_list.\n",
+          "Max |z difference| = ", format(worst), "\n", sep = "")
+      for (nm in names(cent_res)[bad >= tol]) {
+        v <- cent_res[[nm]]
+        cat("  ", nm, ": worst at ", names(which.max(v)), " = ",
+            format(max(v)), "\n", sep = "")
+      }
+    }
+  }
+  
+  invisible(out)
+}
+

@@ -80,10 +80,13 @@ pheno_model <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study),
 There are several quantitative and qualitative checks you'll likely want to perform on your models.
 
 First, we can return BIC and AIC built-into the gamlss model object (note: will be different when using gamlss2 objects)
+
 ```{r}
-pheno_model$aic #AIC
 pheno_model$sbc #BIC
+pheno_model$aic #AIC
 ```
+
+Lower BIC means a better fit model. We tend to use this over AIC.
 
 Another helpful check is the worm plot. `wp.taki()` enhances the built-in `gamlss::wp()` by allowing you to break up plots along chunks of a continuous variable (like age) or by levels of a categorical variable (like sex), so you can make sure the model fits all groups well.
 
@@ -95,6 +98,14 @@ wp.taki(xvar=df$logAge, resid=resid(pheno_model))
 df$Sex <- as.factor(df$Sex)
 wp.taki(xvar=df$Sex, resid=resid(pheno_model))
 ```
+
+Below is a quick illustrated reference for interpreting worm plots:
+```{r, echo=FALSE, out.width="70%", fig.align="center"}
+knitr::include_graphics("wormplot_examples.jpg")
+```
+
+For more info, see:
+Stasinopoulos, Dm & Rigby, Robert & Heller, Gillian & Voudouris, Vlasios & De Bastiani, Fernanda. (2017). Flexible regression and smoothing: Using GAMLSS in R. 10.1201/b21973. 
 
 You can also check how well the predicted centiles for each point/subject line up with the percentiles themselves - that is, about 5% of subjects' centiles should be <= 0.05.
 
@@ -114,10 +125,6 @@ df$centile <- score_centiles(pheno_model, df)
 
 centile_coverage(data=df, centiles="centile", group="Sex")
 ```
-
-`centiles` also accepts a plain numeric vector, or the dataframe returned by
-`score_centiles(..., standardize=TRUE)`. `data` is only needed for grouping - with no `group` or
-`interval_var`, the centiles alone are enough (`centile_coverage(centiles=df$centile)`).
 
 ## Calculating Reference Scores
 
@@ -268,4 +275,27 @@ sum(is.na(test_new$centile_min25))
 sum(is.na(test_new$centile_min25)) == sum(test_new$Study == "Study_New")
 ```
 
+### Comparing Reference Scores
 
+It can also be useful to compare the reference scores estimated by two different models on the same dependent variable. For instance, maybe you want to see the practical implications of using different coefficients and how they impact the z-scores predicted to a dataset. 
+Alternatively, maybe you're sharing a modified version of your model with collaborators (see `sanitize_gamlss.R`) and want to confirm that nothing in the output has changed.
+
+To do this, you can use `compare_scores()`, which can compare models on two different outputs:
+* the z-scores estimated for each row in a dataframe (`data`)
+* the y-values of the estimated centile lines (as fit across each level of `sim_grid_list`)
+
+```{r}
+#fit a new model with different splines
+pheno_model2 <- gamlss(formula = Pheno ~ cs(logAge) + Sex + random(Study), 
+                      sigma.formula= ~ cs(logAge) + Sex, data = df, family=BCCG)
+
+#compare z-scores
+#note - need to supply the fit data for pheno_model2 since it contains cs()
+compare_scores(pheno_model, pheno_model2, data=df, fit_data2 = df) 
+
+#compare centile lines
+sim_list <- sim_grid(df, "logAge", "Study")
+compare_scores(pheno_model, pheno_model2, sim_grid_list = sim_list, fit_data2 = df) 
+```
+
+You can also run both comparisons (z-scores and predicted y for each centile line) simultaneously. The function is set up to check for matching outputs, i.e. no differences between the two models. The default tolerance for "no" differences is 1e-6, or 1 millionth of y's standard deviation.
