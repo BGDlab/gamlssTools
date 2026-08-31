@@ -385,3 +385,31 @@ test_that("compare_scores() does not flag an unsanitized model's own nodes", {
   nodes <- environment(clean$mu.coefSmo[[1]]$fun)$z$x
   expect_match(.aliased_covariates(clean, data.frame(Age = nodes)), "Age")
 })
+
+test_that("compare_scores() rejects observations it cannot score", {
+  d <- sim_datafree()
+  # An unseen level of a parametric factor makes score_centiles() return NA.
+  # Use the NO family deliberately: pNO does not check mu, so the NA propagates
+  # and compare_scores() can report it. pBCCG checks `mu > 0` and dies inside
+  # gamlss.dist first, upstream of anything this package can improve.
+  m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d, family = "NO",
+                      trace = FALSE)
+  clean <- sanitize_gamlss(m)
+
+  d_new <- d
+  levels(d_new$Sex) <- c("M", "F", "X")
+  d_new$Sex[1:3] <- "X"
+
+  # without the guard this reaches `if (max(diff) < tol)` as NA and fails with
+  # "missing value where TRUE/FALSE needed", which names neither cause nor cure
+  expect_error(
+    suppressWarnings(suppressMessages(compare_scores(m, clean, data = d_new))),
+    regexp = "could not be scored by both models")
+  # the count is reported, so you can see how much of `data` is affected
+  expect_error(
+    suppressWarnings(suppressMessages(compare_scores(m, clean, data = d_new))),
+    regexp = "^3 of 500 observation")
+
+  # in-sample rows are unaffected
+  expect_no_error(suppressMessages(compare_scores(m, clean, data = d)))
+})

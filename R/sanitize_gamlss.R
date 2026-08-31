@@ -453,7 +453,14 @@ audit_gamlss <- function(x, max_len = 50, max_depth = 15,
 #' the predicted values of y at each centile.
 #'
 #' Cannot currently handle `data` that contains out-of-sample observations (i.e.
-#' new batches)
+#' new batches). An unseen level of a parametric factor makes
+#' [score_centiles()] return `NA`, which is rejected with a message naming how
+#' many rows are affected. Note that whether it gets that far depends on the
+#' family: `pNO()` does not validate `mu`, so the `NA` propagates and is
+#' reported, while `pBCCG()` checks `mu > 0` and fails inside `gamlss.dist`
+#' first, with R's bare "missing value where TRUE/FALSE needed". An unseen level
+#' of a `random()` grouping is not affected either way -- it contributes 0, the
+#' population value, with a warning.
 #'
 #' @param gamlssModel1,gamlssModel2 the two fitted `gamlss` models to compare.
 #' @param data dataframe of observations to score with both models, for the
@@ -534,6 +541,25 @@ compare_scores <- function(gamlssModel1,
     std1 <- score_centiles(gamlssModel1, data, fit_data = fit_data1, standardize = TRUE)$std_score
     std2 <- score_centiles(gamlssModel2, data, fit_data = fit_data2, standardize = TRUE)$std_score
 
+    ## The scores are compared row by row, so they have to describe the same
+    ## rows. Without this the subtraction would recycle silently.
+    if (length(std1) != length(std2))
+      stop("the two models scored different numbers of observations (",
+           length(std1), " vs ", length(std2), "), so their scores cannot be ",
+           "compared row for row", call. = FALSE)
+
+    ## score_centiles() returns NA for observations it cannot place -- a level of
+    ## a parametric factor that was not seen when the model was fitted. Left
+    ## alone these reach `if (max(diff) < tol)` as NA and fail with R's "missing
+    ## value where TRUE/FALSE needed", which says nothing about the cause.
+    bad <- !(is.finite(std1) & is.finite(std2))
+    if (any(bad))
+      stop(sum(bad), " of ", length(bad), " observation(s) could not be scored ",
+           "by both models. compare_scores() cannot handle out-of-sample ",
+           "observations -- levels of a covariate that were not seen when the ",
+           "model was fitted, which score_centiles() returns as NA. Restrict ",
+           "`data` to rows whose levels both models saw.", call. = FALSE)
+
     #get max diff
     diff  <- abs(std1 - std2)
     out$z_diffs <- c(max = max(diff), mean = mean(diff))
@@ -583,6 +609,13 @@ compare_scores <- function(gamlssModel1,
                function(i) max(abs(fanCentiles1[[i]] - fanCentiles2[[i]]) / sd_local),
                numeric(1)),
         cent_nms)
+
+      ## same reasoning as the z-score branch: a non-finite difference would
+      ## otherwise reach `if (worst < tol)` as NA and fail uninformatively
+      if (any(!is.finite(cent_res[[factor_level]])))
+        stop("level '", factor_level, "' of sim_grid_list produced non-finite ",
+             "differences; check that both models can predict every row of it",
+             call. = FALSE)
     }
     out$centile_diff <- cent_res
 

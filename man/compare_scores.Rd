@@ -49,7 +49,14 @@ the predicted values of y at each centile.
 }
 \details{
 Cannot currently handle \code{data} that contains out-of-sample observations (i.e.
-new batches)
+new batches). An unseen level of a parametric factor makes
+\code{\link[=score_centiles]{score_centiles()}} return \code{NA}, which is rejected with a message naming how
+many rows are affected. Note that whether it gets that far depends on the
+family: \code{pNO()} does not validate \code{mu}, so the \code{NA} propagates and is
+reported, while \code{pBCCG()} checks \code{mu > 0} and fails inside \code{gamlss.dist}
+first, with R's bare "missing value where TRUE/FALSE needed". An unseen level
+of a \code{random()} grouping is not affected either way -- it contributes 0, the
+population value, with a warning.
 }
 \examples{
 #compare regular and datafree prediction path
