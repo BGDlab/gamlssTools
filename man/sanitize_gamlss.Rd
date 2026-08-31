@@ -17,17 +17,11 @@ sanitize_gamlss(
 \item{gamlssModel}{a fitted \code{gamlss} model object.}
 
 \item{grid_n}{number of grid points used to rebuild each \code{pb()} interpolation
-function. Defaults to 2000. Higher is more faithful and larger on disk. How
-much you need depends on how wiggly the smooth is, and the default is set to
-meet \code{\link[=compare_zscores]{compare_zscores()}}'s \code{tol} of 1e-6 z units across the fits measured:
-a smooth spending 6.5 edf reached 1.7e-06 at \code{grid_n = 500} but 5.3e-09 at
-2000, and one spending 12.8 edf needed the full 2000 to reach 9.1e-07.}
+function. Defaults to 2000. Higher is more faithful to wigglier smooths but
+makes the stored object larger.}
 
 \item{xranges}{optional named list of covariate ranges, e.g.
-\code{list(age_days = c(0, 36500))}. Use this when you would rather declare the
-range yourself than have it read off the fitted smooth (the fitted range is
-the min/max of your data). A declared range is also written back over the
-smooth's stored knots.}
+\code{list(age_days = c(0, 36500))}, rather than retaining data min/max.}
 
 \item{random_level_map}{optional named character vector mapping old level ->
 new label, for pseudonymising \code{random()} grouping levels. Must cover every
@@ -37,12 +31,7 @@ level of every \code{random()} term.}
 \code{FALSE}: the call can name your data object or embed a subsetting expression.}
 
 \item{points_per_edf}{grid points per effective degree of freedom below which
-\code{grid_n} is warned about. Defaults to 200. Reaching \code{\link[=compare_zscores]{compare_zscores()}}'s
-default \code{tol} of 1e-6 took roughly 100-160 points per edf across the fits
-measured, so 200 leaves margin and errs toward warning. It is a coarse
-heuristic calibrated on a handful of fits, not a guarantee --
-\code{\link[=compare_zscores]{compare_zscores()}} remains the authoritative check. Set to 0 to silence
-the warning.}
+\code{grid_n} is warned about. Defaults to 200. Set to 0 to silence the warning.}
 }
 \value{
 a \code{gamlss} object carrying only the components needed for data-free
@@ -60,34 +49,27 @@ Retains only the components necessary for data-free prediction
 \code{.coefficients}, \code{.coefSmo}, \code{.xlevels}, and fit summaries such as the
 deviances and AIC). Within each smoother, the \code{pb()} interpolation function
 is rebuilt on a regular grid (its closure otherwise holds the sorted covariate
-values) and the \code{random()} effect's grouping column, fitted values and standard
+values) and \code{random()} effect's grouping column, fitted values and standard
 errors are removed.
 
 Because right now only \code{pb()} and \code{random()} smooths can be reconstructed without the
 original data, models containing any other smoother (\code{cs()}, \code{ps()}, \code{ga()},
-\code{s()}) are rejected.
-
-Parametric terms whose columns are computed from the data as a whole --
-\code{poly()}, \code{ns()}, \code{bs()}, \code{scale()}, \code{cut()} -- are rejected too. Their basis
-cannot be rebuilt on new data without the fitting data, so the stored
-coefficients would be applied to a different basis and the predictions would
-be silently wrong. Note that \code{\link[=compare_zscores]{compare_zscores()}} cannot catch this on its
-default reference, because both models would make the same mistake. Precompute
-such a term as plain columns and refit, exactly as for \code{pb(log(Age))}.
+\code{s()}) or parametric terms whose models are computed from the whole data
+(\code{poly()}, \code{ns()}, \code{bs()}, \code{scale()}, \code{cut()}) are rejected.
 
 pb() smooths are reconstructed over a grid of size \code{grid_n}. How much you need
 depends on how wiggly the smooth is/how many edf are used. A warning is raised when
-\code{grid_n} looks too coarse for a smooth's edf. The default is 50 datapoints per edf,
-which can be changed using the \code{points_per_edf} arg. The default 50 is a coarse heuristic
-calibrated on a handful of fits and subject to change! Always be sure to confirm
-model fit is retained using \code{\link[=compare_zscores]{compare_zscores()}}. Quantile smooths (i.e.
-\code{pb.control(quantiles = TRUE)}) have not been tested for datasharing/reconstruction
-accuracy and thus are not currently supported.
+\code{grid_n} looks too coarse for a smooth's edf. The default based on testing is
+200 datapoints per edf, but this can be changed using the \code{points_per_edf} arg.
+Always be sure to confirm model fit is retained using \code{\link[=compare_scores]{compare_scores()}}.
+
+Quantile smooths (i.e. \code{pb.control(quantiles = TRUE)}) have not been tested for
+datasharing/reconstruction accuracy and thus are not currently supported.
 }
 \section{What still gets shared}{
 
 Sanitizing is not anonymisation, and a few small things survive by
-necessity. Inspect them by eye before sharing:
+necessity. Inspect them before sharing:
 \itemize{
 \item \verb{<param>.xlevels} -- the levels of every factor covariate, including rare
 ones.
@@ -117,7 +99,7 @@ clean <- lapply(models, sanitize_gamlss,
 for (nm in names(clean)) \{ cat("\\n==== ", nm, " ====\\n"); audit_gamlss(clean[[nm]]) \}
 
 ## 4. confirm predictions are unchanged
-for (nm in names(clean)) compare_zscores(models[[nm]], clean[[nm]], grid[[1]])
+for (nm in names(clean)) compare_scores(models[[nm]], clean[[nm]], grid[[1]])
 
 ## 5. inspect the surviving disclosive bits before sending
 for (nm in names(clean)) \{
@@ -141,10 +123,10 @@ clean <- sanitize_gamlss(iris_model, xranges = list(Sepal.Length = c(4, 8)))
 audit_gamlss(clean)
 
 grid <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
-compare_zscores(iris_model, clean, grid[[1]])
+compare_scores(iris_model, clean, grid[[1]])
 
 }
 \seealso{
-\code{\link[=audit_gamlss]{audit_gamlss()}} to check the result, \code{\link[=compare_zscores]{compare_zscores()}} to
+\code{\link[=audit_gamlss]{audit_gamlss()}} to check the result, \code{\link[=compare_scores]{compare_scores()}} to
 confirm predictions are unchanged.
 }

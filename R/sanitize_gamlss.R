@@ -4,7 +4,7 @@
 # with collaborators who need data-free prediction, without shipping anything
 # from which the original training data could be reconstructed.
 #
-# Verify the result with audit_gamlss() and compare_zscores()
+# Verify the result with audit_gamlss() and compare_scores()
 # before it leaves your machine.
 
 ################################################
@@ -74,7 +74,7 @@
 #' depends on how wiggly the smooth is/how many edf are used. A warning is raised when
 #' `grid_n` looks too coarse for a smooth's edf. The default based on testing is 
 #' 200 datapoints per edf, but this can be changed using the `points_per_edf` arg.
-#' Always be sure to confirm model fit is retained using [compare_zscores()]. 
+#' Always be sure to confirm model fit is retained using [compare_scores()]. 
 #' 
 #' Quantile smooths (i.e. `pb.control(quantiles = TRUE)`) have not been tested for 
 #' datasharing/reconstruction accuracy and thus are not currently supported.
@@ -108,7 +108,7 @@
 #' for (nm in names(clean)) { cat("\n==== ", nm, " ====\n"); audit_gamlss(clean[[nm]]) }
 #'
 #' ## 4. confirm predictions are unchanged
-#' for (nm in names(clean)) compare_zscores(models[[nm]], clean[[nm]], grid[[1]])
+#' for (nm in names(clean)) compare_scores(models[[nm]], clean[[nm]], grid[[1]])
 #'
 #' ## 5. inspect the surviving disclosive bits before sending
 #' for (nm in names(clean)) {
@@ -140,7 +140,7 @@
 #' prediction, with a `"sanitized"` attribute recording the settings used (to
 #' inspect, run `attr(clean_mod, "sanitized")`)
 #'
-#' @seealso [audit_gamlss()] to check the result, [compare_zscores()] to
+#' @seealso [audit_gamlss()] to check the result, [compare_scores()] to
 #' confirm predictions are unchanged.
 #'
 #' @examples
@@ -152,7 +152,7 @@
 #' audit_gamlss(clean)
 #'
 #' grid <- sim_grid(iris, "Sepal.Length", "Species", iris_model)
-#' compare_zscores(iris_model, clean, grid[[1]])
+#' compare_scores(iris_model, clean, grid[[1]])
 #'
 #' @export
 sanitize_gamlss <- function(gamlssModel,
@@ -262,7 +262,7 @@ sanitize_gamlss <- function(gamlssModel,
   if (length(low_res))
     warning("grid_n = ", grid_n, " may be too coarse for: ",
             paste(low_res, collapse = "; "),
-            ". Confirm with compare_zscores() and raise grid_n if the ",
+            ". Confirm with compare_scores() and raise grid_n if the ",
             "predictions differ.", call. = FALSE)
 
   class(out) <- class(gamlssModel)
@@ -413,65 +413,130 @@ audit_gamlss <- function(x, max_len = 50, max_depth = 15,
 
 
 #' Compare reference scores between gamlss models
-#' 
-#' Compare either the z-scores that two models assign the same observations OR compare
-#' the predicted values of y at each centile. 
-#' 
+#'
+#' Compare either the z-scores that two models assign the same observations and/or compare
+#' the predicted values of y at each centile.
+#'
 #' Cannot currently handle `data` that contains out-of-sample observations (i.e.
 #' new batches)
-#' 
-compare_scores <- function(gamlssModel1, 
-                            gamlssModel2, 
+#'
+#' @param gamlssModel1,gamlssModel2 the two fitted `gamlss` models to compare.
+#' @param data dataframe of observations to score with both models, for the
+#' z-score comparison. Supply this, `sim_grid_list`, or both
+#' @param sim_grid_list output of [sim_grid()]: a named list of covariate grids,
+#' one per level of the factor it was built over. Used for the centile
+#' comparison.
+#' @param cent_to_check centiles at which to compare predicted values, as values
+#' between 0 and 1. Only used with `sim_grid_list`.
+#' @param tol tolerance for both comparisons, in z units
+#' @param fit_data1,fit_data2 the fitting data for each model. If `NULL`(default) 
+#' that model is predicted data-free.
+#'
+#' @returns invisibly, a list with the components the call produced: `z`, a
+#' named numeric of the `max` and `mean` absolute z-score difference; and
+#' `centiles`, a named list holding, for each level of `sim_grid_list`, the
+#' maximum absolute z difference at each centile checked.
+#'
+#' @seealso [sanitize_gamlss()], [score_centiles()], [sim_grid()]
+#'
+#' @export
+compare_scores <- function(gamlssModel1,
+                            gamlssModel2,
                             data = NULL,
                             sim_grid_list = NULL,
                             cent_to_check = c(0.01, 0.05, 0.25, 0.5,
                                               0.75, 0.95, 0.99),
                             tol = 1e-6,
-                            fit_data1 = NULL, 
+                            fit_data1 = NULL,
                             fit_data2 = NULL){
-  
+
   stopifnot(inherits(gamlssModel1, "gamlss"), inherits(gamlssModel2, "gamlss"))
-  
+  if (is.null(data) && is.null(sim_grid_list))
+    stop("nothing to compare: supply `data` to compare z-scores for a set of ",
+         "observations, `sim_grid_list` to compare predicted values at each ",
+         "centile, or both", call. = FALSE)
+
+  out <- list()
+
   #compare z-scores
   if (!is.null(data)){
     std1 <- score_centiles(gamlssModel1, data, fit_data = fit_data1, standardize = TRUE)$std_score
     std2 <- score_centiles(gamlssModel2, data, fit_data = fit_data2, standardize = TRUE)$std_score
-    
+
     #get max diff
-    if (max(abs(std1 - std2)) < tol) {
+    diff  <- abs(std1 - std2)
+    out$z_diffs <- c(max = max(diff), mean = mean(diff))
+
+    if (max(diff) < tol) {
       cat("OK: z-scores match within ", tol, "\n", sep = "")
     } else {
-      diff <- abs(std1 - std2)
       cat("Difference EXCEEDS tol = ", tol, "\n",
-          "Max abs diff = ", max(diff), "\n"
-          "Mean abs diff = ", mean(diff))
+          "Max abs diff = ", max(diff), "\n",
+          "Mean abs diff = ", mean(diff), "\n", sep = "")
     }
   }
-  
+
   #compare y at each centile
   if (!is.null(sim_grid_list)){
+    cent_res <- list()
+    cent_nms <- paste0("c", format(cent_to_check * 100, trim = TRUE))
+
     # Predict phenotype values for each simulated level of factor_var
     for (factor_level in names(sim_grid_list)) {
       sub_df <- sim_grid_list[[factor_level]]
-      
+
       # Predict centiles (data-free by default; fit_data forces predictAll path)
       pred_df1 <- .predict_params_gamlss(gamlssModel1, newdata = sub_df, data = fit_data1)
-      fanCentiles1 <- lapply(cent_to_check, 
-                             .centile_value, 
-                             params = pred_df1, 
-                             q_func = paste0("q", gamlssModel1$family[1]), 
-                             n_param = length(gamlssModel1$parameters))
-      
+      q_val1   <- function(cent) .centile_value(cent, params = pred_df1,
+                        q_func  = paste0("q", gamlssModel1$family[1]),
+                        n_param = length(gamlssModel1$parameters))
+      fanCentiles1 <- lapply(cent_to_check, q_val1)
+
       pred_df2 <- .predict_params_gamlss(gamlssModel2, newdata = sub_df, data = fit_data2)
-      fanCentiles2 <- lapply(cent_to_check, 
-                             .centile_value, 
-                             params = pred_df2, 
-                             q_func = paste0("q", gamlssModel2$family[1]), 
+      fanCentiles2 <- lapply(cent_to_check,
+                             .centile_value,
+                             params = pred_df2,
+                             q_func = paste0("q", gamlssModel2$family[1]),
                              n_param = length(gamlssModel2$parameters))
-      
-      #compare w/in factor level
-      all.equal(fanCentiles1, fanCentiles2, tolerance=tol)
+
+      # Put the difference on the z scale, so `tol` means the same thing here as
+      # it does for the z-score comparison above. The local response-scale SD is
+      # read off the REFERENCE model's own quantile function as the half-width
+      # of its +/-1 SD interval. sigma cannot be used directly: in the BCCG
+      # family and its relatives sigma is a coefficient of variation, and the
+      # skew from nu makes mu * sigma the wrong width.
+      sd_local <- (q_val1(stats::pnorm(1)) - q_val1(stats::pnorm(-1))) / 2
+      if (any(!is.finite(sd_local)) || any(sd_local <= 0))
+        stop("could not put level '", factor_level, "' on the z scale: the ",
+             "reference model's +/-1 SD interval is not finite and positive ",
+             "everywhere on this grid", call. = FALSE)
+
+      # max, not mean, so a single badly reproduced covariate value cannot be
+      # averaged away -- matching the z-score comparison above
+      cent_res[[factor_level]] <- stats::setNames(
+        vapply(seq_along(cent_to_check),
+               function(i) max(abs(fanCentiles1[[i]] - fanCentiles2[[i]]) / sd_local),
+               numeric(1)),
+        cent_nms)
+    }
+    out$centiles <- cent_res
+
+    worst <- max(unlist(cent_res))
+    if (worst < tol) {
+      cat("OK: predicted values at each centile match within ", tol,
+          " (max |z difference| = ", format(worst), ")\n", sep = "")
+    } else {
+      bad <- vapply(cent_res, max, numeric(1))
+      cat("Difference EXCEEDS tol = ", tol, " at ", sum(bad >= tol), " of ",
+          length(bad), " level(s) of sim_grid_list.\n",
+          "Max |z difference| = ", format(worst), "\n", sep = "")
+      for (nm in names(cent_res)[bad >= tol]) {
+        v <- cent_res[[nm]]
+        cat("  ", nm, ": worst at ", names(which.max(v)), " = ",
+            format(max(v)), "\n", sep = "")
+      }
     }
   }
-  
+
+  invisible(out)
 }

@@ -72,38 +72,42 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
   is not confused with surviving covariate data (and vice versa) when `grid_n`
   happens to match the sample size.
 
-* `compare_zscores()` reports the largest disagreement, in z units, between the
-  scores two `gamlss` models assign to the same covariate grid -- most often a
-  model and a sanitized copy of it, so you can verify `grid_n` and the `pb()`
-  ranges before sharing. It compares z-scores -- `qnorm()` of the centile,
-  as in `score_centiles(standardize = TRUE)` -- rather than raw distribution
-  parameters: a score is what collaborators consume and is dimensionless,
-  whereas an absolute tolerance on `mu` is meaningless without knowing the
-  response's scale (multiply the outcome by 10,000 and `mu`'s error multiplies
-  by 10,000 too), and no single tolerance suits `mu`, `sigma` and `nu` at once.
-  z-scores rather than the centiles they derive from because centile differences
-  are compressed in the tails, so a centile tolerance under-weights exactly the
-  tail errors that matter for screening; in z units the error runs roughly flat
-  across the distribution (measured spread 1.8x, against ~21x in centile units),
-  so one threshold means the same thing everywhere. `tol` defaults to 1e-6 in z
-  units -- a millionth of a standard deviation. Note that `grid_n = 500` does not
-  always reach it: a smooth spending ~6.5 edf measured 1.7e-06 at `grid_n = 500`
-  and 5.3e-09 at 2000. Per-parameter differences are attached as the
-  `"parameters"` attribute.
+* `compare_scores()` reports the largest disagreement between two `gamlss`
+  models -- most often a model and a sanitized copy of it, so you can verify
+  `grid_n` and the `pb()` ranges before sharing. It offers two comparisons, and
+  will run either or both: give `data` to compare the z-scores the models assign
+  to a set of observations, and/or `sim_grid_list` (the output of `sim_grid()`)
+  to compare the values of y they predict at each centile.
 
-* `compare_zscores()` warns when `newdata` coincides with the rebuilt spline's
-  own grid. A natural spline reproduces its nodes exactly, so such a comparison
-  reports 0 regardless of how good the rebuild is. This is easy to hit by
-  accident: `sim_grid()` returns 500 points over the covariate range and
-  `grid_n` defaults to 500, computed by the same `seq()`, so passing `sim_grid()`
-  output straight in aliases onto every node. Use any other number of points.
+  Both are reported in z units -- `qnorm()` of the centile, as in
+  `score_centiles(standardize = TRUE)` -- rather than in raw distribution
+  parameters or on the response's own scale. A score is what collaborators
+  consume and is dimensionless, whereas an absolute tolerance on `mu` is
+  meaningless without knowing the response's scale (multiply the outcome by
+  10,000 and `mu`'s error multiplies by 10,000 too), and no single tolerance
+  suits `mu`, `sigma` and `nu` at once. z-scores rather than the centiles they
+  derive from because centile differences are compressed in the tails, so a
+  centile tolerance under-weights exactly the tail errors that matter for
+  screening; in z units the error runs roughly flat across the distribution
+  (measured spread 1.8x, against ~21x in centile units). For the centile
+  comparison each difference in predicted y is divided by the reference model's
+  local response-scale SD, taken as the half-width of its +/-1 SD interval from
+  its own quantile function -- `sigma` will not do, since in the BCCG family and
+  its relatives it is a coefficient of variation and `nu`'s skew makes
+  `mu * sigma` the wrong width. Both paths report a maximum, so neither can
+  average a single badly reproduced point away.
 
-* `compare_zscores()` takes a prediction path per model, `reference_data` and
-  `comparison_data`. Left `NULL` a model is reconstructed data-free; given its
-  fitting data it goes through `predictAll()` with the data in scope. That makes
-  one function cover verifying a sanitized model (both `NULL`, isolating what
+  `tol` therefore means the same thing on either path and defaults to 1e-6 --
+  a millionth of a standard deviation. Note that `grid_n = 500` does not always
+  reach it: a smooth spending ~6.5 edf measured 1.7e-06 at `grid_n = 500` and
+  5.3e-09 at 2000.
+
+* `compare_scores()` takes a prediction path per model, `fit_data1` and
+  `fit_data2`. Left `NULL` a model is reconstructed data-free; given its fitting
+  data it goes through `predictAll()` with the data in scope. That makes one
+  function cover verifying a sanitized model (both `NULL`, isolating what
   sanitizing changed), validating the whole chain a collaborator depends on
-  (`reference_data` only: data-based -> data-free -> sanitized in one number),
+  (`fit_data1` only: data-based -> data-free -> sanitized in one number),
   comparing a model against its own data-free prediction with no sanitizing
   involved, and comparing two different models of the same outcome. The two
   models need not share a family; each is scored under its own, which is
@@ -124,7 +128,7 @@ You can also clone the repo, but if you make edits, *please do so in a new branc
 * `sanitize_gamlss()` warns when `grid_n` looks too coarse for a smooth's
   effective degrees of freedom (fewer than `points_per_edf = 200` grid points
   per edf). How faithful a rebuilt smooth is depends on how wiggly it is, and
-  `grid_n` now defaults to 2000 so that the result meets `compare_zscores()`'s
+  `grid_n` now defaults to 2000 so that the result meets `compare_scores()`'s
   1e-6 tolerance: a smooth spending 6.5 edf measured 1.7e-06 at `grid_n = 500`
   against 5.3e-09 at 2000, and one spending 12.8 edf needed the full 2000 to
   reach 9.1e-07. Reaching 1e-6 took roughly 100-160 points per edf across the
