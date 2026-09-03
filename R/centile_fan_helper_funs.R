@@ -387,6 +387,10 @@ resid_data <- function(gamlssModel, df, og_data=NULL, rm_terms=NULL, zero_terms=
 #' @export
 age_at_peak <- function(cent_df, peak_from=NULL){
   
+  #a data.table reads `ncol(cent_df)` below as an expression, not a column
+  #position, and would report the column COUNT as the peak x value
+  cent_df <- .as_plain_df(cent_df)
+  
   y_name <- ifelse(is.null(peak_from), 
                    grep(".*_0.5", colnames(cent_df), value=TRUE),
                    peak_from)
@@ -417,6 +421,10 @@ age_at_peak <- function(cent_df, peak_from=NULL){
 #' @importFrom pracma gradient
 #' @export
 get_derivatives <- function(cent_df){
+  
+  #`cent_df[,cnt]` needs data.frame indexing; a data.table looks `cnt` up as a
+  #column name instead
+  cent_df <- .as_plain_df(cent_df)
   
   #separate centile columns from x-var column
   cnt <- ncol(cent_df)

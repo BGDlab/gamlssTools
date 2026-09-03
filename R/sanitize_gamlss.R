@@ -50,19 +50,22 @@
   diff(range(dk)) <= 1e-8 * max(abs(dk))
 }
 
-# ---- internal: evaluation points that sit on a rebuilt spline's own nodes ----
-# A rebuilt pb() spline reproduces its grid nodes exactly, so a comparison made
-# only at those nodes measures nothing and reports 0 however bad the rebuild is.
-# Easy to hit by accident: sim_grid() returns 500 points spanning the covariate
-# range, so a model sanitized with grid_n = 500 aliases onto every one of them.
+# ---- internal: the regular grids a sanitized model's pb() splines were rebuilt on
+# Returns one record per rebuilt smooth: list(var = <covariate>, nodes = <grid>).
+# Empty for an unsanitized model.
 #
-# Only EVENLY SPACED node sets count. An unsanitized fit's splinefun holds the
-# observed covariate values, which are uneven -- scoring the fitting data against
-# those is a genuine comparison, not a vacuous one, and must not be flagged.
+# Only SANITIZED models are inspected. An unsanitized fit's splinefun holds the
+# observed covariate values, and even spacing cannot tell the two apart: a
+# rounded or integer covariate (age in whole years, weight in kg) that is
+# densely observed has evenly spaced unique values too, which used to flag every
+# unsanitized fit of such a covariate. The `sanitized` attribute is what
+# actually says the spline was rebuilt; the spacing test below is then just a
+# consistency check on a grid that is even by construction.
 #' @keywords internal
 #' @noRd
-.aliased_covariates <- function(object, newdata, min_frac = 0.5) {
-  hits <- list()
+.rebuild_grids <- function(object) {
+  if (is.null(attr(object, "sanitized"))) return(list())
+  out <- list()
   for (p in object$parameters) {
     labs <- colnames(object[[paste0(p, ".s")]])
     smos <- object[[paste0(p, ".coefSmo")]]
@@ -70,18 +73,98 @@
       if (!inherits(smos[[i]], "pb")) next
       v <- .smooth_arg(labs[i])
       if (is.null(v) || !is.name(v)) next
-      v <- as.character(v)
-      if (is.null(newdata[[v]])) next
       nodes <- environment(smos[[i]]$fun)$z$x
       if (is.null(nodes) || length(nodes) < 4) next
       dx <- diff(nodes)
       if (diff(range(dx)) > 1e-8 * max(abs(dx))) next   # not a rebuilt grid
-      frac <- mean(newdata[[v]] %in% nodes)
-      if (frac > min_frac)
-        hits[[v]] <- sprintf("%s (%.0f%% of points)", v, 100 * frac)
+      out[[length(out) + 1L]] <- list(var = as.character(v), nodes = nodes)
     }
   }
+  out
+}
+
+# ---- internal: rows that sit on a rebuilt spline's own nodes -----------------
+# A rebuilt pb() spline interpolates its grid, so it reproduces the ORIGINAL
+# smooth exactly at each node -- the difference there is 0 (machine zero) however
+# coarse the rebuild is, while a point anywhere between nodes sees essentially
+# the full interpolation error. Those exact zeros drag a mean difference down in
+# proportion to how many of them there are, so compare_scores() summarises the
+# off-node rows and reports how many it set aside.
+#' @keywords internal
+#' @noRd
+.aliased_rows <- function(object, newdata) {
+  hit <- logical(nrow(newdata))
+  for (g in .rebuild_grids(object)) {
+    x <- newdata[[g$var]]
+    if (is.null(x)) next
+    hit <- hit | x %in% g$nodes
+  }
+  hit
+}
+
+# ---- internal: covariates whose every compared point is a rebuild node -------
+# The vacuous case: with no off-node point left, even the MAX difference is 0 by
+# construction and the comparison measures nothing at all. A partial overlap is
+# not vacuous -- one off-node point recovers the true magnitude -- so it is
+# reported rather than warned about. Easy to hit by accident: sim_grid() returns
+# 500 points spanning the covariate range, so a model sanitized with
+# grid_n = 500 aliases onto every one of them.
+#' @keywords internal
+#' @noRd
+.aliased_covariates <- function(object, newdata, min_frac = 1) {
+  hits <- list()
+  for (g in .rebuild_grids(object)) {
+    x <- newdata[[g$var]]
+    if (is.null(x)) next
+    frac <- mean(x %in% g$nodes)
+    if (frac >= min_frac)
+      hits[[g$var]] <- sprintf("%s (%.0f%% of points)", g$var, 100 * frac)
+  }
   unlist(hits, use.names = FALSE)
+}
+
+# ---- internal: worst-case evaluation points for a rebuilt spline -------------
+# Where the rebuild actually costs something. The interpolation error is exactly
+# 0 at the nodes and rises between them, so probing inside every interval
+# measures that cost over the whole covariate range -- a measurement that does
+# not depend on whichever points the caller happened to compare.
+#
+# Seven offsets per interval rather than the midpoint alone: the error peak is
+# not centred (the natural-spline end conditions and the local derivatives move
+# it), so the midpoint alone understates the worst case. Against a 20,000-point
+# dense sweep of the same range, max |error| on the linear predictor recovered:
+#
+#             grid_n = 30    grid_n = 100   grid_n = 500
+#   midpoint      93%            93%            99%
+#   eighths      100%           100%            99%
+#
+# Dense enough to be a fair worst case, though not a proven upper bound. For
+# scale, at grid_n = 30 that worst case is 1.7e-4 against 1.1e-16 at the nodes.
+#
+# `max_points` thins the intervals when a fine grid would otherwise generate
+# tens of thousands of rows; a fine grid's error is both small and near-uniform,
+# so full interval coverage buys nothing there. Coarse grids -- where the error
+# is worth measuring -- are far below the cap and keep every interval.
+#
+# Returns a named list of probe points, one per rebuilt covariate, pooled over
+# both models and over every parameter that smooths the same covariate.
+#' @keywords internal
+#' @noRd
+.rebuild_probe_points <- function(..., max_points = 6000) {
+  offsets <- seq(0.125, 0.875, by = 0.125)
+  pts <- list()
+  for (object in list(...))
+    for (g in .rebuild_grids(object)) {
+      lo <- g$nodes[-length(g$nodes)]
+      h  <- diff(g$nodes)
+      keep <- if (length(lo) * length(offsets) > max_points)
+        unique(round(seq(1, length(lo), length.out = max_points %/% length(offsets))))
+      else seq_along(lo)
+      p <- as.numeric(vapply(keep, function(i) lo[i] + offsets * h[i],
+                             numeric(length(offsets))))
+      pts[[g$var]] <- sort(unique(c(pts[[g$var]], p)))
+    }
+  pts
 }
 
 

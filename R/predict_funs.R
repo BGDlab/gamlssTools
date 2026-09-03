@@ -415,6 +415,11 @@ score_centiles <- function(gamlssModel, data, fit_data = NULL, standardize = FAL
 #' @export
 score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE,
                                   batch_term = NULL, ref_data = NULL, min_ref = 5){
+  #data.table/tbl_df break the data.frame indexing used below
+  data     <- .as_plain_df(data)
+  fit_data <- .as_plain_df(fit_data)
+  ref_data <- .as_plain_df(ref_data)
+
   pheno <- gamlssModel$mu.terms[[2]]
 
   #subset df cols just to predictors from model
@@ -567,6 +572,11 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
 #' @export
 score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardize = FALSE,
                                    batch_term = NULL, ref_data = NULL, min_ref = 5){
+  #data.table/tbl_df break the data.frame indexing used below
+  data     <- .as_plain_df(data)
+  fit_data <- .as_plain_df(fit_data)
+  ref_data <- .as_plain_df(ref_data)
+
   pheno <- get_y(gamlssModel)
 
   #subset df cols just to predictors from model

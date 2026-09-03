@@ -71,6 +71,18 @@ NULL
   .require_pkg("gamlss2charts", what, remote = "andy1764/gamlss2charts@dev")
 }
 
+# ---- internal: plain-data.frame semantics for a user-supplied frame ---------
+# Several functions here index their frames the data.frame way which fail with
+# data.tables/tibbles.
+#
+# Leaves NULL and non-frames (i.e. conditions or formulas) untouched, as both
+# are valid options to pass to several args.
+#' @keywords internal
+#' @noRd
+.as_plain_df <- function(x) {
+  if (is.data.frame(x) && !identical(class(x), "data.frame")) as.data.frame(x) else x
+}
+
 # ---- internal: variable names out of a model formula -------------------------
 # helper for list_predictors(). Like all.vars(), but resolves a data object's 
 # column to the column name

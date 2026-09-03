@@ -25,7 +25,7 @@ test_that("sanitized models predict identically to the original", {
   # response. grid_n = 500 would measure ~1.1e-05 here; the default 2000 clears
   # the documented tol of 1e-6 by two orders of magnitude.
   res <- suppressMessages(compare_scores(m, clean, data = d))
-  expect_named(res, "z_diffs")
+  expect_named(res, c("z_diffs", "n_on_node", "grid_probe"))
   expect_named(res$z_diffs, c("max", "mean"))
   expect_lt(res$z_diffs[["max"]], 1e-6)                 # measured ~1.0e-08
   expect_gte(res$z_diffs[["max"]], res$z_diffs[["mean"]])
@@ -38,7 +38,7 @@ test_that("compare_scores() compares predicted values at each centile", {
   grid  <- suppressMessages(sim_grid(d, "Age", "Sex", m))
 
   res <- suppressMessages(compare_scores(m, clean, sim_grid_list = grid))
-  expect_named(res, "centile_diff")
+  expect_named(res, c("centile_diff", "grid_probe"))
   # one result per level of the grid, keyed by level, then by centile
   expect_named(res$centile_diff, names(grid))
   expect_named(res$centile_diff[[1]], c("c1", "c5", "c25", "c50", "c75", "c95", "c99"))
@@ -54,7 +54,7 @@ test_that("compare_scores() runs both comparisons together", {
 
   res <- suppressMessages(
     compare_scores(m, clean, data = d, sim_grid_list = grid))
-  expect_named(res, c("z_diffs", "centile_diff"))
+  expect_named(res, c("z_diffs", "n_on_node", "centile_diff", "grid_probe"))
 })
 
 test_that("compare_scores() needs something to compare", {
@@ -384,6 +384,108 @@ test_that("compare_scores() does not flag an unsanitized model's own nodes", {
   clean <- suppressWarnings(sanitize_gamlss(m, grid_n = 500))
   nodes <- environment(clean$mu.coefSmo[[1]]$fun)$z$x
   expect_match(.aliased_covariates(clean, data.frame(Age = nodes)), "Age")
+})
+
+test_that("an unsanitized fit of a rounded covariate is not flagged", {
+  # a densely observed integer covariate has EVENLY SPACED unique values, so
+  # the unsanitized fit's own splinefun nodes look like a rebuilt grid. Scoring
+  # the fitting data hits all of them, which used to warn on every comparison
+  # -- whatever grid_n the sanitized model was built at, and with no
+  # sim_grid_list in the call at all.
+  d <- sim_datafree()
+  d$Age <- round(d$Age)
+  m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d, family = "NO",
+                      control = gamlss::gamlss.control(trace = FALSE))
+  nodes <- environment(m$mu.coefSmo[[1]]$fun)$z$x
+  dx <- diff(nodes)
+  expect_lte(diff(range(dx)), 1e-8 * max(abs(dx)))   # evenly spaced, yet real
+  expect_true(all(d$Age %in% nodes))                 # and every point is a node
+
+  expect_length(.aliased_covariates(m, d), 0)
+  expect_no_warning(
+    suppressMessages(compare_scores(m, sanitize_gamlss(m, grid_n = 3000),
+                                    data = d)))
+})
+
+test_that("compare_scores() probes the rebuild grid's midpoints", {
+  d <- sim_datafree()
+  m <- fit_sanitize_model(d)
+  coarse <- suppressWarnings(sanitize_gamlss(m, grid_n = 30))
+  nodes  <- environment(coarse$mu.coefSmo[[1]]$fun)$z$x
+
+  # the vacuous comparison: every row on a node, so both summaries are 0 by
+  # construction. The probe does not depend on the rows it was handed, so it
+  # still reports what the rebuild actually costs between the nodes.
+  on_nodes <- d[rep(1L, length(nodes)), ]
+  on_nodes$Age <- nodes
+  expect_warning(res <- suppressMessages(compare_scores(m, coarse, data = on_nodes)),
+                 regexp = "grid nodes")
+  expect_equal(unname(res$z_diffs[["max"]]), 0)
+  expect_equal(res$n_on_node, nrow(on_nodes))
+  expect_gt(max(unlist(res$grid_probe)), 1e-6)
+
+  # a dense sweep of the same range finds nothing the probe missed. Compared
+  # against `centile_diff`, which is the metric the probe reports -- NOT
+  # `z_diffs`, which scores observed responses and is a different quantity.
+  # The probe samples inside every interval for this reason: the midpoint alone
+  # recovered only ~91% of this sweep at this grid_n, because the error peak
+  # within an interval is not centred.
+  dense <- d[rep(1L, 2000L), ]
+  dense$Age <- seq(min(nodes), max(nodes), length.out = 2000)
+  res_dense <- suppressMessages(
+    compare_scores(m, coarse, sim_grid_list = list(sweep = dense)))
+  expect_gte(max(unlist(res$grid_probe)),
+             max(unlist(res_dense$centile_diff)) * 0.99)
+
+  # a finer grid costs less, and the probe is what shows it
+  fine <- suppressWarnings(sanitize_gamlss(m, grid_n = 500))
+  res_fine <- suppressMessages(compare_scores(m, fine, data = d))
+  expect_lt(max(unlist(res_fine$grid_probe)), max(unlist(res$grid_probe)))
+
+  # nothing was rebuilt, so there is no grid to probe
+  res_raw <- suppressMessages(compare_scores(m, m, data = d))
+  expect_null(res_raw$grid_probe)
+})
+
+test_that("compare_scores() does not let on-node rows dilute the mean", {
+  d <- sim_datafree()
+  m <- fit_sanitize_model(d)
+  clean <- suppressWarnings(sanitize_gamlss(m, grid_n = 30))
+  nodes <- environment(clean$mu.coefSmo[[1]]$fun)$z$x
+
+  real <- d[seq_len(length(nodes)), ]          # genuine off-node observations
+  on_nodes <- real
+  on_nodes$Age <- nodes                        # exact zeros
+  mixed <- rbind(real, on_nodes)
+
+  ref   <- suppressMessages(compare_scores(m, clean, data = real))
+  mixed_res <- suppressMessages(compare_scores(m, clean, data = mixed))
+
+  # padding a comparison with rows the rebuild reproduces exactly must not make
+  # the two models look more consistent than the real rows say they are
+  expect_equal(mixed_res$z_diffs, ref$z_diffs)
+  expect_equal(mixed_res$n_on_node, length(nodes))
+  # the diluted mean it replaces would have been about half the size
+  expect_lt(mean(abs(
+    score_centiles(m, mixed, standardize = TRUE)$std_score -
+    score_centiles(clean, mixed, standardize = TRUE)$std_score)),
+    ref$z_diffs[["mean"]] * 0.75)
+})
+
+test_that("compare_scores() accepts data.table and tibble frames", {
+  # score_centiles() indexes `data` the data.frame way (data[, model_cols]).
+  # A data.table reads `model_cols` as an expression inside the table instead
+  # of a vector of column names and dies with "column name 'model_cols' is not
+  # found"; a tibble never drops to a vector.
+  d <- sim_datafree()
+  m <- fit_sanitize_model(d)
+  clean <- sanitize_gamlss(m)
+  ref <- suppressMessages(compare_scores(m, clean, data = d, fit_data1 = d))
+
+  for (frame in list(data.table::as.data.table(d), tibble::as_tibble(d))) {
+    res <- suppressMessages(compare_scores(m, clean, data = frame, fit_data1 = d))
+    expect_equal(res$z_diffs, ref$z_diffs)
+  }
 })
 
 test_that("compare_scores() rejects observations it cannot score", {
