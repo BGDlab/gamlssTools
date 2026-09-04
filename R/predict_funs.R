@@ -44,6 +44,21 @@
   }
 }
 
+# ---- internal: the centile a response value falls at -------------------------
+# The other direction of .centile_value(): evaluate the family's CDF `p_func` at
+# `y` under the response-scale parameters. Used to read one model's centile
+# values off the OTHER model's scale.
+#' @keywords internal
+#' @noRd
+.centile_prob <- function(y, params, p_func, n_param) {
+  stopifnot(n_param <= 4 & n_param >= 1)
+  args <- list(y, mu = params$mu)
+  if (n_param >= 2) args$sigma <- params$sigma
+  if (n_param >= 3) args$nu    <- params$nu
+  if (n_param >= 4) args$tau   <- params$tau
+  do.call(p_func, args)
+}
+
 #' Predict single centile (deprecated)
 #'
 #' `pred_centile()` is a deprecated alias for the now-internal `.centile_value()`.

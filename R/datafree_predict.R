@@ -246,13 +246,8 @@
     return(.predictAll_nodata_gamlss(object, newdata, drop.term = drop.term))
   }
   if (is.null(data)) {
-    stop("Model contains a term that can't be reconstructed without the ",
-         "original data -- an unsupported smoother (cs/ps/ga/s), a ",
-         "pb()/random() applied to an expression rather than a bare column name ",
-         "(e.g. pb(log(Age)); precompute it as a column to avoid this), or a ",
-         "parametric term whose columns are computed from the data ",
-         "(poly/ns/bs/scale/cut; likewise precompute it). ",
-         "Supply the original fitting data (e.g. `fit_data`)")
+    stop("Model contains a term that can't be reconstructed without the original ",
+         "data. Supply the original fitting data (e.g. `fit_data`)")
   }
   predictAll(object, newdata = newdata, data = data, type = "response")
 }

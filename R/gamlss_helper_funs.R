@@ -83,38 +83,6 @@ NULL
   if (is.data.frame(x) && !identical(class(x), "data.frame")) as.data.frame(x) else x
 }
 
-# ---- internal: variable names out of a model formula -------------------------
-# helper for list_predictors(). Like all.vars(), but resolves a data object's 
-# column to the column name
-#' @keywords internal
-#' @noRd
-.formula_vars <- function(x) {
-  #empty symbols show up as the missing index in `df[, "Age"]`
-  if (is.name(x)) {
-    nm <- as.character(x)
-    return(if (nzchar(nm)) nm else character(0))
-  }
-  #string and numeric literals are not variables (e.g. bs = "re")
-  if (!is.call(x)) return(character(0))
-
-  op <- x[[1]]
-  #`$` indexes with a literal name (df$Age) or, rarely, a string (df$"Age")
-  if (identical(op, quote(`$`))) {
-    idx <- x[[3]]
-    return(if (is.name(idx) || is.character(idx)) as.character(idx) else character(0))
-  }
-  #`[[` indexes with a string. A variable holding the name (df[[v]]) can't be
-  #resolved without evaluating it, so report nothing rather than guess "v".
-  if (identical(op, quote(`[[`))) {
-    idx <- x[[3]]
-    return(if (is.character(idx)) as.character(idx) else character(0))
-  }
-
-  #otherwise recurse into the arguments, skipping the function being called
-  out <- unlist(lapply(as.list(x)[-1], .formula_vars), use.names = FALSE)
-  if (is.null(out)) character(0) else unique(out)
-}
-
 #' Mode
 #'
 #' `mode()` returns the mode of a vector
@@ -311,6 +279,38 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), fit_data, name = NA,
   }
 
   return(df)
+}
+
+# ---- internal: variable names out of a model formula -------------------------
+# helper for list_predictors(). Like all.vars(), but resolves a data object's 
+# column to the column name
+#' @keywords internal
+#' @noRd
+.formula_vars <- function(x) {
+  #empty symbols show up as the missing index in `df[, "Age"]`
+  if (is.name(x)) {
+    nm <- as.character(x)
+    return(if (nzchar(nm)) nm else character(0))
+  }
+  #string and numeric literals are not variables (e.g. bs = "re")
+  if (!is.call(x)) return(character(0))
+  
+  op <- x[[1]]
+  #`$` indexes with a literal name (df$Age) or, rarely, a string (df$"Age")
+  if (identical(op, quote(`$`))) {
+    idx <- x[[3]]
+    return(if (is.name(idx) || is.character(idx)) as.character(idx) else character(0))
+  }
+  #`[[` indexes with a string. A variable holding the name (df[[v]]) can't be
+  #resolved without evaluating it, so report nothing rather than guess "v".
+  if (identical(op, quote(`[[`))) {
+    idx <- x[[3]]
+    return(if (is.character(idx)) as.character(idx) else character(0))
+  }
+  
+  #otherwise recurse into the arguments, skipping the function being called
+  out <- unlist(lapply(as.list(x)[-1], .formula_vars), use.names = FALSE)
+  if (is.null(out)) character(0) else unique(out)
 }
 
 #' List all predictors

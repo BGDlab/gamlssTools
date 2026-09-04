@@ -438,42 +438,93 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
   return(out)
 }
 
+# ---- internal: rows where two models predict identically ---------------------
+# Models of different families are never treated as agreeing: their parameters
+# are not the same quantity.
+#' @keywords internal
+#' @noRd
+.models_agree <- function(gamlssModel1, gamlssModel2, newdata,
+                          fit_data1, fit_data2, tol = 1e-12) {
+  if (!identical(gamlssModel1$family[1], gamlssModel2$family[1]))
+    return(logical(nrow(newdata)))
+
+  p1 <- .predict_params_gamlss(gamlssModel1, newdata = newdata, data = fit_data1)
+  p2 <- .predict_params_gamlss(gamlssModel2, newdata = newdata, data = fit_data2)
+
+  agree <- rep(TRUE, nrow(newdata))
+  for (nm in gamlssModel1$parameters) {
+    a <- as.numeric(p1[[nm]]); b <- as.numeric(p2[[nm]])
+    stopifnot(length(a) == nrow(newdata) && length(b) == nrow(newdata))
+    agree <- agree & (abs(a - b) <= tol * pmax(1, abs(a)))
+  }
+  agree
+}
+
+# ---- internal: the same rows, moved just off wherever they sit ---------------
+# Used to tell "these two models are the same model" from "these particular
+# points are forced to agree". Each numeric column is shifted by half the
+# smallest gap between its sorted unique values (midpoint of a regular grid),
+# where a rebuilt spline's error is detectable. Shifts stay inside the column's 
+# own range so nothing extrapolates.
+#
+# Returns NULL when there is no numeric column to move, or only one distinct
+# value to move it by; the caller then has no evidence either way.
+#' @keywords internal
+#' @noRd
+.nudge_frame <- function(newdata) {
+  num <- names(newdata)[vapply(newdata, is.numeric, logical(1))]
+  moved <- FALSE
+  for (v in num) {
+    x <- newdata[[v]]
+    u <- sort(unique(x[is.finite(x)]))
+    if (length(u) < 2) next
+    d <- min(diff(u)) / 2
+    if (!is.finite(d) || d <= 0) next
+    hi <- max(u)
+    newdata[[v]] <- ifelse(x + d <= hi, x + d, x - d)
+    moved <- TRUE
+  }
+  if (moved) newdata else NULL
+}
+
 # ---- internal: max |z difference| between two models at each centile ---------
-# Compares the response value the two models predict at each of `cent_to_check`
-# over the rows of `newdata`, and returns the largest absolute difference at
-# each centile in z units. Shared by compare_scores()'s sim_grid_list branch and
-# its rebuild-grid probe so both report on the same scale.
+# For each of `cent_to_check`, the largest absolute difference in z the two
+# models assign, over the rows of `newdata`.
+#
+# The response value one model puts at centile `c` is read off the OTHER model's
+# CDF, and the two z-scores differenced. That is exactly the quantity z_diffs
+# reports -- |z1(y) - z2(y)| -- evaluated at y = q(c) rather than at an observed
+# response.
 #' @keywords internal
 #' @noRd
 .centile_z_diff <- function(gamlssModel1, gamlssModel2, newdata, cent_to_check,
                             cent_nms, fit_data1, fit_data2, label) {
 
-  # Predict centiles (data-free by default; fit_data forces predictAll path)
-  pred_df1 <- .predict_params_gamlss(gamlssModel1, newdata = newdata, data = fit_data1)
-  q_val1   <- function(cent) .centile_value(cent, params = pred_df1,
-                                            q_func  = paste0("q", gamlssModel1$family[1]),
-                                            n_param = length(gamlssModel1$parameters))
-  fanCentiles1 <- lapply(cent_to_check, q_val1)
+  # response-scale parameters (data-free by default; fit_data forces predictAll)
+  par1 <- .predict_params_gamlss(gamlssModel1, newdata = newdata, data = fit_data1)
+  par2 <- .predict_params_gamlss(gamlssModel2, newdata = newdata, data = fit_data2)
+  n1   <- length(gamlssModel1$parameters)
+  n2   <- length(gamlssModel2$parameters)
+  fam1 <- gamlssModel1$family[1]
+  fam2 <- gamlssModel2$family[1]
 
-  pred_df2 <- .predict_params_gamlss(gamlssModel2, newdata = newdata, data = fit_data2)
-  fanCentiles2 <- lapply(cent_to_check,
-                         .centile_value,
-                         params = pred_df2,
-                         q_func = paste0("q", gamlssModel2$family[1]),
-                         n_param = length(gamlssModel2$parameters))
+  # how far, in z, this model's placement of `y` is from `cent`
+  z_gap <- function(y, params, p_func, n_param, cent) {
+    pr <- .centile_prob(y, params, p_func, n_param) #what centile does y correspond to?
+    #same clamping score_centiles() uses, so 0/1 don't become infinite z
+    pr[!is.na(pr) & pr == 1] <- 0.99999999999999994
+    pr[!is.na(pr) & pr == 0] <- 0.0000000000000000000000001
+    abs(stats::qnorm(pr) - stats::qnorm(cent))
+  }
 
-  # Put diff on the z scale. The local response-scale SD is
-  # read off the gamlssModel1's own quantile function as the half-width
-  # of its +/-1 SD interval to work across distribution families
-  sd_local <- (q_val1(stats::pnorm(1)) - q_val1(stats::pnorm(-1))) / 2
-  if (any(!is.finite(sd_local)) || any(sd_local <= 0))
-    stop("could not put ", label, " on the z scale", call. = FALSE)
-
-  # get max diff
   res <- stats::setNames(
-    vapply(seq_along(cent_to_check),
-           function(i) max(abs(fanCentiles1[[i]] - fanCentiles2[[i]]) / sd_local),
-           numeric(1)),
+    vapply(cent_to_check, function(cc) {
+      y1 <- .centile_value(cc, par1, paste0("q", fam1), n1) # model 1's value at centile cc
+      y2 <- .centile_value(cc, par2, paste0("q", fam2), n2) # model 2's value at centile cc
+      #take worst across orders
+      max(z_gap(y1, par2, paste0("p", fam2), n2, cc),
+          z_gap(y2, par1, paste0("p", fam1), n1, cc))
+    }, numeric(1)),
     cent_nms)
 
   if (any(!is.finite(res)))
@@ -494,8 +545,8 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
 #' @param data dataframe of observations to score with both models, for the
 #' z-score comparison. Supply this, `sim_grid_list`, or both
 #' @param sim_grid_list output of [sim_grid()]: a named list of covariate grids,
-#' one per level of the factor it was built over. Used for the centile
-#' comparison.
+#' one per level of the factor it was built over. Should have good coverage of 
+#' entire covariate space. Used for the centile comparison.
 #' @param cent_to_check centiles at which to compare predicted values, as values
 #' between 0 and 1. Only used with `sim_grid_list`.
 #' @param tol tolerance for both comparisons, in z units
@@ -504,43 +555,21 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
 #'
 #' @returns invisibly, a list with the components the call produced: `z_diffs`, a
 #' named numeric of the `max` and `mean` absolute z-score difference, with
-#' `n_on_node` alongside it; `centile_diff`, a named list holding, for each level
-#' of `sim_grid_list`, the maximum absolute z difference at each centile checked;
-#' and `grid_probe`, the same per-centile summary at the rebuild grid's midpoints.
+#' `n_tied` alongside it; `nudged`, present only when a frame had to be moved
+#' off points that measured nothing; `centile_diffs`, a named list holding, for each level
+#' of `sim_grid_list`, the maximum absolute z difference at each centile checked.
 #'
 #' @details
 #' A rebuilt `pb()` spline (see [sanitize_gamlss()]) interpolates the grid it was
 #' rebuilt on, so it reproduces the original smooth *exactly* at each grid node
-#' and the error peaks between them. Two consequences:
+#' and the error peaks between them. These points are uninformative and thus ignored 
+#' by `z_diffs` summaries (`n_tied` indicates how many such points are ignored). 
+#' If EVERY point in a frame is tied due to smooth interpolation, the comparison is 
+#' moved off those points (by half the smallest gap between distinct covariate values), 
+#' indicated by `nudged`.
 #'
-#' * rows of `data` that sit on a node contribute an exact 0, which drags `mean`
-#'   down in proportion to how many there are. `z_diffs` therefore summarises the
-#'   off-node rows, and `n_on_node` reports how many were set aside. `max` is
-#'   unaffected by this: a single off-node row recovers the true magnitude.
-#' * `grid_probe` sweeps each rebuilt covariate across its grid, at several
-#'   points inside every interval, which measures what the rebuild costs over
-#'   the whole covariate range. Unlike the other two comparisons it does not
-#'   depend on the points you chose, so no choice of `data` or `sim_grid_list`
-#'   can flatter it. Read it as the worst case (a dense probe rather than a
-#'   proven upper bound) and the others as what your actual observations see.
-#'
-#' All three summaries are in z units and are meant to be read against the same
-#' `tol`. They do sample different points, so they need not agree: `centile_diff`
-#' and `grid_probe` walk the `cent_to_check` ladder at every covariate value,
-#' while `z_diffs` lands wherever your observations actually sit -- usually
-#' mid-distribution, which is why it often reads a little lower (measured
-#' 4.2e-04 against 5.2e-04 on the same model pair).
-#'
-#' One caveat on the conversion: `centile_diff` and `grid_probe` turn a
-#' response-scale gap into z units using a local SD (the half-width of
-#' `gamlssModel1`'s +/-1 SD interval), which is a linearisation. It holds across
-#' the usual centile range but degrades in the far tail, where `qnorm` is near
-#' vertical and the ladder has stopped at `c99`. An observation out there can
-#' give a `z_diffs` several times larger (measured 7.0e-04 against 4.9e-04 for a
-#' response sitting at centile 1). If the two disagree by more than a little,
-#' check where your responses fall before suspecting the rebuild -- and if you
-#' score observations that far out routinely, widen `cent_to_check` so the
-#' centile comparison and the probe reach them too.
+#' `centile_diffs` is symmetric, so the output is the same regardless of which model
+#' is passed as `gamlssModel1` vs `gamlssModel2`.
 #'
 #' @seealso [sanitize_gamlss()], [score_centiles()], [sim_grid()]
 #' 
@@ -583,27 +612,46 @@ compare_scores <- function(gamlssModel1,
          "observations, `sim_grid_list` to compare predicted values at each ",
          "centile, or both", call. = FALSE)
   
-  ## EVERY point on a rebuilt spline's own nodes leaves nothing to measure: the
-  ## rebuild interpolates its grid, so every difference is 0 however coarse it is.
-  ## A partial overlap still measures something (see .aliased_rows) and is
-  ## reported by the z-score branch rather than warned about.
-  aliased <- character()
-  for (df in c(if (!is.null(data)) list(data), sim_grid_list))
-    for (mod in list(gamlssModel1, gamlssModel2))
-      aliased <- c(aliased, .aliased_covariates(mod, df))
-  aliased <- unique(aliased)
-  if (length(aliased))
-    warning("every point being compared lands on a rebuilt spline's own grid ",
-            "nodes: ", paste(aliased, collapse = ", "),
-            ". The spline reproduces its nodes exactly, so this comparison ",
-            "isn't useful. Move the evaluation points off the grid (a different ",
-            "`x_range` in sim_grid(), or different rows in `data`) OR rerun ",
-            "sanitize_gamlss() with a different grid_n so the two are no longer ",
-            "identical. `grid_probe` below is unaffected either way.",
-            call. = FALSE)
+  ## shift prediction points as necessary
+  nudged <- character()
+  resolve <- function(df, label) {
+    ag <- .models_agree(gamlssModel1, gamlssModel2, df, fit_data1, fit_data2)
+    if (!all(ag)) return(list(df = df, agree = ag))
+    
+    #shift the PREDICTORS only: shifting the response would change the z-scores
+    #directly, and the z-score branch needs it to have anything to score at all
+    preds <- intersect(list_predictors(gamlssModel1), names(df))
+    moved <- .nudge_frame(df[, preds, drop = FALSE])
+    if (is.null(moved)) return(list(df = df, agree = ag))   #nothing to move
+    alt <- df                     #`df` itself stays untouched: it is what the
+    alt[preds] <- moved[preds]    #same-model path below hands back
+    ag2 <- .models_agree(gamlssModel1, gamlssModel2, alt, fit_data1, fit_data2)
+    #actually same model, return original data
+    if (all(ag2)) return(list(df = df, agree = ag))      
+    
+    #else shift
+    nudged <<- c(nudged, label)
+    list(df = alt, agree = ag2)
+  }
+  
+  if (!is.null(data)) {
+    r <- resolve(data, "data")
+    data <- r$df
+    data_agree <- r$agree
+  }
+  if (!is.null(sim_grid_list))
+    for (nm in names(sim_grid_list)) {
+      r <- resolve(sim_grid_list[[nm]], paste0("sim_grid_list$", nm))
+      sim_grid_list[[nm]] <- r$df
+    }
+  
+  if (length(nudged))
+    warning("both models evaluate ", paste(nudged, collapse = ", "), " identically ",
+            "at points passed to sim_grid_list - likely a model being compared against",
+            "its own cleaned sanitize_gamlss() output. Shifting points of comparison.", call. = FALSE)
   
   out <- list()
-  cent_nms <- paste0("c", format(cent_to_check * 100, trim = TRUE))
+  if (length(nudged)) out$nudged <- nudged
   
   #compare z-scores
   if (!is.null(data)){
@@ -612,24 +660,17 @@ compare_scores <- function(gamlssModel1,
     
     stopifnot(length(std1) == length(std2))
     
-    ## check for NAs
-    bad <- !(is.finite(std1) & is.finite(std2))
-    if (any(bad))
-      stop(sum(bad), " of ", length(bad), " observation(s) could not be scored ",
-           "by both models. compare_scores() cannot handle out-of-sample ",
-           "observations. Restrict `data` to rows whose levels both models saw.", call. = FALSE)
+    ## check for NAs (unseen sites)
+    stopifnot(!is.na(c(std1, std2)))
     
-    #get max diff, over the rows that measure something. A row on a rebuild node
-    #contributes an exact 0, which drags the mean down in proportion to how many
-    #such rows there are, so summarise the off-node rows and say how many were
-    #set aside. Nothing to set aside if every row is on a node -- the warning
-    #above has already said so, and the summary is 0 by construction.
+    #get max diff over nonzero rows - if models are identical (determined by resolve 
+    #function above), return 0
     diff    <- abs(std1 - std2)
-    on_node <- .aliased_rows(gamlssModel1, data) | .aliased_rows(gamlssModel2, data)
-    keep    <- if (all(on_node)) rep(TRUE, length(diff)) else !on_node
+    tied    <- data_agree
+    keep    <- if (all(tied)) rep(TRUE, length(diff)) else !tied
     
-    out$z_diffs   <- c(max = max(diff[keep]), mean = mean(diff[keep]))
-    out$n_on_node <- sum(on_node)
+    out$z_diffs <- c(max = max(diff[keep]), mean = mean(diff[keep]))
+    out$n_tied  <- sum(tied)
     
     if (out$z_diffs[["max"]] < tol) {
       cat("OK: z-scores match within ", tol, "\n", sep = "")
@@ -638,14 +679,15 @@ compare_scores <- function(gamlssModel1,
           "Max abs diff = ", out$z_diffs[["max"]], "\n",
           "Mean abs diff = ", out$z_diffs[["mean"]], "\n", sep = "")
     }
-    if (sum(on_node) > 0 && !all(on_node))
-      cat("  (", sum(on_node), " of ", length(diff), " row(s) sit on a rebuild ",
-          "grid node, where the difference is 0 by construction, and are ",
-          "excluded from this summary)\n", sep = "")
+    if (sum(tied) > 0 && !all(tied))
+      cat("  (", sum(tied), " of ", length(diff), " row(s) give identical ",
+          "prediction, excluded from summary)\n",
+          sep = "")
   }
   
   #compare y at each centile
   if (!is.null(sim_grid_list)){
+    cent_nms <- paste0("cent_", format(cent_to_check * 100, trim = TRUE))
     cent_res <- list()
     
     # Predict phenotype values for each simulated level of factor_var
@@ -655,7 +697,7 @@ compare_scores <- function(gamlssModel1,
         cent_to_check, cent_nms, fit_data1, fit_data2,
         label = paste0("level '", factor_level, "' of sim_grid_list"))
     }
-    out$centile_diff <- cent_res
+    out$centile_diffs <- cent_res
     
     worst <- max(unlist(cent_res))
     if (worst < tol) {
@@ -671,51 +713,6 @@ compare_scores <- function(gamlssModel1,
         cat("  ", nm, ": worst at ", names(which.max(v)), " = ",
             format(max(v)), "\n", sep = "")
       }
-    }
-  }
-  
-  #worst case across the covariate range, whatever points were compared above. A
-  #rebuilt spline interpolates its grid, so its error is exactly 0 at the nodes
-  #and rises between them: probing inside every interval measures what the
-  #rebuild costs, independent of the points the caller chose.
-  mids <- .rebuild_probe_points(gamlssModel1, gamlssModel2)
-  if (length(mids)) {
-      #one representative row, with the rebuilt covariate swept over those points.
-    #The smooth enters the linear predictor additively, so the rest of the row
-    #shifts where the difference is read off, not how big the rebuild error is.
-    template <- if (!is.null(data)) data else sim_grid_list[[1]]
-    probe <- list()
-    
-    for (v in names(mids)) {
-      if (is.null(template[[v]])) next
-      probe_df <- template[rep(1L, length(mids[[v]])), , drop = FALSE]
-      probe_df[[v]] <- mids[[v]]
-      rownames(probe_df) <- NULL
-      
-      #a diagnostic add-on: never take down a comparison that otherwise worked
-      res <- tryCatch(
-        .centile_z_diff(gamlssModel1, gamlssModel2, probe_df, cent_to_check,
-                        cent_nms, fit_data1, fit_data2,
-                        label = paste0("the rebuild-grid probe for '", v, "'")),
-        error = function(e) {
-          warning("could not probe the rebuild grid for '", v, "': ",
-                  conditionMessage(e), call. = FALSE)
-          NULL
-        })
-      if (!is.null(res)) probe[[v]] <- res
-    }
-    
-    if (length(probe)) {
-      out$grid_probe <- probe
-      worst <- max(unlist(probe))
-      cat("Rebuild-grid probe (worst case between the grid nodes): ",
-          "max |z difference| = ", format(worst),
-          if (worst >= tol) paste0(", EXCEEDS tol = ", tol) else
-            paste0(", within tol = ", tol), "\n", sep = "")
-      for (v in names(probe))
-        cat("  ", v, ": worst at ", names(which.max(probe[[v]])), " = ",
-            format(max(probe[[v]])), " over ", length(mids[[v]]),
-            " off-node point(s)\n", sep = "")
     }
   }
   

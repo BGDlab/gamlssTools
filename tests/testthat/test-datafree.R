@@ -182,7 +182,7 @@ test_that("a cs() model errors without data; with data it's exact", {
   # the user to supply the original fitting data.
   expect_error(
     .predict_params_gamlss(m, newdata = nd),
-    regexp = "cs/ps/ga/s"
+    regexp = "can't be reconstructed without the original data"
   )
 
   # With the original data supplied it uses predictAll and matches predictAll() directly.
@@ -227,7 +227,8 @@ test_that("smooths on a transformed covariate are not data-free eligible", {
 
   # so the dispatcher refuses rather than returning wrong numbers ...
   nd <- d[1:25, ]
-  expect_error(.predict_params_gamlss(m, newdata = nd), regexp = "bare column name")
+  expect_error(.predict_params_gamlss(m, newdata = nd),
+               regexp = "can't be reconstructed without the original data")
 
   # ... and with the data supplied it matches predictAll() exactly
   free <- .predict_params_gamlss(m, newdata = nd, data = d)
@@ -257,7 +258,8 @@ test_that("data-dependent parametric terms are not data-free eligible", {
 
   # the dispatcher refuses rather than returning wrong numbers ...
   nd <- d[1:25, ]
-  expect_error(.predict_params_gamlss(m, newdata = nd), regexp = "computed from the data")
+  expect_error(.predict_params_gamlss(m, newdata = nd),
+               regexp = "can't be reconstructed without the original data")
 
   # ... and with the data supplied it still matches predictAll()
   free <- suppressWarnings(.predict_params_gamlss(m, newdata = nd, data = d))

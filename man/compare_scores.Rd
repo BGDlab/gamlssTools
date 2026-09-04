@@ -22,8 +22,8 @@ compare_scores(
 z-score comparison. Supply this, \code{sim_grid_list}, or both}
 
 \item{sim_grid_list}{output of \code{\link[=sim_grid]{sim_grid()}}: a named list of covariate grids,
-one per level of the factor it was built over. Used for the centile
-comparison.}
+one per level of the factor it was built over. Should have good coverage of
+entire covariate space. Used for the centile comparison.}
 
 \item{cent_to_check}{centiles at which to compare predicted values, as values
 between 0 and 1. Only used with \code{sim_grid_list}.}
@@ -36,9 +36,9 @@ that model is predicted data-free.}
 \value{
 invisibly, a list with the components the call produced: \code{z_diffs}, a
 named numeric of the \code{max} and \code{mean} absolute z-score difference, with
-\code{n_on_node} alongside it; \code{centile_diff}, a named list holding, for each level
-of \code{sim_grid_list}, the maximum absolute z difference at each centile checked;
-and \code{grid_probe}, the same per-centile summary at the rebuild grid's midpoints.
+\code{n_tied} alongside it; \code{nudged}, present only when a frame had to be moved
+off points that measured nothing; \code{centile_diffs}, a named list holding, for each level
+of \code{sim_grid_list}, the maximum absolute z difference at each centile checked.
 }
 \description{
 Compare either the z-scores that two models assign the same observations and/or compare
@@ -50,37 +50,14 @@ out-of-sample observations (i.e. new batches).
 
 A rebuilt \code{pb()} spline (see \code{\link[=sanitize_gamlss]{sanitize_gamlss()}}) interpolates the grid it was
 rebuilt on, so it reproduces the original smooth \emph{exactly} at each grid node
-and the error peaks between them. Two consequences:
-\itemize{
-\item rows of \code{data} that sit on a node contribute an exact 0, which drags \code{mean}
-down in proportion to how many there are. \code{z_diffs} therefore summarises the
-off-node rows, and \code{n_on_node} reports how many were set aside. \code{max} is
-unaffected by this: a single off-node row recovers the true magnitude.
-\item \code{grid_probe} sweeps each rebuilt covariate across its grid, at several
-points inside every interval, which measures what the rebuild costs over
-the whole covariate range. Unlike the other two comparisons it does not
-depend on the points you chose, so no choice of \code{data} or \code{sim_grid_list}
-can flatter it. Read it as the worst case (a dense probe rather than a
-proven upper bound) and the others as what your actual observations see.
-}
+and the error peaks between them. These points are uninformative and thus ignored
+by \code{z_diffs} summaries (\code{n_tied} indicates how many such points are ignored).
+If EVERY point in a frame is tied due to smooth interpolation, the comparison is
+moved off those points (by half the smallest gap between distinct covariate values),
+indicated by \code{nudged}.
 
-All three summaries are in z units and are meant to be read against the same
-\code{tol}. They do sample different points, so they need not agree: \code{centile_diff}
-and \code{grid_probe} walk the \code{cent_to_check} ladder at every covariate value,
-while \code{z_diffs} lands wherever your observations actually sit -- usually
-mid-distribution, which is why it often reads a little lower (measured
-4.2e-04 against 5.2e-04 on the same model pair).
-
-One caveat on the conversion: \code{centile_diff} and \code{grid_probe} turn a
-response-scale gap into z units using a local SD (the half-width of
-\code{gamlssModel1}'s +/-1 SD interval), which is a linearisation. It holds across
-the usual centile range but degrades in the far tail, where \code{qnorm} is near
-vertical and the ladder has stopped at \code{c99}. An observation out there can
-give a \code{z_diffs} several times larger (measured 7.0e-04 against 4.9e-04 for a
-response sitting at centile 1). If the two disagree by more than a little,
-check where your responses fall before suspecting the rebuild -- and if you
-score observations that far out routinely, widen \code{cent_to_check} so the
-centile comparison and the probe reach them too.
+\code{centile_diffs} is symmetric, so the output is the same regardless of which model
+is passed as \code{gamlssModel1} vs \code{gamlssModel2}.
 }
 \examples{
 #compare regular and datafree prediction path

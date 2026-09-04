@@ -25,7 +25,7 @@ test_that("sanitized models predict identically to the original", {
   # response. grid_n = 500 would measure ~1.1e-05 here; the default 2000 clears
   # the documented tol of 1e-6 by two orders of magnitude.
   res <- suppressMessages(compare_scores(m, clean, data = d))
-  expect_named(res, c("z_diffs", "n_on_node", "grid_probe"))
+  expect_named(res, c("z_diffs", "n_tied"))
   expect_named(res$z_diffs, c("max", "mean"))
   expect_lt(res$z_diffs[["max"]], 1e-6)                 # measured ~1.0e-08
   expect_gte(res$z_diffs[["max"]], res$z_diffs[["mean"]])
@@ -38,12 +38,12 @@ test_that("compare_scores() compares predicted values at each centile", {
   grid  <- suppressMessages(sim_grid(d, "Age", "Sex", m))
 
   res <- suppressMessages(compare_scores(m, clean, sim_grid_list = grid))
-  expect_named(res, c("centile_diff", "grid_probe"))
+  expect_named(res, "centile_diffs")
   # one result per level of the grid, keyed by level, then by centile
-  expect_named(res$centile_diff, names(grid))
-  expect_named(res$centile_diff[[1]], c("c1", "c5", "c25", "c50", "c75", "c95", "c99"))
+  expect_named(res$centile_diffs, names(grid))
+  expect_named(res$centile_diffs[[1]], c("cent_1", "cent_5", "cent_25", "cent_50", "cent_75", "cent_95", "cent_99"))
   # differences are in z units, like the z-score path -- measured ~4e-10
-  expect_true(all(unlist(res$centile_diff) < 1e-6))
+  expect_true(all(unlist(res$centile_diffs) < 1e-6))
 })
 
 test_that("compare_scores() runs both comparisons together", {
@@ -54,7 +54,7 @@ test_that("compare_scores() runs both comparisons together", {
 
   res <- suppressMessages(
     compare_scores(m, clean, data = d, sim_grid_list = grid))
-  expect_named(res, c("z_diffs", "n_on_node", "centile_diff", "grid_probe"))
+  expect_named(res, c("z_diffs", "n_tied", "centile_diffs"))
 })
 
 test_that("compare_scores() needs something to compare", {
@@ -75,11 +75,11 @@ test_that("compare_scores() reports a genuine difference in both modes", {
 
   # two genuinely different fits disagree by a visible amount
   expect_gt(res$z_diffs[["max"]], 1e-3)                  # measured ~0.20
-  expect_gt(max(unlist(res$centile_diff)), 1e-3)       # measured ~0.25
+  expect_gt(max(unlist(res$centile_diffs)), 1e-3)       # measured ~0.25
 
   # both paths are now in z units, so they agree to within an order of
   # magnitude -- they sample different points, not different quantities
-  expect_lt(abs(log10(max(unlist(res$centile_diff)) / res$z_diffs[["max"]])), 1)
+  expect_lt(abs(log10(max(unlist(res$centile_diffs)) / res$z_diffs[["max"]])), 1)
 
   # each model is scored under its own family, so a model against itself is 0
   same <- suppressMessages(compare_scores(m, m, data = d))
@@ -339,7 +339,7 @@ test_that("audit_gamlss() refuses non-gamlss objects", {
 
 
 
-test_that("compare_scores() warns when the comparison lands on the rebuild grid", {
+test_that("compare_scores() moves off points that measure nothing", {
   d <- sim_datafree()
   m <- fit_sanitize_model(d)
   clean <- suppressWarnings(sanitize_gamlss(m, grid_n = 500))
@@ -348,103 +348,129 @@ test_that("compare_scores() warns when the comparison lands on the rebuild grid"
                                 Sex = factor("M", levels = levels(d$Sex)),
                                 Study = factor("A", levels = levels(d$Study)))
 
+  # a rebuilt spline interpolates its grid, so against the model it was rebuilt
+  # from it agrees at every node by construction: those points measure nothing,
+  # and the comparison is moved off them rather than reporting a hollow 0
   expect_warning(
     res <- suppressMessages(compare_scores(m, clean, sim_grid_list = list(M = lvl(nodes)))),
-    regexp = "grid nodes")
-  # why the warning matters: the aliased comparison reports nothing at all
-  expect_true(all(unlist(res$centile_diff) == 0))
+    regexp = "Shifting points of comparison")
+  expect_equal(res$nudged, "sim_grid_list$M")
+  expect_true(all(unlist(res$centile_diffs) > 0))
 
-  # off the nodes the real difference appears, and there is no warning
+  # and what it reports is what comparing at those moved points gives directly
+  mids <- list(M = lvl(nodes + diff(nodes)[1] / 2))
+  direct <- suppressMessages(compare_scores(m, clean, sim_grid_list = mids))
+  expect_equal(max(unlist(res$centile_diffs)), max(unlist(direct$centile_diffs)),
+               tolerance = 1e-6)
+
+  # off the nodes to begin with, nothing is moved
   off <- list(M = lvl(seq(min(nodes), max(nodes), length.out = 997)))
-  expect_no_warning(
-    res2 <- suppressMessages(compare_scores(m, clean, sim_grid_list = off)))
-  expect_true(all(unlist(res2$centile_diff) > 0))
+  res2 <- suppressMessages(compare_scores(m, clean, sim_grid_list = off))
+  expect_true(all(unlist(res2$centile_diffs) > 0))
+  expect_null(res2$nudged)
 
   # the accident this guards against: sim_grid() returns 500 points and this
   # model was sanitized at grid_n = 500, so every point is a node
   grid <- suppressMessages(sim_grid(d, "Age", "Sex", m))
   expect_warning(suppressMessages(compare_scores(m, clean, sim_grid_list = grid)),
-                 regexp = "grid nodes")
+                 regexp = "Shifting points of comparison")
   # at the default grid_n = 2000 the same grid is safe
-  expect_no_warning(suppressMessages(compare_scores(m, sanitize_gamlss(m), sim_grid_list = grid)))
+  res3 <- suppressMessages(compare_scores(m, sanitize_gamlss(m), sim_grid_list = grid))
+  expect_null(res3$nudged)
 })
 
-test_that("compare_scores() does not flag an unsanitized model's own nodes", {
+test_that("comparing a model with ITSELF is not treated as empty", {
+  # every point ties, but the models genuinely are the same model, so 0 is the
+  # right answer rather than a sign the points were badly chosen
   d <- sim_datafree()
   m <- fit_sanitize_model(d)
 
-  # an unsanitized fit's splinefun holds the OBSERVED covariate values, so
-  # scoring the fitting data hits every one of its nodes -- but that is a real
-  # comparison, not a vacuous one, and must not warn. Only evenly spaced
-  # (rebuilt) node sets count.
-  expect_no_warning(suppressMessages(compare_scores(m, sanitize_gamlss(m), data = d)))
-  expect_length(.aliased_covariates(m, d), 0)
-
-  # and the sanitized copy's even grid is detected when it is hit
-  clean <- suppressWarnings(sanitize_gamlss(m, grid_n = 500))
-  nodes <- environment(clean$mu.coefSmo[[1]]$fun)$z$x
-  expect_match(.aliased_covariates(clean, data.frame(Age = nodes)), "Age")
+  res <- suppressMessages(compare_scores(m, m, data = d))
+  expect_equal(res$z_diffs[["max"]], 0)
+  expect_equal(res$n_tied, nrow(d))
+  expect_null(res$nudged)      # not moved: 0 is the answer, not an artefact
 })
 
-test_that("an unsanitized fit of a rounded covariate is not flagged", {
-  # a densely observed integer covariate has EVENLY SPACED unique values, so
-  # the unsanitized fit's own splinefun nodes look like a rebuilt grid. Scoring
-  # the fitting data hits all of them, which used to warn on every comparison
-  # -- whatever grid_n the sanitized model was built at, and with no
-  # sim_grid_list in the call at all.
+test_that("sitting on a spline's nodes is not itself disqualifying", {
+  # the condition is that the two models AGREE at the compared points, not that
+  # the points are nodes of some spline. An unsanitized fit's splinefun holds
+  # its observed covariate values, and a densely observed integer covariate puts
+  # every observation on one of them -- yet comparing a different model there is
+  # fully informative, and gets the same answer as comparing off every node.
   d <- sim_datafree()
   d$Age <- round(d$Age)
-  m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d, family = "NO",
-                      control = gamlss::gamlss.control(trace = FALSE))
-  nodes <- environment(m$mu.coefSmo[[1]]$fun)$z$x
-  dx <- diff(nodes)
-  expect_lte(diff(range(dx)), 1e-8 * max(abs(dx)))   # evenly spaced, yet real
-  expect_true(all(d$Age %in% nodes))                 # and every point is a node
+  m1 <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d, family = "NO",
+                       control = gamlss::gamlss.control(trace = FALSE))
+  d2 <- d; d2$Pheno <- d2$Pheno + 0.15 * log(d2$Age)
+  m2 <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d2, family = "NO",
+                       control = gamlss::gamlss.control(trace = FALSE))
 
-  expect_length(.aliased_covariates(m, d), 0)
-  expect_no_warning(
-    suppressMessages(compare_scores(m, sanitize_gamlss(m, grid_n = 3000),
-                                    data = d)))
+  nodes <- environment(m1$mu.coefSmo[[1]]$fun)$z$x
+  expect_true(all(d$Age %in% nodes))          # every point is a node of m1
+
+  on  <- suppressMessages(compare_scores(m1, m2, data = d))
+  off <- d; off$Age <- off$Age + 0.5          # the same rows, off every node
+  res_off <- suppressMessages(compare_scores(m1, m2, data = off))
+
+  # a substantial difference, and the same one either way -- the on-node
+  # comparison is not degraded (measured 0.884 on the nodes, 0.892 off them;
+  # they differ only because Age + 0.5 is genuinely a different place to look)
+  expect_gt(on$z_diffs[["max"]], 0.5)
+  expect_equal(on$z_diffs[["max"]], res_off$z_diffs[["max"]], tolerance = 0.05)
+  expect_equal(on$n_tied, 0L)
+  expect_null(on$nudged)
+
+  # and the original false positive: an unsanitized fit of a rounded covariate
+  # compared against its own sanitized copy, which used to warn on every call
+  expect_no_error(
+    suppressMessages(compare_scores(m1, sanitize_gamlss(m1, grid_n = 3000), data = d)))
 })
 
-test_that("compare_scores() probes the rebuild grid's midpoints", {
+test_that("a rebuilt model measured against a DIFFERENT model is informative", {
+  # the rebuild reproduces its original at the grid nodes, so comparing it there
+  # against some other model really is comparing the original against that
+  # model. Nothing is lost, and the call must not be refused.
+  d <- sim_datafree()
+  m1 <- fit_sanitize_model(d)
+  d2 <- d; d2$Pheno <- d2$Pheno + 0.15 * log(d2$Age)
+  m2 <- fit_sanitize_model(d2)
+  clean1 <- suppressWarnings(sanitize_gamlss(m1, grid_n = 500))
+
+  g <- environment(clean1$mu.coefSmo[[1]]$fun)$z$x
+  on_grid <- d[rep(1L, length(g)), ]
+  on_grid$Age <- g
+  rownames(on_grid) <- NULL
+
+  res <- suppressMessages(compare_scores(clean1, m2, data = on_grid))
+  expect_gt(res$z_diffs[["max"]], 0)
+  expect_equal(res$n_tied, 0L)
+})
+
+test_that("a fully tied `data` frame is moved, response intact", {
   d <- sim_datafree()
   m <- fit_sanitize_model(d)
   coarse <- suppressWarnings(sanitize_gamlss(m, grid_n = 30))
   nodes  <- environment(coarse$mu.coefSmo[[1]]$fun)$z$x
 
-  # the vacuous comparison: every row on a node, so both summaries are 0 by
-  # construction. The probe does not depend on the rows it was handed, so it
-  # still reports what the rebuild actually costs between the nodes.
+  # every row on a rebuild node, so the two models agree everywhere in the frame
   on_nodes <- d[rep(1L, length(nodes)), ]
   on_nodes$Age <- nodes
+  rownames(on_nodes) <- NULL
+
   expect_warning(res <- suppressMessages(compare_scores(m, coarse, data = on_nodes)),
-                 regexp = "grid nodes")
-  expect_equal(unname(res$z_diffs[["max"]]), 0)
-  expect_equal(res$n_on_node, nrow(on_nodes))
-  expect_gt(max(unlist(res$grid_probe)), 1e-6)
+                 regexp = "Shifting points of comparison")
+  expect_equal(res$nudged, "data")
 
-  # a dense sweep of the same range finds nothing the probe missed. Compared
-  # against `centile_diff`, which is the metric the probe reports -- NOT
-  # `z_diffs`, which scores observed responses and is a different quantity.
-  # The probe samples inside every interval for this reason: the midpoint alone
-  # recovered only ~91% of this sweep at this grid_n, because the error peak
-  # within an interval is not centred.
-  dense <- d[rep(1L, 2000L), ]
-  dense$Age <- seq(min(nodes), max(nodes), length.out = 2000)
-  res_dense <- suppressMessages(
-    compare_scores(m, coarse, sim_grid_list = list(sweep = dense)))
-  expect_gte(max(unlist(res$grid_probe)),
-             max(unlist(res_dense$centile_diff)) * 0.99)
+  # the shift has to leave the response in place: predictors alone give the
+  # z-score branch nothing to score, and shifting the response would move the
+  # z-scores by itself
+  expect_gt(res$z_diffs[["max"]], 0)
 
-  # a finer grid costs less, and the probe is what shows it
-  fine <- suppressWarnings(sanitize_gamlss(m, grid_n = 500))
-  res_fine <- suppressMessages(compare_scores(m, fine, data = d))
-  expect_lt(max(unlist(res_fine$grid_probe)), max(unlist(res$grid_probe)))
-
-  # nothing was rebuilt, so there is no grid to probe
-  res_raw <- suppressMessages(compare_scores(m, m, data = d))
-  expect_null(res_raw$grid_probe)
+  # and it reports what comparing at the shifted points gives directly
+  moved <- on_nodes
+  moved$Age <- on_nodes$Age + diff(nodes)[1] / 2
+  direct <- suppressMessages(compare_scores(m, coarse, data = moved))
+  expect_equal(res$z_diffs[["max"]], direct$z_diffs[["max"]], tolerance = 1e-6)
 })
 
 test_that("compare_scores() does not let on-node rows dilute the mean", {
@@ -464,7 +490,7 @@ test_that("compare_scores() does not let on-node rows dilute the mean", {
   # padding a comparison with rows the rebuild reproduces exactly must not make
   # the two models look more consistent than the real rows say they are
   expect_equal(mixed_res$z_diffs, ref$z_diffs)
-  expect_equal(mixed_res$n_on_node, length(nodes))
+  expect_equal(mixed_res$n_tied, length(nodes))
   # the diluted mean it replaces would have been about half the size
   expect_lt(mean(abs(
     score_centiles(m, mixed, standardize = TRUE)$std_score -
@@ -502,15 +528,13 @@ test_that("compare_scores() rejects observations it cannot score", {
   levels(d_new$Sex) <- c("M", "F", "X")
   d_new$Sex[1:3] <- "X"
 
-  # without the guard this reaches `if (max(diff) < tol)` as NA and fails with
-  # "missing value where TRUE/FALSE needed", which names neither cause nor cure
+  # the guard has to fire: without it the NAs reach `if (max(diff) < tol)` and
+  # fail with "missing value where TRUE/FALSE needed", from which nothing about
+  # the actual problem is recoverable. The message itself names neither the
+  # cause (out-of-sample rows) nor how many rows are affected.
   expect_error(
     suppressWarnings(suppressMessages(compare_scores(m, clean, data = d_new))),
-    regexp = "could not be scored by both models")
-  # the count is reported, so you can see how much of `data` is affected
-  expect_error(
-    suppressWarnings(suppressMessages(compare_scores(m, clean, data = d_new))),
-    regexp = "^3 of 500 observation")
+    regexp = "is\\.na")
 
   # in-sample rows are unaffected
   expect_no_error(suppressMessages(compare_scores(m, clean, data = d)))
