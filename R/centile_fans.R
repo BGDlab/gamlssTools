@@ -532,6 +532,15 @@ compare_centile_fans <- function(gamlssModel1, gamlssModel2, df, x_var,
                          name = model_legend_title) +
       guides(color = guide_legend(override.aes = list(alpha = 1, linewidth = 1.2))))
 
+  #the percentile keys otherwise inherit the first model's color, reading as though line
+  #thickness belonged to that model. Only touch the guide when that legend is actually
+  #drawn: a plot-level guides() overrides the scale's own guide = "none" and would bring
+  #the legend back for the other `label_centiles` options.
+  if (label_centiles == "legend"){
+    final_plot_obj <- final_plot_obj +
+      guides(linewidth = guide_legend(override.aes = list(colour = "black")))
+  }
+
   #with color spent on the model, facet_var is shown as panels instead
   if (!is.null(facet_var) && !isTRUE(average_over)){
     final_plot_obj <- final_plot_obj +

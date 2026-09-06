@@ -170,3 +170,21 @@ test_that("arguments set per model are refused when passed through `...`", {
                                     point_color_manual = "red"),
                "point_color")
 })
+
+test_that("the percentile legend's keys are neutral, and only when it is drawn", {
+  f <- cmp_fixture()
+
+  #without this the keys inherit the first model's color, reading as though line
+  #thickness belonged to that model
+  quiet(leg <- compare_centile_fans(f$m1, f$m2, f$d, "Age", "Sex",
+                                    label_centiles = "legend"))
+  expect_true("linewidth" %in% names(leg$guides$guides))
+  expect_equal(leg$guides$guides$linewidth$params$override.aes$colour, "black")
+
+  #a plot-level guides() overrides the scale's own guide = "none", so setting it for the
+  #other options would bring the percentile legend back for plots that asked not to have it
+  for (lc in c("label", "none")) {
+    quiet(p <- compare_centile_fans(f$m1, f$m2, f$d, "Age", "Sex", label_centiles = lc))
+    expect_false("linewidth" %in% names(p$guides$guides), info = lc)
+  }
+})

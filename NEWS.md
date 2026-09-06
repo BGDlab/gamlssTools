@@ -136,8 +136,10 @@ Breaking changes were restricted to minor unpopular functions and features
   both fans are drawn solid in the two `model_colors`, at `alpha` (0.6 by default) so the
   overlap stays visible. That frees the grouping variable to be shown as facets, one panel
   per level -- so it is named `facet_var` here rather than `color_var` -- with the data
-  points, if `show_points = TRUE`, drawn once in a neutral `point_color`. Pairs with
-  `compare_scores()`, which quantifies the same difference.
+  points, if `show_points = TRUE`, drawn once in a neutral `point_color`. With
+  `label_centiles = "legend"` the percentile keys are drawn in black rather than
+  inheriting the first model's color. Pairs with `compare_scores()`, which quantifies the
+  same difference.
 
 * Fixed `make_centile_fan()` labelling the x-axis `point_df[[x_var]]` instead of naming
   the variable. The averaged branch (`average_over = TRUE`, or `color_var = NULL`) builds
@@ -175,8 +177,9 @@ Breaking changes were restricted to minor unpopular functions and features
   `compare_centile_fans()` produces: one solid fan per model in its own color and alpha,
   with distinct predictions; no leftover mapped color to rival the model scale; a two-key
   model legend; one panel per level of `facet_var`, and none when there is nothing to
-  facet by; points and centile labels drawn only once; and a single `sim_grid_list`
-  being reused for the second model.
+  facet by; points and centile labels drawn only once; a single `sim_grid_list` being
+  reused for the second model; and the percentile legend being left untouched unless
+  `label_centiles = "legend"` actually draws it.
 
 * New tests in `tests/testthat/test-datafree.R` covering data-free output against the
   `predictAll()` gold path, data-free eligibility detection, and that every deprecated
