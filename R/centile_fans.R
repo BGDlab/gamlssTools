@@ -329,6 +329,218 @@ plot_centile_cis <- function(gamlssModel, df, x_var,
   return(plot_full)
 }
 
+#' Overlay the centile fans of two models
+#' 
+#' Draw the centile fans of two gamlss models on one set of axes. 
+#' 
+#' @details
+#' Wrapper for [make_centile_fan()], called once per model. The first model's call
+#' builds the plot and the second model contributes only its centile lines (plus its peak
+#' points, when `get_peaks = TRUE`) on top. Since models are distinguished by color,
+#' `facet_var` (passed to `make_centile_fan()`'s `color_var`) is used for faceting instead. 
+#' By default, both models are treated as being fit on the same dataframe (`df`, `sim_grid_list`),
+#' but any two models with the same `x_var` and dependent variable can be used.
+#' 
+#' Points, when drawn, are from `df` only.
+#' 
+#' @param gamlssModel1,gamlssModel2 the two fitted gamlss models to overlay
+#' @param df dataframe used to fit `gamlssModel1`. Data points, when shown, are drawn from
+#' this dataframe only.
+#' @param x_var continuous predictor (e.g. 'age') that will be plotted on the x axis
+#' @param facet_var (optional) categorical predictor (e.g. 'sex') that the plot is FACETED
+#' by, one panel per level. See `average_over`.
+#' @param df2 (optional) dataframe used to fit `gamlssModel2`. Defaults to `df`.
+#' @param model_names length-2 character vector naming the two models in the legend and
+#' title. Defaults to the names of the objects passed as `gamlssModel1` and `gamlssModel2`.
+#' @param model_colors length-2 vector of colors, one per model. Defaults to
+#' `c("blue", "red")`.
+#' @param alpha opacity of the centile lines, so that both models stay visible where they
+#' overlap. Defaults to 0.6.
+#' @param model_legend_title title of the legend distinguishing the two models. Defaults to
+#' "Model".
+#' @param facet_scales passed to [ggplot2::facet_wrap()] as `scales`. Defaults to "fixed",
+#' which keeps the panels comparable.
+#' @param get_peaks logical to indicate whether to add a point at each model's median centile
+#' peak (a diamond for `gamlssModel1`, a triangle for `gamlssModel2`). Defaults to `FALSE`.
+#' @param desiredCentiles list of percentiles as values between 0 and 1 that will be
+#' calculated and returned for both models. Defaults to c(0.05, 0.5, 0.95), since overlaid
+#' fans get unreadable quickly.
+#' @param average_over logical indicating whether to average each model's predicted centiles
+#' across the levels of `facet_var`. Defaults to `FALSE`.
+#' @param show_points logical indicating whether to plot `df`'s data points. Defaults to `FALSE`.
+#' @param point_color color of the data points. Defaults to "grey30".
+#' @param label_centiles label the percentile corresponding to each centile line(`label`),
+#' map thickness in legend(`legend`), or neither(`none`). Labels are drawn once, off the
+#' first model's fan. Defaults to `legend`.
+#' @param ... (optional) any additional arguments, passed to both [make_centile_fan()] calls
+#' @param sim_grid_list,sim_grid_list2 (optional) output of [sim_grid()] for each model. Must
+#' be named in full. Only share one grid between the two models if they were fit on the
+#' same predictors.
+#' 
+#' @returns ggplot object
+#' 
+#' @seealso [make_centile_fan()], [compare_scores()] to quantify the difference the plot shows
+#' 
+#' @examples
+#' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' iris_model2 <- gamlss(formula = Sepal.Width ~ pb(Sepal.Length) + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
+#' 
+#' #one panel per species, both models overlaid in each
+#' compare_centile_fans(iris_model, iris_model2, iris, "Sepal.Length", "Species")
+#' 
+#' #average over species instead: one panel, one fan per model
+#' compare_centile_fans(iris_model, iris_model2, iris, "Sepal.Length", "Species",
+#'                      average_over=TRUE, model_names=c("linear", "spline"))
+#' 
+#' #show points
+#' compare_centile_fans(iris_model, iris_model2, iris, "Sepal.Length", "Species",
+#'                      model_names=c("linear", "spline"),
+#'                      show_points=TRUE,
+#'                      get_peaks=TRUE,
+#'                      model_colors=c("green", "orange")) +
+#'                      theme_bw()                     
+#' 
+#' @export
+compare_centile_fans <- function(gamlssModel1, gamlssModel2, df, x_var,
+                                 facet_var = NULL,
+                                 df2 = NULL,
+                                 model_names = NULL,
+                                 model_colors = c("blue", "red"),
+                                 alpha = 0.6,
+                                 model_legend_title = "Model",
+                                 facet_scales = c("fixed", "free", "free_x", "free_y"),
+                                 get_peaks = FALSE,
+                                 desiredCentiles = c(0.05, 0.5, 0.95),
+                                 average_over = FALSE,
+                                 show_points = FALSE,
+                                 point_color = "grey30",
+                                 label_centiles = c("legend", "none", "label"),
+                                 ...,
+                                 sim_grid_list = NULL,
+                                 sim_grid_list2 = NULL){
+  
+  #name the models after the objects passed in, unless told otherwise
+  if (is.null(model_names)){
+    model_names <- c(paste(deparse(substitute(gamlssModel1)), collapse = ""),
+                     paste(deparse(substitute(gamlssModel2)), collapse = ""))
+  }
+  stopifnot(length(model_names) == 2, length(model_colors) == 2)
+  model_names <- as.character(model_names)
+  #a legend needs two distinct keys, and the same model can legitimately be passed twice
+  if (model_names[1] == model_names[2]){
+    model_names <- paste0(model_names, c(" (1)", " (2)"))
+  }
+  
+  label_centiles <- match.arg(label_centiles)
+  facet_scales <- match.arg(facet_scales)
+  if (is.null(df2)) df2 <- df
+  if (is.null(sim_grid_list2) && !is.null(sim_grid_list)) sim_grid_list2 <- sim_grid_list
+
+  #these reach make_centile_fan by a per-model name instead; passing the make_centile_fan
+  #name through `...` would hand each call the same argument twice
+  clash <- intersect(names(list(...)),
+                     c("sim_data_list", "color_manual", "point_color_manual"))
+  if (length(clash) > 0){
+    stop("`", clash[1], "` is set per model here: use ",
+         if (clash[1] %in% c("color_manual", "point_color_manual")) "`model_colors` and `point_color`"
+         else "`sim_grid_list` and `sim_grid_list2`", call. = FALSE)
+  }
+
+  base_plot <- make_centile_fan(gamlssModel1, df, x_var,
+                                color_var = facet_var,
+                                get_peaks = get_peaks,
+                                desiredCentiles = desiredCentiles,
+                                average_over = average_over,
+                                show_points = show_points,
+                                label_centiles = label_centiles,
+                                sim_grid_list = sim_grid_list,
+                                ...)
+  
+  overlay_plot <- make_centile_fan(gamlssModel2, df2, x_var,
+                                   color_var = facet_var,
+                                   get_peaks = get_peaks,
+                                   desiredCentiles = desiredCentiles,
+                                   average_over = average_over,
+                                   show_points = FALSE,
+                                   label_centiles = "none",
+                                   sim_grid_list = sim_grid_list2,
+                                   ...)
+  
+  #make_centile_fan spends color on color_var (or on its own "navy" default). Drop those
+  #mappings so color is free to carry the model, and pin each layer to a fixed color: a
+  #mapped color would need a second discrete scale on the same aesthetic.
+  pin_color <- function(l, col, layer_alpha = NULL){
+    l$mapping$colour <- NULL
+    l$mapping$fill <- NULL
+    l$aes_params$colour <- col
+    l$aes_params$fill <- col
+    l$aes_params$linetype <- "solid"
+    if (!is.null(layer_alpha)) l$aes_params$alpha <- layer_alpha
+    l
+  }
+  
+  #peaks are the only points make_centile_fan draws with a fixed shape (18), which is how
+  #they are told apart from the data points here
+  is_peak <- function(l) inherits(l$geom, "GeomPoint") && !is.null(l$aes_params$shape)
+  
+  overlay_layers <- Filter(function(l){
+    inherits(l$geom, "GeomLine") || inherits(l$geom, "GeomPoint")
+  }, overlay_plot$layers)
+  
+  if (length(overlay_layers) == 0){
+    stop("no centile layers found for `gamlssModel2`", call. = FALSE)
+  }
+  
+  overlay_layers <- lapply(overlay_layers, function(l){
+    if (inherits(l$geom, "GeomLine")){
+      pin_color(l, model_colors[[2]], alpha)
+    } else {
+      l <- pin_color(l, model_colors[[2]])
+      l$aes_params$shape <- 17  #peaks: triangle for model 2, make_centile_fan's diamond for model 1
+      l
+    }
+  })
+  
+  for (l in base_plot$layers){
+    if (inherits(l$geom, "GeomLine")){
+      pin_color(l, model_colors[[1]], alpha)
+    } else if (is_peak(l)){
+      pin_color(l, model_colors[[1]])
+    } else if (inherits(l$geom, "GeomPoint")){
+      #the raw data, shown once and belonging to neither model
+      pin_color(l, point_color)
+    }
+  }
+  
+  #an all-NA layer that draws nothing, purely so the fixed colors above get a legend
+  legend_df <- data.frame(x = c(NA_real_, NA_real_),
+                          y = c(NA_real_, NA_real_),
+                          model = factor(model_names, levels = model_names))
+  
+  final_plot_obj <- base_plot +
+    overlay_layers +
+    geom_line(data = legend_df,
+              mapping = aes(x = x, y = y, colour = model),
+              inherit.aes = FALSE, na.rm = TRUE) +
+    labs(title = paste(model_names, collapse = " vs. "))
+
+  #make_centile_fan adds scale_color_identity() on the single-fan path, which has no
+  #layers left to act on once the mappings above are dropped; replacing it is intended
+  final_plot_obj <- suppressMessages(
+    final_plot_obj +
+      scale_color_manual(values = stats::setNames(model_colors, model_names),
+                         name = model_legend_title) +
+      guides(color = guide_legend(override.aes = list(alpha = 1, linewidth = 1.2))))
+
+  #with color spent on the model, facet_var is shown as panels instead
+  if (!is.null(facet_var) && !isTRUE(average_over)){
+    final_plot_obj <- final_plot_obj +
+      facet_wrap(vars(!!sym(facet_var)), scales = facet_scales)
+  }
+
+  return(final_plot_obj)
+}
+
 #' Plot centile fan using ggplot
 #' 
 #' `make_centile_fan` takes a gamlss model and creates a basic centile fan for it in ggplot
@@ -768,7 +980,12 @@ make_centile_fan <- function(gamlssModel, df, x_var,
     axis_obj +
     labs(title=deparse(substitute(gamlssModel))) +
     ylab(pheno)
-  
+
+  #the averaged branch builds its aes from vectors (point_df[[x_var]]), so ggplot derives
+  #that expression as the x label. format_x_axis() names the axis itself for its preset
+  #options, but returns NULL for "custom", so only patch the label when it did not.
+  if (is.null(axis_obj)) final_plot_obj <- final_plot_obj + xlab(x_var)
+
   warnings()
   
   return(final_plot_obj)

@@ -157,7 +157,7 @@ sim_grid <- function(fit_data, x_var, factor_var=NULL, gamlssModel=NULL, special
         print(paste("simulating", col, "at", mean_value))
       } else if (is.factor(fit_data[[col]])) {
         mode_value <- mode(fit_data[[col]])
-        new_df[[col]] <- factor(rep(mode_value, n_rows), levels = levels(df[[col]]))
+        new_df[[col]] <- factor(rep(mode_value, n_rows), levels = levels(fit_data[[col]]))
         print(paste("simulating", col, "at", mode_value))
       } else {
         mode_value <- mode(fit_data[[col]])

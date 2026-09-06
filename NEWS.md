@@ -126,6 +126,30 @@ Breaking changes were restricted to minor unpopular functions and features
   `gamlss2` as a side effect must now install it explicitly:
   `remotes::install_github("gamlss-dev/gamlss2")`. See `?gamlssTools-optional`.
 
+## Plotting
+
+* New `compare_centile_fans()`, a wrapper around `make_centile_fan()` that overlays the
+  centile fans of two models for visual comparison. It calls `make_centile_fan()` once per
+  model and transplants the second model's centile (and peak) layers onto the first
+  model's plot, so points, x-axis formatting and centile labels are drawn once and every
+  shared argument behaves as it does in `make_centile_fan()`. Color carries the model:
+  both fans are drawn solid in the two `model_colors`, at `alpha` (0.6 by default) so the
+  overlap stays visible. That frees the grouping variable to be shown as facets, one panel
+  per level -- so it is named `facet_var` here rather than `color_var` -- with the data
+  points, if `show_points = TRUE`, drawn once in a neutral `point_color`. Pairs with
+  `compare_scores()`, which quantifies the same difference.
+
+* Fixed `make_centile_fan()` labelling the x-axis `point_df[[x_var]]` instead of naming
+  the variable. The averaged branch (`average_over = TRUE`, or `color_var = NULL`) builds
+  its layers from vectors rather than a data/mapping pair, so ggplot derived the literal
+  expression as the label. The `x_axis` presets, which name the axis themselves via
+  `format_x_axis()`, are unaffected.
+
+* Fixed `sim_grid()` erroring on a factor column when no `factor_var` is given. A
+  leftover reference to the old `df` argument name resolved to `stats::df` instead of
+  the data ("object of type 'closure' is not subsettable"), which also broke
+  `make_centile_fan()` and its wrappers whenever `color_var = NULL`.
+
 ## Minor new features
 
 * `drop1_all()` gains `fit_data`. `gamlss::drop1()` refits each reduced model by
@@ -143,6 +167,16 @@ Breaking changes were restricted to minor unpopular functions and features
   suggested packages, and how to install them.
 
 ## Documentation and internals
+
+* New tests in `tests/testthat/test-axis-labels.R` pinning both halves of the axis-label
+  fix: the label is repaired on `"custom"` axes and left alone on the `x_axis` presets.
+
+* New tests in `tests/testthat/test-compare-centile-fans.R` covering the layer structure
+  `compare_centile_fans()` produces: one solid fan per model in its own color and alpha,
+  with distinct predictions; no leftover mapped color to rival the model scale; a two-key
+  model legend; one panel per level of `facet_var`, and none when there is nothing to
+  facet by; points and centile labels drawn only once; and a single `sim_grid_list`
+  being reused for the second model.
 
 * New tests in `tests/testthat/test-datafree.R` covering data-free output against the
   `predictAll()` gold path, data-free eligibility detection, and that every deprecated
