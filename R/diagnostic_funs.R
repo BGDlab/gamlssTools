@@ -444,7 +444,7 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
 #' @keywords internal
 #' @noRd
 .models_agree <- function(gamlssModel1, gamlssModel2, newdata,
-                          fit_data1, fit_data2, tol = 1e-12) {
+                          fit_data1, fit_data2) {
   if (!identical(gamlssModel1$family[1], gamlssModel2$family[1]))
     return(logical(nrow(newdata)))
 
@@ -455,7 +455,14 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
   for (nm in gamlssModel1$parameters) {
     a <- as.numeric(p1[[nm]]); b <- as.numeric(p2[[nm]])
     stopifnot(length(a) == nrow(newdata) && length(b) == nrow(newdata))
-    agree <- agree & (abs(a - b) <= tol * pmax(1, abs(a)))
+    #EXACT equality, not a tolerance. A structural tie is exact -- a splinefun
+    #evaluated at one of its own nodes returns the stored value bit for bit --
+    #so nothing is lost by insisting on it. A tolerance instead sweeps up rows
+    #that merely rebuilt well: at grid_n = 5000 a relative 1e-12 tied 98% of
+    #rows while only 2 sat on a node, and since tied rows are dropped from the
+    #summary that inflated the reported mean 44-fold by keeping only the worst.
+    #NA counts as disagreement: an unscorable row is not evidence of a tie.
+    agree <- agree & !is.na(a) & !is.na(b) & a == b
   }
   agree
 }
