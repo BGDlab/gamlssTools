@@ -18,6 +18,11 @@ Takes any \emph{named} gamlss model parameters. Tries quicker, default methods
 instead of giving errors, which is also useful when you need the script to continue
 despite nonconvergence of some models.
 
+Each attempt is made with \code{\link[=safe_gamlss]{safe_gamlss()}}. On failure it retries, in order:
+more iterations (\code{n.cyc}) if the model didn't converge, then \code{method = CG()},
+then tiny step sizes, then \code{CG()} with tiny steps. Any \code{control} list you
+supply is carried into the retries with only those fields changed.
+
 NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in \code{\link[gamlss:summary]{gamlss::summary()}}.
 }
 \examples{

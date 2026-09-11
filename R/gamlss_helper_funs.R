@@ -629,6 +629,11 @@ trunc_coverage <- function(df,
 #' instead of giving errors, which is also useful when you need the script to continue
 #' despite nonconvergence of some models.
 #' 
+#' Each attempt is made with [safe_gamlss()]. On failure it retries, in order:
+#' more iterations (`n.cyc`) if the model didn't converge, then `method = CG()`,
+#' then tiny step sizes, then `CG()` with tiny steps. Any `control` list you
+#' supply is carried into the retries with only those fields changed.
+#' 
 #' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in [gamlss::summary()].
 #' 
 #' @returns gamlss model object
@@ -644,103 +649,120 @@ trunc_coverage <- function(df,
 gamlss_try <- function(...){
   
   #parse gamlss parameters
-  params<-list(...)
-  for (name in names(params) ) {
-    assign(name, params[[name]])
-  }
+  params <- list(...)
   
   warn_msg <- NULL
   err_msg <- NULL
   
-  result <- tryCatch({
-    do.call(safe_gamlss, as.list(params))
-  } , warning = function(w) {
-    message(w$message)
-    warn_msg <<- w$message
-  } , error = function(e) {
-    message(e$message)
-    err_msg <<- e$message
-  } , finally = {
-    message("...")
-    NULL
-  } )
-  
-  #check for nonconvergence warnings and add n.cyc if needed
-  if (!is.null(err_msg) && grepl("converge", err_msg)){
-    params_tmp <- params
-    #if not converged, try with higher n.cyc
-    params_tmp$control$n.cyc <- max(params$control$n.cycy*2, 200)
-    params_tmp$call$start.from <- result
-    
-    #another round of trycatch
-    result <- tryCatch({
-      do.call(safe_gamlss, as.list(params_tmp))
+  #one fitting attempt: the model, or NULL (recording the message) if it failed.
+  #warnings are reported but don't throw the fit away -- safe_gamlss() has
+  #already promoted the ones that mean the model is no good (e.g. nonconvergence)
+  attempt <- function(p) {
+    warn_msg <<- NULL
+    err_msg <<- NULL
+    result <- withCallingHandlers({
+      tryCatch(do.call(safe_gamlss, p),
+               error = function(e) {
+                 message(e$message)
+                 err_msg <<- e$message
+                 NULL
+               })
     } , warning = function(w) {
       message(w$message)
       warn_msg <<- w$message
-    } , error = function(e) {
-      message(e$message, ", trying method=CG()")
-      tryCatch({
-        params_tmp$method <- "CG()"
-        do.call(safe_gamlss, as.list(params_tmp))
-        
-        #if CG also fails, return NULL
-      }, error = function(e2) {
-        message(e2$message)
-        NULL
-      })
-    } , finally = {
-      message("...")
+      invokeRestart("muffleWarning")
     })
+    message("...")
+    result
+  }
   
+  #control list to modify for the retries, defaulting to gamlss()'s own
+  get_control <- function(p) {
+    ctrl <- p$control
+    if (is.null(ctrl)) gamlss.control() else ctrl
+  }
+  
+  result <- attempt(params)
+  
+  #check for nonconvergence warnings and add n.cyc if needed
+  if (is.null(result) && !is.null(err_msg) && grepl("converge", err_msg)){
+    params_tmp <- params
+    #if not converged, try with higher n.cyc
+    ctrl <- get_control(params)
+    ctrl$n.cyc <- max(ctrl$n.cyc * 2, 200)
+    params_tmp$control <- ctrl
+    
+    result <- attempt(params_tmp)
+    
+    #if more iterations didn't do it, try CG()
+    if (is.null(result)){
+      message("trying method=CG()")
+      params_tmp$method <- "CG()"
+      result <- attempt(params_tmp)
+    }
+    
   #for all other errors, try CG() from the beginning
   } else if (is.null(result)){
-    message(err_msg, ", trying method=CG()")
-    result <- tryCatch({
-      params_tmp <- params
-      params_tmp$method <- "CG()"
-      do.call(safe_gamlss, as.list(params_tmp))
-      
-    #if also fails, return NULL
-      }, error = function(e2) {
-        message(e2$message)
-        NULL
-      })
-  }
-
-  #last attempt if needed, try again with tiny steps
-  if(is.null(result)){
-    params$mu.step <- 0.01
-    params$sigma.step <- 0.01
-    params$nu.step <- 0.00000000001
-    params$tau.step <- 0.00000000001
-    
-    result <- tryCatch({
-      do.call(safe_gamlss, as.list(params))
-      
-    } , warning = function(w) {
-      message(w$message)
-      do.call(safe_gamlss, as.list(params))
-      
-    } , error = function(e) {
-      message(e$message, ", trying method=CG()")
-      tryCatch({
-        params_tmp <- params
-        params_tmp$method <- "CG()"
-        do.call(safe_gamlss, as.list(params_tmp))
-        
-        #if CG also fails, return NULL
-      }, error = function(e2) {
-        message(e2$message, ", returning NULL")
-        return(NULL)
-      })
-    } , finally = {
-      message("done")
-      return(NULL)
-    } )
+    message("trying method=CG()")
+    params_tmp <- params
+    params_tmp$method <- "CG()"
+    result <- attempt(params_tmp)
   }
   
+  #last attempt if needed, try again with tiny steps
+  if (is.null(result)){
+    ctrl <- get_control(params)
+    ctrl$mu.step <- 0.01
+    ctrl$sigma.step <- 0.01
+    ctrl$nu.step <- 0.0001
+    ctrl$tau.step <- 0.0001
+    params$control <- ctrl
+    
+    result <- attempt(params)
+    
+    if (is.null(result)){
+      message("trying method=CG()")
+      params$method <- "CG()"
+      result <- attempt(params)
+    }
+  }
+  
+  if (is.null(result)) message("all fitting attempts failed, returning NULL")
+  
   return(result)
+}
+
+# ---- internal: gamlss() fitting-method argument ------------------------------
+# RS(), CG() and mixed() are defined *inside* gamlss()'s own body, so they only
+# exist while gamlss() is running and `method` must arrive as an unevaluated call.
+# Returns the expression to splice into the gamlss() call, accepting either a
+# literal call (`method = CG()`) or a string ("CG", "CG()", "mixed(2, 10)", or a
+# variable holding one), which is what survives being passed through a list.
+#' @keywords internal
+#' @noRd
+.as_gamlss_method <- function(expr, env) {
+  valid <- c("RS", "CG", "mixed")
+  is_method_call <- function(x) {
+    is.call(x) && is.name(x[[1L]]) && as.character(x[[1L]]) %in% valid
+  }
+  #already RS() / CG() / mixed(2, 10)
+  if (is_method_call(expr)) return(expr)
+  
+  #anything else: resolve it, so method = "CG()" and method = m both work
+  val <- tryCatch(eval(expr, env), error = function(e) NULL)
+  if (is_method_call(val)) return(val)
+  if (is.character(val) && length(val) == 1L) {
+    txt <- trimws(val)
+    nm <- sub("\\(.*$", "", txt)
+    if (!nm %in% valid) {
+      stop("`method` must be RS(), CG() or mixed(), not \"", val, "\"", call. = FALSE)
+    }
+    #keep any arguments the method was given, e.g. "mixed(2, 10)"
+    if (identical(nm, txt)) txt <- paste0(nm, "()")
+    return(parse(text = txt, keep.source = FALSE)[[1L]])
+  }
+  #not something we recognize -- hand it over and let gamlss() complain
+  expr
 }
 
 #' safe gamlss
@@ -749,20 +771,48 @@ gamlss_try <- function(...){
 #' 
 #' Fits model using [gamlss::gamlss()] and throws an error if model fails to converge or is null
 #' 
-#' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in [gamlss::summary()].
+#' @details
+#' `method` is passed along unevaluated, because `RS()`, `CG()` and `mixed()`
+#' are internal to the gamlss package. Here you can pass `method = CG()` or
+#' the string form `"CG()"`. Every other argument is evaluated and passed by value,
+#' keeping the model usable later (e.g.  `predictAll()` or [bootstrap_gamlss()]).
+#' The downside is it returns an ugly call argument in [gamlss::summary()].
+#' 
+#' Currently only fits gamlss models (not gamlss2). 
 #' 
 #' @returns gamlss model object
 #' 
 #' @examples
 #' iris_model <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
 #' 
+#' #the slower CG() fitting method can be requested as a call or as a string:
+#' iris_cg <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO, method = CG())
+#' 
 #' @export
 safe_gamlss <- function(...) {
   warn_msg <- NULL
-  args <- list(...)
+  env <- parent.frame()
+  
+  # Build the call to gamlss() by hand
+  cl <- match.call(expand.dots = TRUE)
+  cl[[1]] <- quote(gamlss::gamlss)
+  # normalize partially-matched/positional arguments against gamlss()'s formals
+  cl <- tryCatch(match.call(gamlss::gamlss, cl, expand.dots = TRUE),
+                 error = function(e) cl)
+  arg_nms <- names(cl)
+  for (i in seq_along(cl)[-1]) {
+    #handle special case of `method` arg
+    if (!is.null(arg_nms) && identical(arg_nms[i], "method")) {
+      cl[[i]] <- .as_gamlss_method(cl[[i]], env)
+    } else {
+      # `cl[i] <- list(v)`, not `cl[[i]] <- v`: the latter drops the argument
+      # entirely when v is NULL, which is a legitimate value here (weights = NULL)
+      cl[i] <- list(eval(cl[[i]], env))
+    }
+  }
   
   mod <- withCallingHandlers({
-    do.call(gamlss, args)
+    eval(cl, env)
   }, warning = function(w) {
     # Capture the warning message
     warn_msg <<- w$message
@@ -787,8 +837,10 @@ safe_gamlss <- function(...) {
     stop("Model fit failed: coefficients are NULL")
   }
   
-  #backup check
-  if (mod$converged==FALSE) {
+  #backup check. gamlss() always reports a length-1 logical here, so isTRUE()
+  #is belt-and-braces: it just avoids `NULL == FALSE` collapsing to logical(0)
+  #and erroring out of the guard if that ever stops being true
+  if (!isTRUE(mod$converged)) {
     stop("Model did not converge:", warn_msg)
   }
   
@@ -802,16 +854,7 @@ safe_gamlss <- function(...) {
 #' To test significance, see [gamlssTools::ci_diffs()]
 #'
 #' @details
-#' By default (`datafree = TRUE`) the mu/sigma trajectories are predicted WITHOUT the
-#' original fitting data, reconstructing the model's parameters from its stored coefficients,
-#' `pb()` smooths and `random()` effects (see [centile_fan_values()]). For a gamlss model that
-#' contains a smoother which cannot be rebuilt data-free (`cs()`, `ps()`, `ga()`, `s()`),
-#' `datafree` is switched off with a warning and `df` is used as the reference data instead --
-#' so `df` must be supplied in that case. Set `datafree = FALSE` to always predict via the
-#' original-data [gamlss::predictAll()] path.
-#'
-#' To run fully data-free (e.g. on an HPC, or when the model was loaded from disk and its data
-#' is no longer in scope), supply a pre-built `sim_data_list` from [sim_grid()] and leave `df`
+#' To run fully data-free, supply a pre-built `sim_data_list` from [sim_grid()] and leave `df`
 #' as `NULL`. In that case the two factor levels are taken from `factor_var_levels` if supplied,
 #' otherwise from the names of `sim_data_list`.
 #'
@@ -829,7 +872,7 @@ safe_gamlss <- function(...) {
 #' would calculate the difference A - B. Required (or inferred from `names(sim_data_list)`) when `df` is `NULL`.
 #' @param datafree logical; `TRUE` (default) predicts the trajectories WITHOUT the original data
 #' (reconstructed from stored coefficients / `pb()` smooths / `random()` effects), `FALSE` uses `df`
-#' as the reference data via [gamlss::predictAll()].
+#' as the fitted data via [gamlss::predictAll()].
 #' @param ... additional arguments passed to `sim_grid()` (e.g. `special_term`)
 #'
 #' @returns dataframe
@@ -873,8 +916,6 @@ trajectory_diff <- function(gamlssModel,
   }
 
   # prediction data: data-free by default; otherwise use `df` as fit_data so
-  # prediction goes through the exact predictAll() path. For a gamlss model with a
-  # smoother that cannot be rebuilt data-free, fall back to `df` with a warning.
   if (isTRUE(datafree)) {
     if (inherits(gamlssModel, "gamlss") && !.datafree_eligible_gamlss(gamlssModel)) {
       warning("Model contains a smoother that cannot be predicted data-free; setting datafree=FALSE (using `df` as fit_data)")

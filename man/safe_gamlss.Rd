@@ -15,9 +15,34 @@ gamlss() with more error handling
 \details{
 Fits model using \code{\link[gamlss:gamlss]{gamlss::gamlss()}} and throws an error if model fails to converge or is null
 
-NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in \code{\link[gamlss:summary]{gamlss::summary()}}.
+Takes any gamlss model parameters and builds the call to \code{\link[gamlss:gamlss]{gamlss::gamlss()}}
+by hand, because gamlss() treats two of its arguments specially.
+
+\code{method} is passed along \emph{unevaluated}: gamlss() reads it with
+\code{substitute()}/\code{deparse()} and evaluates it in its own frame, where its
+internal \code{RS()}, \code{CG()} and \code{mixed()} live. They exist nowhere else, so
+evaluating the argument first -- which is what \code{do.call()} does -- fails with
+"could not find function CG". \code{method = CG()} and \code{method = mixed(2, 10)}
+therefore work here, as do the string forms \code{"CG()"} and \code{"mixed(2, 10)"},
+which is what survives being passed along in a list (e.g. from \code{\link[=gamlss_try]{gamlss_try()}}).
+
+Every other argument is evaluated in \emph{your} frame and passed by value, so
+\code{data} and \code{weights} resolve where you wrote them (\code{weights = my_weights}
+works from inside a function or a parallel worker) and the call the model
+records is self-contained -- it does not refer to variables that only existed
+at fitting time. That keeps the model usable later: \code{predictAll()}
+re-evaluates \code{model$call$data} and \code{\link[=bootstrap_gamlss]{bootstrap_gamlss()}} refits the whole call,
+often in another session. The cost is that the data travels inside the model
+object; \code{\link[=sanitize_gamlss]{sanitize_gamlss()}} strips it back out.
+
+NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call
+parameter in \code{\link[gamlss:summary]{gamlss::summary()}}, since the call carries values rather than
+the names you passed.
 }
 \examples{
 iris_model <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+
+#the slower CG() fitting method can be requested as a call or as a string:
+iris_cg <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO, method = CG())
 
 }
