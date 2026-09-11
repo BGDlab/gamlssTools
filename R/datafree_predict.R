@@ -15,9 +15,8 @@
 
 # ---- internal: the covariate a smoother is applied to ------------------------
 # Returns a smooth term label's first argument as a language object, or NULL if
-# the label is not a pb()/random() call. match.call() is used so that the
-# covariate is found wherever it sits: pb(Age), pb(x = Age, df = 3) and
-# pb(Age, control = pb.control(inter = 40)) all resolve to `Age`.
+# the label is not a pb()/random() call. match.call() makes it robust to other args
+# that may be passed to the smooth function.
 #' @keywords internal
 #' @noRd
 .smooth_arg <- function(lab) {
@@ -32,28 +31,6 @@
   if (is.null(mc)) return(NULL)
   mc$x
 }
-
-# ---- internal: parametric terms whose columns are computed from the data -----
-# poly(), ns(), bs(), scale() and cut() derive their columns from the WHOLE
-# covariate vector rather than row by row, so the same term evaluated on newdata
-# is a DIFFERENT basis to the one that was fitted. Data-free prediction rebuilds
-# the parametric design from newdata alone, which would apply the stored
-# coefficients to the wrong basis and return silently wrong numbers (measured at
-# ~0.2 SD of the response for a poly(Age, 2) term, and worse on a grid that does
-# not span the fitting range).
-#
-# These terms also defeat the DEFAULT reference in compare_scores(): the
-# original and the sanitized model are then both predicted data-free and make the
-# SAME mistake, so the comparison looks clean. Refusing them up front is what
-# keeps that check honest.
-#
-# pb() is not affected. It returns the raw covariate into the model frame and
-# keeps its knots, penalty and lambda inside the smoother, which is predicted
-# from its stored interpolation function rather than from a rebuilt basis.
-#
-# The fix is the same as for pb(log(Age)): precompute the basis as plain columns
-# and put those in the formula.
-.datadep_funs <- c("poly", "ns", "bs", "scale", "cut")
 
 # ---- internal: every function called anywhere in a term label ----------------
 # Recurses, so nested and namespaced calls are seen too: splines::ns(Age, 3) and
@@ -77,6 +54,9 @@
 #' @keywords internal
 #' @noRd
 .datadep_labels <- function(object, drop.term = NULL) {
+  #parametric funs that are fit on whole data/can't be datafree
+  datadep_funs <- c("poly", "ns", "bs", "scale", "cut")
+  
   out <- character()
   for (p in object$parameters) {
     fo <- object[[paste0(p, ".formula")]]
@@ -86,7 +66,8 @@
     for (lab in setdiff(tl, sm)) {
       e <- tryCatch(str2lang(lab), error = function(err) NULL)
       if (is.null(e) || !is.call(e)) next
-      if (!any(.called_funs(e) %in% .datadep_funs)) next
+      #screen parametric funs called against list of those that can't be fit datafree
+      if (!any(.called_funs(e) %in% datadep_funs)) next 
       if (!is.null(drop.term) && drop.term %in% all.vars(e)) next
       out <- c(out, paste0(p, ": ", lab))
     }
@@ -95,31 +76,25 @@
 }
 
 # ---- internal: is a gamlss fit eligible for data-free prediction? ------------
-# TRUE when every kept smooth term is a pb() smooth or a random() effect applied
-# to a BARE COLUMN NAME (purely parametric models, which have no smooth terms,
-# are trivially eligible). `drop.term`, if supplied, is excluded from the check.
+# TRUE when: 
+# - every kept smooth term is a pb() smooth or a random() effect
+# - no smooths are applied to transformed covariates (i.e. pb(log(Age)))
+# - no parametric terms are data-dependent (see .datadep_labels() above)
+# `drop.term`, if supplied, is excluded from the check.
 #
-# The bare-name requirement matters. Reconstruction evaluates the stored
-# interpolation function at newdata[[v]], where v is the covariate named in the
-# label -- so a smooth of a TRANSFORMED covariate, pb(log(Age)), would be fed
-# raw Age and silently return wrong values. Such a model is reported ineligible
-# so the caller falls back to predictAll() with the original data. Precompute
-# the transform as a column, pb(logAge), to stay on the data-free path.
-#
-# A fit carrying a data-dependent PARAMETRIC term is refused for the same
-# reason -- see .datadep_labels() above.
 #' @keywords internal
 #' @noRd
 .datafree_eligible_gamlss <- function(object, drop.term = NULL) {
   ok <- TRUE
-  if (length(.datadep_labels(object, drop.term = drop.term))) ok <- FALSE
+  #check for data-dependent parametric terms
+  if (length(.datadep_labels(object, drop.term = drop.term))) ok <- FALSE 
   for (p in object$parameters) {
     sm <- colnames(object[[paste0(p, ".s")]])
     for (lab in sm) {
-      arg       <- .smooth_arg(lab)
+      arg       <- .smooth_arg(lab) #get arg from pb() or random(), else NULL
       supported <- !is.null(arg) && is.name(arg)
       dropped   <- !is.null(drop.term) && drop.term %in% all.vars(str2lang(lab))
-      if (!supported && !dropped) ok <- FALSE
+      if (!supported && !dropped) ok <- FALSE #non-dropped term isn't supported
     }
   }
   ok
@@ -172,29 +147,27 @@
   pfo <- if (length(param_lab)) stats::reformulate(param_lab) else ~1
   mf  <- stats::model.frame(pfo, newdata, na.action = stats::na.pass)
   Xp  <- stats::model.matrix(pfo, mf)
-  # aliased (rank-deficient) columns get an NA coefficient from the fit -- e.g.
-  # pb(x) already carries a linear x, so a separate x main effect is redundant.
-  # Zeroing them reproduces predict()'s handling, which drops aliased columns;
-  # left as NA a single one would make every fitted parameter NA.
+  # pb(x) already carries a linear x (aliased), so a separate x main effect is redundant.
+  # zero to reproduce predict()'s handling
   bp  <- .zap_aliased(cf[colnames(Xp)])
   lp  <- as.numeric(Xp %*% bp)
 
   # pb() smooths: linear part (coef * x) + stored nonlinear interpolation
   for (lab in pb_lab) {
     vars <- all.vars(str2lang(lab))
-    if (!is.null(drop.term) && drop.term %in% vars) next   # pb on a dropped term
+    if (!is.null(drop.term) && drop.term %in% vars) next   # skip pb on a dropped term
     v  <- vars[1]
     lp <- lp + .zap_aliased(cf[[lab]]) * newdata[[v]] +
-      gamlss::getSmo(object, p, which = match(lab, sm))$fun(newdata[[v]])
+      gamlss::getSmo(object, p, which = match(lab, sm))$fun(newdata[[v]]) #eval stored interpolation fun at new datapoints
   }
 
   # random() effects: add the stored per-level BLUP (unseen levels -> population 0)
   for (lab in random_lab) {
     vars <- all.vars(str2lang(lab))
     if (!is.null(drop.term) && drop.term %in% vars) next   # dropped random effect
-    v    <- vars[1]
+    v    <- vars[1] #ignore additional args to random()
     blup <- gamlss::getSmo(object, p, which = match(lab, sm))$coef
-    b    <- as.numeric(blup[as.character(newdata[[v]])])
+    b    <- as.numeric(blup[as.character(newdata[[v]])]) #apply stored estimates
     if (anyNA(b)) {
       warning("random(", v, "): ", sum(is.na(b)),
               " level(s) not seen in the fit; their effect is set to 0 (population).")
@@ -219,7 +192,7 @@
 # Returns a named list (mu, sigma, nu, tau as present) of response-scale fitted
 # parameters on `newdata`, computed without the original fitting data. Shape
 # matches predictAll(object, newdata, type = "response") so callers can use it
-# interchangeably. Only valid for data-free eligible models.
+# interchangeably.
 #' @keywords internal
 #' @noRd
 .predictAll_nodata_gamlss <- function(object, newdata, drop.term = NULL) {
@@ -250,24 +223,4 @@
          "data. Supply the original fitting data (e.g. `fit_data`)")
   }
   predictAll(object, newdata = newdata, data = data, type = "response")
-}
-
-# ---- internal: levels of a batch variable seen during fitting ----------------
-# Works for both parametric factors and those fit as random effects
-#' @keywords internal
-#' @noRd
-.known_levels_gamlss <- function(object, term) {
-  known <- character()
-  for (p in object$parameters) {
-    known <- union(known, object[[paste0(p, ".xlevels")]][[term]])
-
-    sm <- colnames(object[[paste0(p, ".s")]])
-    if (is.null(sm)) next
-    for (lab in sm[grepl("^random\\(", sm)]) {
-      if (!term %in% all.vars(str2lang(lab))) next
-      blup <- gamlss::getSmo(object, p, which = match(lab, sm))$coef
-      known <- union(known, names(blup))
-    }
-  }
-  known
 }

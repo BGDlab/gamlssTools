@@ -16,7 +16,6 @@
   stopifnot(centile <= 1 & centile >= 0)
   stopifnot(n_param <= 4 & n_param >= 1)
 
-  #mu and sigma only
   if (n_param == 1) {
     x <- eval(call(q_func,
                    centile,
@@ -309,6 +308,7 @@ centile_predict <- function(gamlssModel,
     stopifnot("`ref_data` is missing `batch_term`" = batch_term %in% names(ref_data))
     stopifnot("`ref_data` contains NAs in the response or model covariates" =
                 !anyNA(ref_data[, model_cols]))
+    #returned checked dataframe as is
     ref <- ref_data
   } else {
     #a condition: evaluate it in `data`. Formulas carry their own environment, so
@@ -333,22 +333,40 @@ centile_predict <- function(gamlssModel,
 
   stopifnot("`ref_data` selected no rows" = nrow(ref) > 0)
 
-  #harmonize levels: subsetting `data` keeps its full level set, and an external
-  #dataframe carrying fewer levels would fail predict_score()'s levels() check
+  #harmonize levels to that of full data
   ref[[batch_term]] <- factor(as.character(ref[[batch_term]]),
                               levels = levels(data[[batch_term]]))
   ref
 }
 
 # ---- internal: reference rows for one batch level ----------------------------
-# `ref` is NULL when no `ref_data` was supplied, in which case predict_score()
-# falls back to using newdata as its own reference
+# find `ref_data` for a given batch (level of `batch_term`)
 #' @keywords internal
 #' @noRd
 .batch_ref_rows <- function(ref, batch, batch_term) {
   if (is.null(ref)) return(NULL)
   ref_b <- ref[which(ref[[batch_term]] == batch), , drop = FALSE]
   ref_b
+}
+
+# ---- internal: levels of a batch variable seen during fitting ----------------
+# Works for both parametric factors and those fit as random effects
+#' @keywords internal
+#' @noRd
+.known_levels_gamlss <- function(object, term) {
+  known <- character()
+  for (p in object$parameters) {
+    known <- union(known, object[[paste0(p, ".xlevels")]][[term]])
+    
+    sm <- colnames(object[[paste0(p, ".s")]])
+    if (is.null(sm)) next
+    for (lab in sm[grepl("^random\\(", sm)]) {
+      if (!term %in% all.vars(str2lang(lab))) next
+      blup <- gamlss::getSmo(object, p, which = match(lab, sm))$coef
+      known <- union(known, names(blup))
+    }
+  }
+  known
 }
 
 #' Score centiles for observations
