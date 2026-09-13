@@ -168,6 +168,19 @@ Breaking changes were restricted to minor unpopular functions and features
 * New `?gamlssTools-optional` help topic documenting which functions require the
   suggested packages, and how to install them.
 
+* `gamlss_try()` warm-starts its `n.cyc` retry. A model that only ran out of
+  iterations is no longer discarded: its fitted values are handed back as
+  `start.from`, so the extra cycles carry on from where the fit stalled instead of
+  repeating it. The later retries (`CG()`, tiny steps) still start fresh, since they
+  change tack precisely because the previous fit was going nowhere. `NULL` is still
+  returned when every attempt fails.
+
+* `safe_gamlss()` lets `gamlss()` finish before raising its non-convergence error,
+  rather than aborting the fit from inside the warning. The error is unchanged for
+  callers, but now carries the unconverged model in its `model` element. A side
+  effect: a `mixed()` fit where `RS()` warns and `CG()` then converges is returned
+  instead of erroring.
+
 ## Documentation and internals
 
 * New tests in `tests/testthat/test-axis-labels.R` pinning both halves of the axis-label

@@ -237,3 +237,75 @@ test_that("safe_gamlss() promotes only the warnings that mean the fit is bad", {
     "did not converge:something odd"
   )
 })
+
+# ---- warm-starting the retry -------------------------------------------------
+# A model that ran out of iterations is still a partial fit, so gamlss_try()
+# hands it back to the n.cyc retry as `start.from` rather than starting over.
+
+test_that("safe_gamlss() attaches the unconverged model to the error it raises", {
+  args <- list(formula = Sepal.Width ~ pb(Sepal.Length), data = iris, family = BCT,
+               control = gamlss.control(trace = FALSE, n.cyc = 1))
+  e <- tryCatch(do.call(safe_gamlss, args), error = function(e) e)
+
+  expect_s3_class(e, "gamlss_fit_failure")
+  expect_match(conditionMessage(e), "did not converge")
+  expect_s3_class(e$model, "gamlss")
+  expect_false(e$model$converged)
+
+  # errors that leave nothing to restart from carry no model
+  e_null <- tryCatch(
+    safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+                mu.fix = TRUE, mu.start = rep(3, nrow(iris)),
+                sigma.fix = TRUE, sigma.start = rep(0.4, nrow(iris)),
+                control = gamlss.control(trace = FALSE)),
+    error = function(e) e)
+  expect_null(e_null$model)
+})
+
+test_that(".start_from() keeps only what gamlss()'s start.from reads", {
+  m <- gamlss::gamlss(Sepal.Width ~ Sepal.Length, data = iris, family = BCT,
+                      control = gamlss.control(trace = FALSE))
+  s <- .start_from(m)
+
+  expect_true(gamlss::is.gamlss(s))
+  expect_setequal(names(s), c("parameters", paste0(m$parameters, ".fv")))
+  expect_equal(s$mu.fv, m$mu.fv)
+  # small enough to sit in the refit's stored call without dragging a model along
+  # (a fraction of even this toy model; far more so once real data is involved)
+  expect_lt(as.numeric(object.size(s)), as.numeric(object.size(m)) / 5)
+
+  # a fit that blew up is no use as a starting point
+  bad <- m
+  bad$sigma.fv[1] <- NaN
+  expect_null(.start_from(bad))
+  expect_null(.start_from(list(parameters = "mu", mu.fv = 1)))
+})
+
+test_that("gamlss_try() restarts the n.cyc retry from the unconverged fit", {
+  m <- suppressMessages(
+    gamlss_try(formula = Sepal.Width ~ pb(Sepal.Length), data = iris, family = BCT,
+               control = gamlss.control(trace = FALSE, n.cyc = 3))
+  )
+  expect_true(m$converged)
+  expect_s3_class(m$call$start.from, "gamlss")
+
+  # the same fit a cold start reaches, minus the iterations already spent
+  cold <- gamlss::gamlss(Sepal.Width ~ pb(Sepal.Length), data = iris, family = BCT,
+                         control = gamlss.control(trace = FALSE, n.cyc = 200))
+  expect_equal(m$mu.fv, cold$mu.fv, tolerance = 1e-6)
+  expect_equal(deviance(m), deviance(cold), tolerance = 1e-6)
+  expect_lt(m$iter, cold$iter)
+
+  # and the call it records is still self-contained and refittable
+  expect_s3_class(eval(m$call), "gamlss")
+})
+
+test_that("gamlss_try() only warm-starts the n.cyc retry", {
+  # the CG()/tiny-step retries change tack because the fit was going nowhere,
+  # so they must not inherit a diverging fit's values
+  m <- suppressMessages(
+    gamlss_try(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+               control = gamlss.control(trace = FALSE))
+  )
+  expect_null(m$call$start.from)  # nothing failed, nothing to start from
+})
