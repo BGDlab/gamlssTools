@@ -71,7 +71,11 @@
 #' error raised for it carries that fit in its `model` element -- [gamlss_try()]
 #' uses it to warm-start the retry.
 #' 
-#' @details
+#' A fit whose residuals are *all* non-finite is rejected too, even when
+#' [gamlss::gamlss()] reports it as converged -- the deviance stops moving once the
+#' parameters have overflowed, and nothing downstream can be computed from the
+#' result. A few non-finite residuals among usable ones are left alone.
+#' 
 #' `method` is passed along unevaluated, because `RS()`, `CG()` and `mixed()`
 #' are internal to the gamlss package. Here you can pass `method = CG()` or
 #' the string form `"CG()"`. Every other argument is evaluated and passed by value,
@@ -143,6 +147,15 @@ safe_gamlss <- function(...) {
     stop(.fit_failure("Model fit failed: coefficients are NULL")) #ERROR & returns NULL
   }
   
+  #A fit can blow up (parameters running off to 1e137) and still be flagged as
+  #converged, because the deviance stops moving once everything has overflowed.
+  #Its residuals are the tell: no finite value among them means nothing
+  #downstream -- z-scores, centiles, diagnostics -- can be computed from it.
+  #Not a starting point either, so the model isn't carried along.
+  if (!any(is.finite(residuals(mod)))) {
+    stop(.fit_failure("Model fit failed: no finite residuals")) #ERROR & returns NULL
+  }
+  
   #check for non-convergence
   if (!isTRUE(mod$converged)) {
     stop(.fit_failure(paste0("Model did not converge:", warn_msg), model = mod)) #ERROR & returns non-converged model
@@ -162,9 +175,11 @@ safe_gamlss <- function(...) {
 #' 
 #' Each attempt is made with [safe_gamlss()]. On failure it retries, in order:
 #' more iterations (`n.cyc`) if the model didn't converge (using `start.from` to build
-#' off of the unconverged attempt); then `method = CG()`; then tiny step sizes; then 
-#' `CG()` with tiny steps. Any `control` list you supply is carried into the retries 
-#' with only those fields changed.
+#' off of the unconverged attempt); then `method = CG()`; then `method = mixed()`; then
+#' tiny step sizes; then `CG()` and `mixed()` again with tiny steps. Any `control` list 
+#' you supply is carried into the retries with only those fields changed.
+#' 
+#' `mixed()` is given half of `n.cyc`  to settle in `RS()` and one full `n.cyc` in `CG()`.
 #' 
 #' NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in [gamlss::summary()].
 #' 
@@ -223,6 +238,20 @@ gamlss_try <- function(...){
     if (is.null(ctrl)) gamlss.control() else ctrl
   }
   
+  #helper function - work through the slower algorithms on one config: CG()
+  #first, then mixed()
+  escalate_method <- function(p) {
+    n.cyc <- get_control(p)$n.cyc
+    methods <- c("CG()", sprintf("mixed(%d, %d)", max(n.cyc %/% 2, 1), n.cyc)) #half n.cyc for RS, 1 n.cyc for CG
+    for (meth in methods) {
+      message("trying method=", meth)
+      p$method <- meth
+      res <- attempt(p)
+      if (!is.null(res)) return(res)
+    }
+    NULL
+  }
+  
   #FIRST FIT ATTEMPT
   result <- attempt(params)
   
@@ -242,19 +271,14 @@ gamlss_try <- function(...){
       result <- attempt(params_tmp)
     }
     
-    #if more iterations didn't do it, try CG()
+    #if more iterations didn't do it, work through the slower algorithms
     if (is.null(result)){
-      message("trying method=CG()")
-      params_tmp$method <- "CG()"
-      result <- attempt(params_tmp)
+      result <- escalate_method(params_tmp)
     }
     
-    #for all other errors, try CG() from the beginning
+    #for all other errors, go to the slower algorithms from the beginning
   } else if (is.null(result)){
-    message("trying method=CG()")
-    params_tmp <- params
-    params_tmp$method <- "CG()"
-    result <- attempt(params_tmp)
+    result <- escalate_method(params)
   }
   
   #last attempt if needed, try again with tiny steps
@@ -270,11 +294,9 @@ gamlss_try <- function(...){
     
     result <- attempt(params)
     
-    #CG with tiny steps
+    #and the slower algorithms with tiny steps
     if (is.null(result)){
-      message("trying method=CG()")
-      params$method <- "CG()"
-      result <- attempt(params)
+      result <- escalate_method(params)
     }
   }
   

@@ -19,6 +19,11 @@ A model that doesn't converge is still returned by \code{\link[gamlss:gamlss]{ga
 error raised for it carries that fit in its \code{model} element -- \code{\link[=gamlss_try]{gamlss_try()}}
 uses it to warm-start the retry.
 
+A fit whose residuals are \emph{all} non-finite is rejected too, even when
+\code{\link[gamlss:gamlss]{gamlss::gamlss()}} reports it as converged -- the deviance stops moving once the
+parameters have overflowed, and nothing downstream can be computed from the
+result. A few non-finite residuals among usable ones are left alone.
+
 \code{method} is passed along unevaluated, because \code{RS()}, \code{CG()} and \code{mixed()}
 are internal to the gamlss package. Here you can pass \code{method = CG()} or
 the string form \code{"CG()"}. Every other argument is evaluated and passed by value,

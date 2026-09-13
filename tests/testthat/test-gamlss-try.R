@@ -309,3 +309,81 @@ test_that("gamlss_try() only warm-starts the n.cyc retry", {
   )
   expect_null(m$call$start.from)  # nothing failed, nothing to start from
 })
+
+test_that("gamlss_try() escalates to mixed() when CG() fails", {
+  # every attempt fails, so the ladder is walked to the end: record the method
+  # each one was given. safe_gamlss() is where gamlss_try() hands them off.
+  seen <- character(0)
+  fake <- function(...) {
+    p <- list(...)
+    seen <<- c(seen, if (is.null(p$method)) "RS()" else p$method)
+    stop("Model did not converge:Algorithm has not yet converged")
+  }
+  with_mocked_bindings(
+    expect_null(suppressMessages(
+      gamlss_try(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+                 control = gamlss.control(trace = FALSE, n.cyc = 20))
+    )),
+    safe_gamlss = fake)
+
+  # CG() is always followed by mixed() on the same config
+  cg <- which(seen == "CG()")
+  expect_gt(length(cg), 0)
+  expect_true(all(grepl("^mixed\\(", seen[cg + 1])))
+
+  # n.cyc doubles to 200 for the retries, so mixed() gets 100 RS / 200 CG cycles
+  expect_equal(unique(seen[grepl("^mixed", seen)]), "mixed(100, 200)")
+})
+
+test_that("gamlss_try() gives mixed() the config's iteration budget, not its defaults", {
+  # mixed()'s own defaults are mixed(1, 20) whatever n.cyc says, which would give
+  # CG() fewer cycles than the CG() attempt that just failed
+  seen <- character(0)
+  fake <- function(...) {
+    p <- list(...)
+    if (!is.null(p$method)) seen <<- c(seen, p$method)
+    stop("no luck")
+  }
+  with_mocked_bindings(
+    suppressMessages(
+      gamlss_try(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+                 control = gamlss.control(trace = FALSE, n.cyc = 500))
+    ),
+    safe_gamlss = fake)
+
+  expect_true("mixed(250, 500)" %in% seen)
+  expect_false("mixed()" %in% seen)
+
+  # and the string form is one safe_gamlss() can actually turn into a call
+  m <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+                   method = "mixed(250, 500)",
+                   control = gamlss.control(trace = FALSE))
+  expect_equal(deparse(m$method), "mixed(250, 500)")
+})
+
+test_that("safe_gamlss() rejects a blown-up fit that claims to have converged", {
+  # gamlss() sets converged = TRUE once the deviance stops moving, which also
+  # happens when the parameters have overflowed and it has nothing left to move
+  good <- gamlss::gamlss(Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+                         control = gamlss.control(trace = FALSE))
+  call_with <- function(stub) {
+    with_mocked_bindings(
+      safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+                  control = gamlss.control(trace = FALSE)),
+      gamlss = stub, .package = "gamlss")
+  }
+
+  expect_error(
+    call_with(function(...) { m <- good; m$residuals[] <- NaN; m }),
+    "no finite residuals")
+
+  # the guard needs ALL of them gone -- a boundary observation or two is not a
+  # reason to throw away an otherwise good fit
+  m <- call_with(function(...) { m <- good; m$residuals[1:3] <- c(NaN, Inf, -Inf); m })
+  expect_s3_class(m, "gamlss")
+
+  # and a dead fit is no starting point, so it isn't carried to the retry
+  e <- tryCatch(call_with(function(...) { m <- good; m$residuals[] <- NaN; m }),
+                error = function(e) e)
+  expect_null(e$model)
+})

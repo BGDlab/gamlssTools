@@ -10,7 +10,7 @@ gamlss_try(...)
 gamlss model object
 }
 \description{
-Try-catch fitting \code{\link[gamlss:gamlss]{gamlss::gamlss()}} with various methods, return NULL if failed
+Try-catch fitting \code{\link[gamlss:gamlss]{gamlss::gamlss()}} with various methods, return \code{NULL} if failed
 }
 \details{
 Takes any \emph{named} gamlss model parameters. Tries quicker, default methods
@@ -19,16 +19,15 @@ Returns NULL model instead of giving errors, which is also useful when you need
 the script to continue some models not converging.
 
 Each attempt is made with \code{\link[=safe_gamlss]{safe_gamlss()}}. On failure it retries, in order:
-more iterations (\code{n.cyc}) if the model didn't converge, then \code{method = CG()},
-then tiny step sizes, then \code{CG()} with tiny steps. Any \code{control} list you
-supply is carried into the retries with only those fields changed.
+more iterations (\code{n.cyc}) if the model didn't converge (using \code{start.from} to build
+off of the unconverged attempt); then \code{method = CG()}; then \code{method = mixed()}; then
+tiny step sizes; then \code{CG()} and \code{mixed()} again with tiny steps. Any \code{control} list
+you supply is carried into the retries with only those fields changed.
 
-The \code{n.cyc} retry is warm-started: the fitted values of the model that ran out
-of iterations are handed back to it as \code{start.from}, so the extra cycles carry
-on from where the fit stalled instead of repeating it from scratch. The later
-retries deliberately start fresh -- they change the algorithm or the step
-sizes \emph{because} the previous fit was going nowhere. If every attempt fails,
-\code{NULL} is returned.
+\code{mixed()} is given explicit iteration counts rather than being left to its own
+defaults. Those are \code{mixed(1, 20)} no matter what \code{n.cyc} says, which would hand
+\code{CG()} a \emph{smaller} budget than the \code{CG()} attempt that just failed; instead it gets
+half of the config's \code{n.cyc} to settle in \code{RS()} and the full \code{n.cyc} in \code{CG()}.
 
 NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in \code{\link[gamlss:summary]{gamlss::summary()}}.
 }

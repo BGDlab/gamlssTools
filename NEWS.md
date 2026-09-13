@@ -175,6 +175,19 @@ Breaking changes were restricted to minor unpopular functions and features
   change tack precisely because the previous fit was going nowhere. `NULL` is still
   returned when every attempt fails.
 
+* `gamlss_try()` tries `method = mixed()` whenever `method = CG()` fails, on the same
+  config: after the `n.cyc` retry, after the first failure for any other reason, and
+  again with tiny step sizes. It is given explicit iteration counts (half the config's
+  `n.cyc` in `RS()`, then the full `n.cyc` in `CG()`) rather than its own defaults of
+  `mixed(1, 20)`, which would cap `CG()` below the budget of the `CG()` attempt that
+  just failed.
+
+* `safe_gamlss()` rejects a fit whose residuals are all non-finite, even when
+  `gamlss()` reports it as converged. A fit can overflow (parameters at 1e137) and
+  still set `converged = TRUE`, because the deviance stops moving once everything has
+  blown up; such a model is unusable for z-scores, centiles or diagnostics, so
+  `gamlss_try()` now moves on to the next attempt instead of returning it.
+
 * `safe_gamlss()` lets `gamlss()` finish before raising its non-convergence error,
   rather than aborting the fit from inside the warning. The error is unchanged for
   callers, but now carries the unconverged model in its `model` element. A side
