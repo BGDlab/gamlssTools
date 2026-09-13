@@ -625,9 +625,9 @@ trunc_coverage <- function(df,
 #' Try-catch fitting [gamlss::gamlss()] with various methods, return NULL if failed
 #' 
 #' Takes any *named* gamlss model parameters. Tries quicker, default methods
-#' (e.g. mu.step=1, method=RS()) before resorting to slower methods as necessary to fit. Returns NULL model
-#' instead of giving errors, which is also useful when you need the script to continue
-#' despite nonconvergence of some models.
+#' (e.g. mu.step=1, method=RS()) before resorting to slower methods as necessary to fit. 
+#' Returns NULL model instead of giving errors, which is also useful when you need 
+#' the script to continue some models not converging.
 #' 
 #' Each attempt is made with [safe_gamlss()]. On failure it retries, in order:
 #' more iterations (`n.cyc`) if the model didn't converge, then `method = CG()`,
@@ -654,9 +654,7 @@ gamlss_try <- function(...){
   warn_msg <- NULL
   err_msg <- NULL
   
-  #one fitting attempt: the model, or NULL (recording the message) if it failed.
-  #warnings are reported but don't throw the fit away -- safe_gamlss() has
-  #already promoted the ones that mean the model is no good (e.g. nonconvergence)
+  #helper function - return model or NULL (if errored)
   attempt <- function(p) {
     warn_msg <<- NULL
     err_msg <<- NULL
@@ -676,7 +674,8 @@ gamlss_try <- function(...){
     result
   }
   
-  #control list to modify for the retries, defaulting to gamlss()'s own
+  #helper function - pull control list params to modify for the retries, 
+  # defaulting to gamlss()'s own defaults
   get_control <- function(p) {
     ctrl <- p$control
     if (is.null(ctrl)) gamlss.control() else ctrl
@@ -716,10 +715,13 @@ gamlss_try <- function(...){
     ctrl$sigma.step <- 0.01
     ctrl$nu.step <- 0.0001
     ctrl$tau.step <- 0.0001
+    #also increase n.cyc to go with reduced step size
+    ctrl$n.cyc <- max(ctrl$n.cyc * 2, 200)
     params$control <- ctrl
     
     result <- attempt(params)
     
+    #CG with tiny steps
     if (is.null(result)){
       message("trying method=CG()")
       params$method <- "CG()"
@@ -783,7 +785,8 @@ gamlss_try <- function(...){
 #' @returns gamlss model object
 #' 
 #' @examples
-#' iris_model <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, sigma.formula = ~ Sepal.Length, data=iris, family=NO)
+#' iris_model <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + Species, 
+#'     sigma.formula = ~ Sepal.Length, data=iris, family=NO)
 #' 
 #' #the slower CG() fitting method can be requested as a call or as a string:
 #' iris_cg <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO, method = CG())
@@ -805,8 +808,6 @@ safe_gamlss <- function(...) {
     if (!is.null(arg_nms) && identical(arg_nms[i], "method")) {
       cl[[i]] <- .as_gamlss_method(cl[[i]], env)
     } else {
-      # `cl[i] <- list(v)`, not `cl[[i]] <- v`: the latter drops the argument
-      # entirely when v is NULL, which is a legitimate value here (weights = NULL)
       cl[i] <- list(eval(cl[[i]], env))
     }
   }
@@ -837,9 +838,7 @@ safe_gamlss <- function(...) {
     stop("Model fit failed: coefficients are NULL")
   }
   
-  #backup check. gamlss() always reports a length-1 logical here, so isTRUE()
-  #is belt-and-braces: it just avoids `NULL == FALSE` collapsing to logical(0)
-  #and erroring out of the guard if that ever stops being true
+  #backup check for non-convergence
   if (!isTRUE(mod$converged)) {
     stop("Model did not converge:", warn_msg)
   }

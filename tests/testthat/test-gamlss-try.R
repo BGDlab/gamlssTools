@@ -105,9 +105,7 @@ test_that("gamlss_try() returns NULL rather than erroring when nothing fits", {
 
 test_that("the fitted call stays self-contained across sessions and workers", {
   # gamlss() stores the call it was given, and downstream code re-evaluates
-  # pieces of it: predictAll() does eval(Call$data) and bootstrap_gamlss()
-  # refits the whole call. Both run long after the fit -- in another batch job,
-  # or in a parallel worker -- so the call must not depend on names that only
+  # pieces of it: call must not depend on names that only
   # existed in the fitting frame.
   m <- local({
     dd <- iris
