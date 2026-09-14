@@ -38,7 +38,7 @@ would calculate the difference A - B. Required (or inferred from \code{names(sim
 
 \item{datafree}{logical; \code{TRUE} (default) predicts the trajectories WITHOUT the original data
 (reconstructed from stored coefficients / \code{pb()} smooths / \code{random()} effects), \code{FALSE} uses \code{df}
-as the reference data via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}.}
+as the fitted data via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}.}
 
 \item{...}{additional arguments passed to \code{sim_grid()} (e.g. \code{special_term})}
 }
@@ -51,16 +51,7 @@ Calculate differences in 50th centile (mu) or sigma trajectories between 2 facto
 \details{
 To test significance, see \code{\link[=ci_diffs]{ci_diffs()}}
 
-By default (\code{datafree = TRUE}) the mu/sigma trajectories are predicted WITHOUT the
-original fitting data, reconstructing the model's parameters from its stored coefficients,
-\code{pb()} smooths and \code{random()} effects (see \code{\link[=centile_fan_values]{centile_fan_values()}}). For a gamlss model that
-contains a smoother which cannot be rebuilt data-free (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}),
-\code{datafree} is switched off with a warning and \code{df} is used as the reference data instead --
-so \code{df} must be supplied in that case. Set \code{datafree = FALSE} to always predict via the
-original-data \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} path.
-
-To run fully data-free (e.g. on an HPC, or when the model was loaded from disk and its data
-is no longer in scope), supply a pre-built \code{sim_data_list} from \code{\link[=sim_grid]{sim_grid()}} and leave \code{df}
+To run fully data-free, supply a pre-built \code{sim_data_list} from \code{\link[=sim_grid]{sim_grid()}} and leave \code{df}
 as \code{NULL}. In that case the two factor levels are taken from \code{factor_var_levels} if supplied,
 otherwise from the names of \code{sim_data_list}.
 }

@@ -1,0 +1,249 @@
+---
+title: "Model Fitting & Diagnostics"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Model Fitting & Diagnostics}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  markup = FALSE,
+  fig.width = 8,
+  fig.height = 7
+)
+```
+
+```{r setup}
+library(gamlssTools)
+```
+
+This vignette covers fitting gamlss models, as well as different diagnostic tools you can use to see if a model fits well 
+and/or compare across different models/parameterizations.
+
+Note that at the moment, much of this code works with the gamlss package only (not gamlss2). 
+
+We'll use this toy dataset:
+
+```{r}
+set.seed(1234)
+n <- 1000
+
+# Age sampled uniformly on the log scale (birth = 280 days post-conception)
+logAge <- runif(n, log10(196), log10(280 + 100 * 365.25))  # 28wk gestation to 100y
+df <- data.frame(
+  Age    = round(10^logAge - 280),   # days post-birth
+  logAge = logAge,
+  Sex    = factor(sample(c("Female", "Male"), n, replace = TRUE))
+)
+
+# Study assignment correlated with age
+study_center <- c(Study_A = 2.55, Study_B = 3.15, Study_C = 3.70,
+                  Study_D = 4.15, Study_E = 4.45)
+study_width  <- 0.5                       # larger = more overlap between studies
+study_size   <- c(1, 1, 0.8, 1.3, 0.6)     # relative recruitment volume
+
+w <- outer(df$logAge, study_center, dnorm, sd = study_width)
+w <- sweep(w, 2, study_size, "*")
+df$Study <- factor(colnames(w)[apply(w, 1, function(p) sample.int(length(p), 1, prob = p))],
+                   levels = names(study_center))
+
+# Median trajectory (arbitrary volume-like units): fast perinatal rise,
+# childhood peak, gradual decline through adulthood
+growth  <- plogis((df$logAge - 2.70) / 0.22)
+atrophy <- 1 - 0.38 * plogis((df$logAge - 3.85) / 0.32)
+mu <- 900 * growth * atrophy
+
+# Sex: males ~10% larger, with a small age interaction
+mu <- mu * ifelse(df$Sex == "Male", 1.10 * (1 + 0.04 * (df$logAge - 3.5)), 1)
+
+# Study/scanner offsets
+mu <- mu * c(Study_A = 1.00, Study_B = 0.92, Study_C = 1.10,
+             Study_D = 0.96, Study_E = 1.06)[df$Study]
+
+# Multiplicative noise, wider in infancy -> heteroscedastic and right-skewed
+sigma <- 0.05 + 0.07 * plogis(-(df$logAge - 3.0) / 0.35)
+df$Pheno <- mu * exp(rnorm(n, 0, sigma))
+```
+
+# Model Fitting
+
+Most model fitting can be done with the gamlss (or gamlss2) package functions. However, we add a couple of helpful wrappers.
+
+First, `safe_gamlss()` broadcasts a couple of quiet "gotchas" you can run into when fitting gamlss models, namely quiet non-convergence
+(i.e. returning something that looks like a gamlss model but in fact ran out of n.cyc before fitting), and some "Error" messages that are broadcast out as warnings.
+
+Generally, you use `safe_gamlss()` exactly like you `gamlss()`
+
+```{r}
+#good fit model
+pheno_model <- safe_gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), 
+                      sigma.formula= ~ pb(logAge) + Sex, data = df, family=BCCG)
+```
+
+```{r, error=TRUE}
+#model that doesn't converge because very low n.cyc
+
+#quiet gamlss warning
+pheno_model_bad <- gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), 
+                      sigma.formula= ~ pb(logAge) + Sex, data = df, family=BCCG, n.cyc=2)
+
+class(pheno_model_bad) #still looks like a gamlss model
+
+#Loud safe_gamlss error
+pheno_model_bad <- safe_gamlss(formula = Pheno ~ pb(logAge) + Sex + random(Study), 
+                      sigma.formula= ~ pb(logAge) + Sex, data = df, family=BCCG, n.cyc=2)
+```
+
+The only downside is that using `summary()` on a model fit using `safe_gamlss()` returns a long, ugly `call` parameter.
+
+It's very useful though as a sub-function to `gamlss_try()`, a wrapper function that enables you to easily run through
+several gamlss modeling algorithms, adding more iterations, taking smaller steps, etc, to get your models to converge. 
+
+It's also useful in that models which don't fit will return `NULL`, so you don't have to worry about missing a 
+non-convergence warning OR about an error killing a whole HPC job or loop of model fits. This is useful for
+things like model selection (which usually means fitting the same phenotype several ways, some of which may
+not fit) or looping over many phenotypes to fit the same model on multiple outcomes.
+
+The other reason to reach for `gamlss_try()` is that a fit which can't be rescued returns `NULL` rather than
+stopping your script. Model selection usually means fitting the same phenotype several ways, and some of
+those ways won't fit -- particularly in smaller samples. Here's a 60-subject pilot subsample, where BCPE
+has more parameters than the data can support:
+
+```{r, error=TRUE}
+set.seed(9)
+pilot <- df[sample(nrow(df), 60), ]
+
+gamlss(formula = Pheno ~ pb(logAge) + Sex,
+       sigma.formula = ~ pb(logAge),
+       nu.formula = ~ pb(logAge),
+       tau.formula = ~ pb(logAge),
+       data = pilot, family = BCPE,
+       control = gamlss.control(trace = FALSE))
+```
+
+That (very opaque) error would take down the loop or HCP job it was running in. `gamlss_try()` reports what it
+tried, gives up, and returns `NULL`, so the rest of the candidate models still get fit:
+
+```{r, message=TRUE}
+base_args <- list(formula = Pheno ~ pb(logAge) + Sex,
+                  sigma.formula = ~ pb(logAge),
+                  nu.formula = ~ pb(logAge),
+                  data = pilot,
+                  control = gamlss.control(trace = FALSE))
+
+candidates <- list(BCCG = list(family = BCCG),
+                   BCT  = list(family = BCT,  tau.formula = ~ pb(logAge)),
+                   BCPE = list(family = BCPE, tau.formula = ~ pb(logAge)))
+
+pilot_models <- lapply(candidates, function(extra) do.call(gamlss_try, c(base_args, extra)))
+
+sapply(pilot_models, is.null)
+```
+
+Then you can compare whichever models survived:
+
+```{r}
+fit_ok <- pilot_models[!sapply(pilot_models, is.null)]
+
+sapply(fit_ok, `[[`, "sbc") #BIC
+```
+
+Here the BCCG model fits best! (See **Model Comparison** below)
+
+# Model Diagnostics
+Here "diagnostics" refer to making sure your model describes the data well.
+
+The most helpful check is probably the worm plot. `wp.taki()` enhances the built-in `gamlss::wp()` by allowing you to break up plots along chunks of a continuous variable (like age) or by levels of a categorical variable (like sex), so you can make sure the model fits all groups well.
+
+```{r}
+#plot by age
+wp.taki(xvar=df$logAge, resid=resid(pheno_model))
+
+#plot by sex
+df$Sex <- as.factor(df$Sex)
+wp.taki(xvar=df$Sex, resid=resid(pheno_model))
+```
+
+Below is a quick illustrated reference for interpreting worm plots:
+```{r, echo=FALSE, out.width="70%", fig.align="center"}
+knitr::include_graphics("wormplot_examples.jpg")
+```
+
+For more info, see:
+Stasinopoulos, Dm & Rigby, Robert & Heller, Gillian & Voudouris, Vlasios & De Bastiani, Fernanda. (2017). Flexible regression and smoothing: Using GAMLSS in R. 10.1201/b21973. 
+
+You can also check how well the predicted centiles for each point/subject line up with the percentiles themselves - that is, about 5% of subjects' centiles should be <= 0.05.
+
+```{r}
+centile_coverage(pheno_model, df)
+
+#we can also view this by sex or age
+centile_coverage(pheno_model, df, group="Sex")
+centile_coverage(pheno_model, df, interval_var = "logAge", n=4)
+```
+
+Each of those calls re-scores every subject. If you've already calculated centiles (or scoring is
+slow), hand them to `centile_coverage()` directly with the `centiles` argument instead of a model:
+
+```{r}
+df$centile <- score_centiles(pheno_model, df)
+
+centile_coverage(data=df, centiles="centile", group="Sex")
+```
+
+# Model Comparison
+It can be useful to compare two models fit on the same dependent variable. Often this is done for model selection (i.e. which parametrization fits best?). 
+
+```{r}
+#fit a new model with different splines
+pheno_model2 <- gamlss(formula = Pheno ~ cs(logAge) + Sex + random(Study), 
+                      sigma.formula= ~ cs(logAge) + Sex, data = df, family=BCCG)
+```
+
+First, we can return BIC and AIC built-into the gamlss model object
+
+```{r}
+#BIC
+pheno_model$sbc < pheno_model2$sbc
+#AIC
+pheno_model$aic < pheno_model2$aic
+```
+
+Lower BIC (aka SBC) means a better fit model. We tend to use this over AIC.
+
+It can also be useful to see how models compare in terms of the z-scores they assign the same dataset
+
+```{r}
+#compare z-scores
+#note - need to supply the fit data for pheno_model2 since it contains cs()
+compare_scores(pheno_model, pheno_model2, data=df, fit_data2 = df) 
+```
+
+Note that the function is set up to check for matching outputs, i.e. no differences between the two models. The default tolerance for "no" differences is 1e-6, or 1 millionth of y's standard deviation.
+
+You can also use `compare_scores()` to check how the model's centile lines match up (i.e. compare the y-values of the estimated centile lines (as fit across each level of `sim_grid_list`) ...
+
+```{r}
+#compare centile lines
+sim_list <- sim_grid(df, "logAge", "Sex")
+compare_scores(pheno_model, pheno_model2, sim_grid_list = sim_list, fit_data2 = df) 
+```
+
+... though plotting them on top of one another is more intuitive
+
+```{r}
+compare_centile_fans(pheno_model, pheno_model2, df, "logAge", "Sex",
+                      model_names=c("pb()", "cs()"),
+                      show_points=TRUE,
+                      get_peaks=TRUE,
+                      sim_grid_list = sim_list) +
+                      theme_bw()  
+```
+
+Whether you choose to do data-driven model selection (i.e. pick model with lowest BIC) or more qualitative selection (i.e. using fp() smooths
+over pb() if the latter gives trajectories that are too wiggly to be biologically plausible) will depend on the goals of your project. 

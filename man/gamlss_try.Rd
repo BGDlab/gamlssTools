@@ -24,10 +24,7 @@ off of the unconverged attempt); then \code{method = CG()}; then \code{method = 
 tiny step sizes; then \code{CG()} and \code{mixed()} again with tiny steps. Any \code{control} list
 you supply is carried into the retries with only those fields changed.
 
-\code{mixed()} is given explicit iteration counts rather than being left to its own
-defaults. Those are \code{mixed(1, 20)} no matter what \code{n.cyc} says, which would hand
-\code{CG()} a \emph{smaller} budget than the \code{CG()} attempt that just failed; instead it gets
-half of the config's \code{n.cyc} to settle in \code{RS()} and the full \code{n.cyc} in \code{CG()}.
+\code{mixed()} is given half of \code{n.cyc}  to settle in \code{RS()} and one full \code{n.cyc} in \code{CG()}.
 
 NOTE: currently only fits gamlss models (not gamlss2). Also returns ugly call parameter in \code{\link[gamlss:summary]{gamlss::summary()}}.
 }

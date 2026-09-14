@@ -1,10 +1,11 @@
 # gamlssTools
-This package is intended to make interacting with and plotting GAMLSS models easier. It contains a number of auxiliary functions 
-that are compatible with both [gamlss()](https://cran.r-project.org/web/packages/gamlss/index.html) and [gamlss2()](https://github.com/gamlss-dev/gamlss2)
+This package is intended to make interacting with and plotting GAMLSS models easier. It contains a number of auxiliary functions, 
+all of which are compatible with [gamlss()](https://cran.r-project.org/web/packages/gamlss/index.html) (almost all also work with [gamlss2()](https://github.com/gamlss-dev/gamlss2)).
 
 There are 3 vignettes that go over these functions in greater detail: 
+- [Model Fitting & Diagnostics](vignettes/fitting-and-diagnostics.Rmd)
 - [Plotting Centile Fans](vignettes/centile-fan-plots.Rmd)
-- [Model Diagnostics & Centile Scores](vignettes/diagnostics-and-scoring.Rmd)
+- [Getting Reference Scores](vignettes/getting-reference-scores.Rmd)
 - [Bootstrapping & Confidence Intervals](vignettes/bootstrapping-and-cis.Rmd)
 
 > **Note:** several functions were renamed in the current version, though the old names still work.
