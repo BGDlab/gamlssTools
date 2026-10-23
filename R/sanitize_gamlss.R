@@ -234,7 +234,7 @@ sanitize_gamlss <- function(gamlssModel,
           declared <- !is.null(xranges[[v]])
           xr <- if (declared) xranges[[v]] else .pb_xrange(sm, lab)
           sm$fun <- .regrid_fun(sm$fun, xr, grid_n)
-          sm$fv  <- NULL                     # length n
+          sm$fv  <- NULL # fitted values
           if (declared && !is.null(sm$knots))
             sm$knots <- seq(xr[1], xr[2], length.out = length(sm$knots))
           ## a wigglier smooth needs a finer grid to reproduce (see `points_per_edf`)

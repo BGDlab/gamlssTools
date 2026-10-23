@@ -5,7 +5,7 @@
 ################################################
 #' Optional dependencies
 #'
-#' gamlssTools works with only its required dependencies installed. Two packages
+#' gamlssTools works with only its required dependencies installed. Three packages
 #' are Suggests rather than Imports, because each is needed by a subset of
 #' functions rather than by the package as a whole.
 #'
@@ -24,7 +24,11 @@
 #' `predict_score()` lacks the `traindata` argument and the data-free / random-effect
 #' handling that [score_centiles()] relies on.
 #'
-#' Neither package is on CRAN, so both are listed under `Remotes:` and install with:
+#' [goftest](https://CRAN.R-project.org/package=goftest) is required only for the
+#' Anderson-Darling test in [centile_coverage()] (`test = "ad"` or `"both"`). It is on CRAN:
+#' `install.packages("goftest")`.
+#'
+#' Neither gamlss2 nor gamlss2charts is on CRAN, so both are listed under `Remotes:` and install with:
 #' ```
 #' remotes::install_github("gamlss-dev/gamlss2")
 #' remotes::install_github("andy1764/gamlss2charts@dev")

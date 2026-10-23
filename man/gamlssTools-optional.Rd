@@ -4,7 +4,7 @@
 \alias{gamlssTools-optional}
 \title{Optional dependencies}
 \description{
-gamlssTools works with only its required dependencies installed. Two packages
+gamlssTools works with only its required dependencies installed. Three packages
 are Suggests rather than Imports, because each is needed by a subset of
 functions rather than by the package as a whole.
 }
@@ -25,7 +25,11 @@ the \strong{dev} branch of gamlss2charts specifically: the released (master) bra
 \code{predict_score()} lacks the \code{traindata} argument and the data-free / random-effect
 handling that \code{\link[=score_centiles]{score_centiles()}} relies on.
 
-Neither package is on CRAN, so both are listed under \verb{Remotes:} and install with:
+\href{https://CRAN.R-project.org/package=goftest}{goftest} is required only for the
+Anderson-Darling test in \code{\link[=centile_coverage]{centile_coverage()}} (\code{test = "ad"} or \code{"both"}). It is on CRAN:
+\code{install.packages("goftest")}.
+
+Neither gamlss2 nor gamlss2charts is on CRAN, so both are listed under \verb{Remotes:} and install with:
 
 \if{html}{\out{<div class="sourceCode">}}\preformatted{remotes::install_github("gamlss-dev/gamlss2")
 remotes::install_github("andy1764/gamlss2charts@dev")

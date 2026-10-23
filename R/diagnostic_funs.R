@@ -7,21 +7,22 @@
 #' Centile coverage
 #'
 #' Return the probability of observations with predicted centiles that are < or = centile lines
-#' estimated from a gamlss model. 
-#' 
-#' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()]. 
+#' estimated from a gamlss model.
+#'
+#' Results can be grouped by any variable in the original dataframe. Inspired by output of [gamlss::centiles()].
 #' Calls [score_centiles()] unless pre-calculated `centiles` are supplied. Already works with both gamlss and gamlss2 objs
 #'
 #' @details
 #' Supplying `centiles` skips the scoring step entirely, which is useful when centiles are expensive to
 #' compute (e.g. large data, or scoring with `fit_data`/`batch_term`) or were produced some other way -
 #' score once with [score_centiles()], then reuse the result across as many groupings as you like.
-#' 
+#'
 #' @param gamlssModel gamlss model object. Optional if `centiles` are supplied.
 #' @param data dataframe to assess. Optional if `centiles` are supplied as a vector and
 #' neither `group` nor `interval_var` is used.
 #' @param plot whether to plot results (`TRUE`, default) or output as a tibble (`FALSE`)
-#' @param group (optional) name of grouping column
+#' @param group (optional) name(s) of grouping column(s). Supply several (e.g. `c("Study", "Sex")`)
+#' to summarise each combination of their levels; the plot then has one panel per combination.
 #' @param interval_var (optional) numeric variable along which to group outputs. Uses [ggplot2::cut_interval], which
 #' requires additional args (`n` or `length`).
 #' @param centiles (optional) pre-calculated centiles, so `data` doesn't have to be re-scored. Either a
@@ -37,8 +38,34 @@
 #' offset is trusted. Passed to [score_centiles()], so it only applies when scoring from
 #' `gamlssModel`. Levels below the threshold score as `NA` and are dropped from the coverage
 #' summary, with a warning; see [score_centiles()].
+#' @param test which goodness-of-fit test(s) to run on each group's centiles against the
+#' Uniform(0, 1) distribution they follow under a well-fit model, annotating each panel of the
+#' plot with the results:
+#'   * `"ks"` (default): one-sample Kolmogorov-Smirnov test ([stats::ks.test()]). Adds `ks_D` (the
+#'     maximum distance between the empirical and theoretical CDFs) and `ks_p` columns.
+#'   * `"ad"`: one-sample Anderson-Darling test ([goftest::ad.test()]), which weights the tails
+#'     more heavily. Adds `ad_A2` (the A² statistic) and `ad_p` columns.
+#'   * `"both"`: both tests.
+#'   * `NULL`: no test.
+#'
+#' See Details.
+#'
+#' @details
+#' If the model fits, centile scores are uniformly distributed, so their empirical CDF should
+#' follow the identity line. The K-S test ([stats::ks.test()]) compares the whole empirical CDF,
+#' not just the nine centiles tabulated, against that line. A large `ks_p` means that no departure
+#' from uniformity is detected (i.e. can't reject the null that the centiles are uniform). However,
+#' p-values are optimistic when `data` is the data the model was fit to; the test
+#' is least sensitive in the tails; tied centiles (e.g. scores of exactly 0 or 1) make the p-value
+#' approximate; and large samples will cause even small miscalibrations to meet significance.
+#' All in all, read `ks_D` as an effect size alongside `ks_p`.
+#'
+#' The Anderson-Darling test weights deviations near 0 and 1 more heavily, so it is the better of
+#' the two for catching misfit in the extreme centiles. Because a centile of exactly 0 or 1 would
+#' make A² infinite, such scores are moved inside the interval by machine epsilon before testing.
 #'
 #' @section Optional dependency:
+#' `test = "ad"` and `test = "both"` require the suggested package goftest.
 #' `batch_term` requires the **dev** branch of the suggested package gamlss2charts.
 #' See [gamlssTools-optional].
 #'
@@ -80,13 +107,24 @@
 #' df$centile <- cents
 #' centile_coverage(data=df, centiles="centile", group="Study")
 #'
+#' #group by each combination of several variables
+#' centile_coverage(data=df, centiles=cents, group=c("Study", "Sex"))
+#'
 #' #with no grouping, the centiles alone are enough
 #' centile_coverage(centiles=cents, plot=FALSE)
 #'
 #' @export
 centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group = NULL,
                              interval_var = NULL, centiles = NULL, batch_term = NULL,
-                             ref_data = NULL, min_ref = 5, ...) {
+                             ref_data = NULL, min_ref = 5, test = "ks", ...) {
+  if (!is.null(test)) {
+    if (!(is.character(test) && length(test) == 1 && test %in% c("ks", "ad", "both"))) {
+      stop("`test` must be NULL, \"ks\", \"ad\", or \"both\".")
+    }
+  }
+  ks <- !is.null(test) && test %in% c("ks", "both")
+  ad <- !is.null(test) && test %in% c("ad", "both")
+  if (ad) .require_pkg("goftest", paste0("the Anderson-Darling test (`test = \"", test, "\"`)"))
   if (is.null(gamlssModel) && is.null(centiles)) {
     stop("Supply either `gamlssModel` (to score `data`) or pre-calculated `centiles`.")
   }
@@ -131,10 +169,8 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
     }
 
     stopifnot("`centiles` must be numeric" = is.numeric(centiles))
-    #NAs are what `min_ref` returns for an under-referenced batch, so a re-used
-    #score_centiles() result may legitimately carry them: they are dropped below
     stopifnot("`centiles` must be between 0 and 1" =
-                all(centiles >= 0 & centiles <= 1, na.rm = TRUE))
+                all(centiles >= 0 & centiles <= 1, na.rm = TRUE)) #don't count NAs (batch size below min_ref)
 
     if (is.null(df)) {
       #centiles alone are enough when there's nothing to group by
@@ -148,7 +184,7 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
   }
 
   #rows that could not be scored (an under-referenced batch under `min_ref`) carry no
-  #coverage information, so drop them rather than poisoning every summary they land in
+  #coverage information, so drop them
   if (anyNA(df$centile)) {
     n_na <- sum(is.na(df$centile))
     warning(n_na, " of ", nrow(df), " row(s) have NA centiles and are excluded from the ",
@@ -157,21 +193,28 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
     stopifnot("no rows have a non-NA centile" = nrow(df) > 0)
   }
 
-  # Convert group variable to factor if needed
-  if (!is.null(group) && is.numeric(df[[group]])) {
-    df[[group]] <- as.factor(df[[group]])
+  # Convert numeric group variables to factors
+  if (!is.null(group)) {
+    stopifnot("`group` must be a character vector of column names" = is.character(group))
+    missing_grp <- setdiff(group, names(df))
+    if (length(missing_grp)) {
+      stop("`group` column(s) not found in `data`: ", paste(missing_grp, collapse = ", "))
+    }
+    for (g in group) {
+      if (is.numeric(df[[g]])) df[[g]] <- as.factor(df[[g]])
+    }
   }
-  
+
   # Add Interval column if interval_var is provided
   if (!is.null(interval_var)) {
     df$Interval <- cut_interval(df[[interval_var]], ...)
   }
-  
+
   # Determine grouping variables (updated with help from GPT)
   group_vars <- c()
   if (!is.null(group)) group_vars <- c(group_vars, group)
   if (!is.null(interval_var)) group_vars <- c(group_vars, "Interval")
-  
+
   # Group and summarize
   sum_df <- df %>%
     group_by(across(all_of(group_vars))) %>%
@@ -187,29 +230,78 @@ centile_coverage <- function(gamlssModel = NULL, data = NULL, plot=TRUE, group =
       "99%" = round(sum(centile <= 0.99) / n(), digits = 3),
       .groups = "drop" # To avoid grouped output
     )
-  
+
+  if (ks) sum_df <- .add_gof(sum_df, df, group_vars, .ks_unif, "ks_D", "ks_p")
+  if (ad) sum_df <- .add_gof(sum_df, df, group_vars, .ad_unif, "ad_A2", "ad_p")
+
   if(plot == TRUE){
     df_plt <- tidyr::pivot_longer(sum_df, cols=ends_with("%"), names_to= "fitted", values_to="empirical") %>%
       mutate(fitted=as.numeric(sub("%", "",fitted,fixed=TRUE))/100)
-    
+
     plt <- ggplot(df_plt) +
       geom_abline(slope=1, intercept=0, color="gray") +
       theme_bw()
-    
+
     if (!is.null(interval_var)) {
       plt <- plt + geom_point(aes(x=fitted, y=empirical, color=Interval), alpha=.8)
     } else {
       plt <- plt + geom_point(aes(x=fitted, y=empirical))
     }
-    
+
+    if (ks || ad) {
+      #one label per panel, with a line per interval when intervals share a panel
+      lab_df <- sum_df %>%
+        mutate(label = paste0(
+          if (!is.null(interval_var)) paste0(Interval, ": ") else "",
+          if (ks) paste0("K-S D = ", ks_D, ", p = ", format.pval(ks_p, digits = 2)) else "",
+          if (ks && ad) "; " else "",
+          if (ad) paste0("A-D A² = ", ad_A2, ", p = ", format.pval(ad_p, digits = 2)) else "")) %>%
+        group_by(across(all_of(group))) %>%
+        summarise(label = paste(label, collapse = "\n"), .groups = "drop")
+      plt <- plt + geom_text(data = lab_df, aes(x = 0, y = 1, label = label),
+                             hjust = 0, vjust = 1, size = 3, inherit.aes = FALSE)
+    }
+
     if (!is.null(group)) {
-      plt <- plt + facet_wrap(as.formula(paste("~", group)))
+      #one panel per combination of the group columns
+      plt <- plt + facet_wrap(group)
     }
     print(plt)
-    
+
   } else {
     return(sum_df)
   }
+}
+
+#one-sample K-S test of centiles against Uniform(0, 1). Ties (e.g. centiles of exactly
+#0 or 1) only make the p-value approximate, so that warning is muffled; others pass through
+.ks_unif <- function(x) {
+  withCallingHandlers(
+    stats::ks.test(x, "punif"),
+    warning = function(w) {
+      if (grepl("ties", conditionMessage(w))) invokeRestart("muffleWarning")
+    }
+  )
+}
+
+#one-sample A-D test of centiles against Uniform(0, 1). A centile of exactly 0 or 1 makes
+#A^2 infinite, so they are pulled in by machine epsilon: each then adds only ~36/n to A^2
+.ad_unif <- function(x) {
+  eps <- .Machine$double.eps
+  goftest::ad.test(pmin(pmax(x, eps), 1 - eps), "punif")
+}
+
+#run a goodness-of-fit test per group and join its statistic and p-value onto `sum_df`
+.add_gof <- function(sum_df, df, group_vars, test_fun, stat_name, p_name) {
+  gof_df <- df %>%
+    group_by(across(all_of(group_vars))) %>%
+    summarise(res = list(test_fun(centile)), .groups = "drop") %>%
+    mutate(!!stat_name := round(vapply(res, function(r) unname(r$statistic), numeric(1)), digits = 3),
+           !!p_name := signif(vapply(res, function(r) r$p.value, numeric(1)), digits = 3)) %>%
+    dplyr::select(-res)
+  #both summaries share one row per group, in the same order
+  if (length(group_vars)) dplyr::left_join(sum_df, gof_df, by = group_vars)
+  else dplyr::bind_cols(sum_df, gof_df)
 }
 
 #' @rdname centile_coverage
@@ -223,27 +315,27 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
 }
 
 #' Worm Plot (Taki's Version)
-#' 
+#'
 #' Output more robust worm plots for assessing gamlss fit in ggplot
-#' 
-#' This function fixes an inconsistency in the original package - that if do a worm plot with a formula 
-#' it gives the wrong answer compared to if you provide a vector of values to plot against. This is 
+#'
+#' This function fixes an inconsistency in the original package - that if do a worm plot with a formula
+#' it gives the wrong answer compared to if you provide a vector of values to plot against. This is
 #' rectified by adding a check that the partition of the covariate is actually providing a partition.
 #' The percentage of points that fall outside the pointwise confidence intervals are shown in blue
 #' (5% indicates good fit). Written and contributed by the illustrious Taki Shinohara :)
-#' 
+#'
 #' @param object gamlss model object
 #' @param xvar vector containing values of predictor used for plotting model (requires `resid`)
 #' @param resid vector containing the residuals of the same model object (requires `xvar`)
 #' @param n.inter (optional) number of subsets with ~equal number of points to plot across the range of `xvar`. Defaults to 4.
 #' @param xlim.worm control plot range(s)
 #' @param ylim.worm control plot range(s)
-#' 
+#'
 #' @returns list with ggplot objects of worm plot(s) ($plot) and df of pts outside dotted CI ($outliers)
-#' 
+#'
 #' @examples
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris, family=BCCG)
-#' 
+#'
 #' #get one worm plot by just passing the model object
 #' wp.taki(iris_model)
 #'
@@ -251,32 +343,32 @@ cent_cdf <- function(gamlssModel, df, plot=TRUE, group = NULL, interval_var = NU
 #' wp.taki(xvar=iris$Sepal.Length, resid=iris_model$residuals)
 #' wp.taki(xvar=iris$Sepal.Length, resid=resid(iris_model))
 #' wp.taki(xvar=iris$Sepal.Length, resid=resid(iris_model), n.inter=10)
-#' 
+#'
 #' @export
-wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4, 
+wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
                    inter.breaks = NULL,
                    xlim.worm = 3.5, ylim.worm = 12 * sqrt(n.inter/length(resid)),
                    #show.given = TRUE, line = TRUE, ylim.all = 12 * sqrt(1/length(resid)), xlim.all = 4,
                    #pch = 21, bg = "wheat", col = "red", bar.bg = c(num = "light blue"),
                    #cex = 1, cex.lab = 1, xcut.points = NULL,
-                   ...) 
+                   ...)
 {
-  
+
   ### ggplotification from 4-5/23
-  
+
   ## Functions for worm plotting:
   # This function estimates the worm plot function from some residuals
   get.wp.x<-function(y.in) {
     qq <- as.data.frame(qqnorm(y.in, plot = FALSE))
     return(qq$x)
   }
-  
+
   # This function estimates the worm plot function from some residuals
   get.wp.y<-function(y.in) {
     qq <- as.data.frame(qqnorm(y.in, plot = FALSE))
     return(qq$y - qq$x)
   }
-  
+
   # find the limits based on the normal distribution
   get.lims<-function(resid) {
     lims.df <- data.frame(zval=seq(-xlim.worm, xlim.worm, 0.1))
@@ -285,44 +377,44 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
     lims.df$low <- qnorm((1 - 0.95)/2) * lims.df$se; lims.df$high <- -lims.df$low
     return(lims.df)
   }
-  
-  
+
+
   ## Helpful function for dealing with formulas (from original wp())
   deparen <- function(expr) {
-    while (is.language(expr) && !is.name(expr) && deparse(expr[[1L]])[1L] == 
+    while (is.language(expr) && !is.name(expr) && deparse(expr[[1L]])[1L] ==
            "(") expr <- expr[[2L]]
     expr
   }
-  
-  
+
+
   ## Make sure there's either an object or a set of residuals
-  if (is.null(object) && is.null(resid)) 
-    stop(paste("A fitted object with resid() method or the argument resid should be used ", 
+  if (is.null(object) && is.null(resid))
+    stop(paste("A fitted object with resid() method or the argument resid should be used ",
                "\n", ""))
-  
+
   ## If there's an object, capture its residuals
   resid <- if (is.null(object)) { resid } else { resid(object) }
-  
+
   ## Check if there's a dataframe in the object, parse it
   DataExist <- FALSE
-  if (!is.null(object) && any(grepl("data", names(object$call))) && 
+  if (!is.null(object) && any(grepl("data", names(object$call))) &&
       !(object$call["data"] == "sys.parent()()")) {
     DaTa <- eval(object$call[["data"]])
     DataExist <- TRUE
   }
-  
+
   ## If no covariate values are provided, just look at normality of the residuals
   if (is.null(xvar)) {
-    
+
     # find the limits based on the normal distribution
     lims.df <- data.frame(zval=seq(-xlim.worm, xlim.worm, 0.1))
     lims.df$p <- pnorm(lims.df$zval)
     lims.df$se <- (1/dnorm(lims.df$zval)) * (sqrt(lims.df$p * (1 - lims.df$p)/length(resid)))
     lims.df$low <- qnorm((1 - 0.95)/2) * lims.df$se; lims.df$high <- -lims.df$low
-    
+
     #Construct the worm plot dataframe
     wp.df <- data.frame(y = resid %>% get.wp.y, x = resid %>% get.wp.x)
-    
+
     #Count outer points
     wp.dt <- wp.df %>% arrange(x) %>% as.data.table()
     lims.dt <- as.data.table(lims.df)
@@ -337,70 +429,70 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
       mutate(pcnt = n_outer/n,
              x = xlim.worm * 0.95,
              y = ylim.worm * 0.95)
-    
+
     #Return the plot
-    p <- ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
+    p <- ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) +
       geom_point() + theme_classic() +
-      xlab("Unit Normal Quantile") + ylab("Deviation") + 
-      {if (is.finite(xlim.worm)) xlim(c(-xlim.worm, xlim.worm))} + 
+      xlab("Unit Normal Quantile") + ylab("Deviation") +
+      {if (is.finite(xlim.worm)) xlim(c(-xlim.worm, xlim.worm))} +
       #{if (is.finite(ylim.worm)) { ylim(c(-ylim.worm, ylim.worm)) } else { ylim(c(-1,1))} } +
-      {if (is.finite(ylim.worm)) { coord_cartesian(ylim = c(-ylim.worm, ylim.worm)) } else { coord_cartesian(ylim = c(-1,1))} } + 
+      {if (is.finite(ylim.worm)) { coord_cartesian(ylim = c(-ylim.worm, ylim.worm)) } else { coord_cartesian(ylim = c(-1,1))} } +
       geom_line(data = lims.df, aes(x=zval,y=low),linetype = "dashed") +
-      geom_line(data = lims.df, aes(x=zval,y=high),linetype = "dashed")  + 
+      geom_line(data = lims.df, aes(x=zval,y=high),linetype = "dashed")  +
       geom_hline(yintercept = 0, linetype = "dashed") +
-      geom_text(data=n_outer, 
-                mapping = aes(x = x, 
-                              y = y, 
+      geom_text(data=n_outer,
+                mapping = aes(x = x,
+                              y = y,
                               label = scales::percent(pcnt)),
                 inherit.aes = FALSE,
                 #label.size = 0.15,
                 color="blue")
-    
+
   } else {
-    
+
     ## If a covariate is provided as a vector ...
     if (!is(xvar, "formula")) {
       if (length(resid) != length(xvar)) stop("Error - incorrect length of predictor vector...")
-      
+
       if (is.factor(xvar)) {
         wp.df<-data.frame(z=xvar)
-      } else if (!is.null(inter.breaks)){ 
+      } else if (!is.null(inter.breaks)){
         wp.df<-data.frame(z=cut(xvar,breaks=inter.breaks,include.lowest=TRUE))
-      } else { 
+      } else {
         wp.df<-data.frame(z=cut(xvar,breaks=quantile(xvar,probs=seq(0,1,length.out=n.inter+1)),include.lowest=TRUE))
       }
-      
+
     }
-    
-    ## If a covariate is provided as a formula ... 
+
+    ## If a covariate is provided as a formula ...
     if (is(xvar, "formula")) {
-      
+
       if (DataExist) {
-        
+
         # extract the facet variable as the first variable in the provided formula
         ## note - if we want to do this by multiple variables, this will require a bit more coding
         xvar.vec<-eval(deparen(deparen(xvar)[[2L]]), envir = as.environment(DaTa))
         if (is.factor(xvar.vec)) {
           wp.df<-data.frame(z=xvar.vec)
-        } else if (!is.null(inter.breaks)){ 
+        } else if (!is.null(inter.breaks)){
           wp.df<-data.frame(z=cut(xvar.vec,breaks=inter.breaks,include.lowest=TRUE))
-        } else { 
+        } else {
           wp.df<-data.frame(z=cut(xvar.vec,breaks=quantile(xvar.vec,probs=seq(0,1,length.out=n.inter+1)),include.lowest=TRUE))
         }
-        
-      } else { 
+
+      } else {
         stop("Dataframe missing, exiting...")
       }
     }
-    
+
     #Construct data frame for main plot
     wp.df$resid<-resid
     wp.df <- wp.df %>% group_by(z) %>% mutate(y = resid %>% get.wp.y, x = resid %>% get.wp.x)
-    
+
     #Construct data frame for confidence limits
     lims.df<-data.frame(z=wp.df$z,resid=wp.df$resid)
     lims.df<-lims.df %>% group_by(z) %>% reframe(lims.df=get.lims(resid)) %>% tidyr::unnest(cols=c(lims.df))
-    
+
     #Count outer points
     wp.dt <- wp.df %>% group_by(z) %>% arrange(x, .by_group = TRUE) %>% as.data.table()
     lims.dt <- as.data.table(lims.df)
@@ -414,18 +506,18 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
       summarise(n = n(),
                 n_outer = sum(outer)) %>%
       mutate(pcnt = n_outer/n)
-    
+
     #Return the plot
-    p <- ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) + 
+    p <- ggplot(wp.df,aes(x=x,y=y)) + geom_smooth(method=lm,formula=y~poly(x,3)) +
       geom_point() + facet_wrap(~z) + theme_classic() +
       xlab("Unit Normal Quantile") + ylab("Deviation") +
-      {if (is.finite(xlim.worm)) xlim(c(-xlim.worm, xlim.worm))} + 
+      {if (is.finite(xlim.worm)) xlim(c(-xlim.worm, xlim.worm))} +
       {if (is.finite(ylim.worm)) { ylim(c(-ylim.worm, ylim.worm)) } else { ylim(c(-1,1))} } +
       geom_line(data = lims.df, aes(x=zval,y=low),linetype = "dashed") +
       geom_line(data = lims.df, aes(x=zval,y=high),linetype = "dashed") +
       geom_hline(yintercept = 0, linetype = "dashed") +
-      geom_text(data=n_outer, 
-                mapping = aes(x = Inf, y = Inf, 
+      geom_text(data=n_outer,
+                mapping = aes(x = Inf, y = Inf,
                               label = scales::percent(pcnt)),
                 hjust = 1.5,
                 vjust = 1.5,
@@ -456,11 +548,7 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
     a <- as.numeric(p1[[nm]]); b <- as.numeric(p2[[nm]])
     stopifnot(length(a) == nrow(newdata) && length(b) == nrow(newdata))
     #EXACT equality, not a tolerance. A structural tie is exact -- a splinefun
-    #evaluated at one of its own nodes returns the stored value bit for bit --
-    #so nothing is lost by insisting on it. A tolerance instead sweeps up rows
-    #that merely rebuilt well: at grid_n = 5000 a relative 1e-12 tied 98% of
-    #rows while only 2 sat on a node, and since tied rows are dropped from the
-    #summary that inflated the reported mean 44-fold by keeping only the worst.
+    #evaluated at one of its own nodes returns the stored value bit for bit
     #NA counts as disagreement: an unscorable row is not evidence of a tie.
     agree <- agree & !is.na(a) & !is.na(b) & a == b
   }
@@ -471,7 +559,7 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
 # Used to tell "these two models are the same model" from "these particular
 # points are forced to agree". Each numeric column is shifted by half the
 # smallest gap between its sorted unique values (midpoint of a regular grid),
-# where a rebuilt spline's error is detectable. Shifts stay inside the column's 
+# where a rebuilt spline's error is detectable. Shifts stay inside the column's
 # own range so nothing extrapolates.
 #
 # Returns NULL when there is no numeric column to move, or only one distinct
@@ -545,19 +633,19 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
 #' Compare either the z-scores that two models assign the same observations and/or compare
 #' the predicted values of y at each centile.
 #'
-#' Warning: not currently set up to handle/tested with `data` that contains 
+#' Warning: not currently set up to handle/tested with `data` that contains
 #' out-of-sample observations (i.e. new batches).
 #'
 #' @param gamlssModel1,gamlssModel2 the two fitted `gamlss` models to compare.
 #' @param data dataframe of observations to score with both models, for the
 #' z-score comparison. Supply this, `sim_grid_list`, or both
 #' @param sim_grid_list output of [sim_grid()]: a named list of covariate grids,
-#' one per level of the factor it was built over. Should have good coverage of 
+#' one per level of the factor it was built over. Should have good coverage of
 #' entire covariate space. Used for the centile comparison.
 #' @param cent_to_check centiles at which to compare predicted values, as values
 #' between 0 and 1. Only used with `sim_grid_list`.
 #' @param tol tolerance for both comparisons, in z units
-#' @param fit_data1,fit_data2 the fitting data for each model. If `NULL`(default) 
+#' @param fit_data1,fit_data2 the fitting data for each model. If `NULL`(default)
 #' that model is predicted data-free.
 #'
 #' @returns invisibly, a list with the components the call produced: `z_diffs`, a
@@ -569,28 +657,28 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
 #' @details
 #' A rebuilt `pb()` spline (see [sanitize_gamlss()]) interpolates the grid it was
 #' rebuilt on, so it reproduces the original smooth *exactly* at each grid node
-#' and the error peaks between them. These points are uninformative and thus ignored 
-#' by `z_diffs` summaries (`n_tied` indicates how many such points are ignored). 
-#' If EVERY point in a frame is tied due to smooth interpolation, the comparison is 
-#' moved off those points (by half the smallest gap between distinct covariate values), 
+#' and the error peaks between them. These points are uninformative and thus ignored
+#' by `z_diffs` summaries (`n_tied` indicates how many such points are ignored).
+#' If EVERY point in a frame is tied due to smooth interpolation, the comparison is
+#' moved off those points (by half the smallest gap between distinct covariate values),
 #' indicated by `nudged`.
 #'
 #' `centile_diffs` is symmetric, so the output is the same regardless of which model
 #' is passed as `gamlssModel1` vs `gamlssModel2`.
 #'
 #' @seealso [sanitize_gamlss()], [score_centiles()], [sim_grid()]
-#' 
+#'
 #' @examples
 #' #compare regular and datafree prediction path
 #' iris_model <- gamlss(formula = Sepal.Width ~ Sepal.Length + Species, sigma.formula = ~ Sepal.Length, data=iris)
 #' sim_df_list <- sim_grid(iris, "Sepal.Length", "Species")
-#' 
+#'
 #' compare_scores(iris_model, iris_model, data=iris, sim_grid_list=sim_df_list, fit_data1=iris, fit_data2=NULL)
-#' 
+#'
 #' #compare regular model object and 'sanitized' model object
 #' clean_mod <- sanitize_gamlss(iris_model)
 #' compare_scores(iris_model, clean_mod, data=iris, sim_grid_list=sim_df_list)
-#' 
+#'
 #' #compare two different models of the same outcome var
 #' iris_model2 <- gamlss(formula = Sepal.Width ~ Sepal.Length + Petal.Width + random(Species), sigma.formula = ~ Sepal.Length, data=iris)
 #' compare_scores(iris_model, iris_model2, data=iris, sim_grid_list=sim_df_list)
@@ -605,7 +693,7 @@ compare_scores <- function(gamlssModel1,
                            tol = 1e-6,
                            fit_data1 = NULL,
                            fit_data2 = NULL){
-  
+
   stopifnot(inherits(gamlssModel1, "gamlss"), inherits(gamlssModel2, "gamlss"))
 
   #data.table/tbl_df frames break the data.frame indexing used downstream
@@ -618,13 +706,13 @@ compare_scores <- function(gamlssModel1,
     stop("nothing to compare: supply `data` to compare z-scores for a set of ",
          "observations, `sim_grid_list` to compare predicted values at each ",
          "centile, or both", call. = FALSE)
-  
+
   ## shift prediction points as necessary
   nudged <- character()
   resolve <- function(df, label) {
     ag <- .models_agree(gamlssModel1, gamlssModel2, df, fit_data1, fit_data2)
     if (!all(ag)) return(list(df = df, agree = ag))
-    
+
     #shift the PREDICTORS only: shifting the response would change the z-scores
     #directly, and the z-score branch needs it to have anything to score at all
     preds <- intersect(list_predictors(gamlssModel1), names(df))
@@ -634,13 +722,13 @@ compare_scores <- function(gamlssModel1,
     alt[preds] <- moved[preds]    #same-model path below hands back
     ag2 <- .models_agree(gamlssModel1, gamlssModel2, alt, fit_data1, fit_data2)
     #actually same model, return original data
-    if (all(ag2)) return(list(df = df, agree = ag))      
-    
+    if (all(ag2)) return(list(df = df, agree = ag))
+
     #else shift
     nudged <<- c(nudged, label)
     list(df = alt, agree = ag2)
   }
-  
+
   if (!is.null(data)) {
     r <- resolve(data, "data")
     data <- r$df
@@ -651,34 +739,34 @@ compare_scores <- function(gamlssModel1,
       r <- resolve(sim_grid_list[[nm]], paste0("sim_grid_list$", nm))
       sim_grid_list[[nm]] <- r$df
     }
-  
+
   if (length(nudged))
     warning("both models evaluate ", paste(nudged, collapse = ", "), " identically ",
             "at points passed to sim_grid_list - likely a model being compared against",
             "its own cleaned sanitize_gamlss() output. Shifting points of comparison.", call. = FALSE)
-  
+
   out <- list()
   if (length(nudged)) out$nudged <- nudged
-  
+
   #compare z-scores
   if (!is.null(data)){
     std1 <- score_centiles(gamlssModel1, data, fit_data = fit_data1, standardize = TRUE)$std_score
     std2 <- score_centiles(gamlssModel2, data, fit_data = fit_data2, standardize = TRUE)$std_score
-    
+
     stopifnot(length(std1) == length(std2))
-    
+
     ## check for NAs (unseen sites)
     stopifnot(!is.na(c(std1, std2)))
-    
-    #get max diff over nonzero rows - if models are identical (determined by resolve 
+
+    #get max diff over nonzero rows - if models are identical (determined by resolve
     #function above), return 0
     diff    <- abs(std1 - std2)
     tied    <- data_agree
     keep    <- if (all(tied)) rep(TRUE, length(diff)) else !tied
-    
+
     out$z_diffs <- c(max = max(diff[keep]), mean = mean(diff[keep]))
     out$n_tied  <- sum(tied)
-    
+
     if (out$z_diffs[["max"]] < tol) {
       cat("OK: z-scores match within ", tol, "\n", sep = "")
     } else {
@@ -691,12 +779,12 @@ compare_scores <- function(gamlssModel1,
           "prediction, excluded from summary)\n",
           sep = "")
   }
-  
+
   #compare y at each centile
   if (!is.null(sim_grid_list)){
     cent_nms <- paste0("cent_", format(cent_to_check * 100, trim = TRUE))
     cent_res <- list()
-    
+
     # Predict phenotype values for each simulated level of factor_var
     for (factor_level in names(sim_grid_list)) {
       cent_res[[factor_level]] <- .centile_z_diff(
@@ -705,7 +793,7 @@ compare_scores <- function(gamlssModel1,
         label = paste0("level '", factor_level, "' of sim_grid_list"))
     }
     out$centile_diffs <- cent_res
-    
+
     worst <- max(unlist(cent_res))
     if (worst < tol) {
       cat("OK: predicted values at each centile match within ", tol,
@@ -722,7 +810,7 @@ compare_scores <- function(gamlssModel1,
       }
     }
   }
-  
+
   invisible(out)
 }
 

@@ -27,7 +27,8 @@ Suggests:
     rlang,
     foreach,
     gamlss2,
-    gamlss2charts
+    gamlss2charts,
+    goftest
 Imports:
 	utils,
 	tibble,

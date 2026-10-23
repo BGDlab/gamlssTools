@@ -105,14 +105,7 @@ It's very useful though as a sub-function to `gamlss_try()`, a wrapper function 
 several gamlss modeling algorithms, adding more iterations, taking smaller steps, etc, to get your models to converge. 
 
 It's also useful in that models which don't fit will return `NULL`, so you don't have to worry about missing a 
-non-convergence warning OR about an error killing a whole HPC job or loop of model fits. This is useful for
-things like model selection (which usually means fitting the same phenotype several ways, some of which may
-not fit) or looping over many phenotypes to fit the same model on multiple outcomes.
-
-The other reason to reach for `gamlss_try()` is that a fit which can't be rescued returns `NULL` rather than
-stopping your script. Model selection usually means fitting the same phenotype several ways, and some of
-those ways won't fit -- particularly in smaller samples. Here's a 60-subject pilot subsample, where BCPE
-has more parameters than the data can support:
+non-convergence warning OR about an error killing a whole HPC job or loop of model fits:
 
 ```{r, error=TRUE}
 set.seed(9)
@@ -186,9 +179,9 @@ centile_coverage(pheno_model, df)
 centile_coverage(pheno_model, df, group="Sex")
 centile_coverage(pheno_model, df, interval_var = "logAge", n=4)
 ```
+The `test` arg can also be used to run the Kolmogorov-Smirnov (default) and/or Anderson-Darling test to test the null that the fitted centiles are from the empirical distribution (i.e. uniformly sampled from 0 to 1). These tests (but more likely their effect sizes) can be a useful quantitative tool alongside the visual `centile_cdf()` and `wp.taki()` outputs.
 
-Each of those calls re-scores every subject. If you've already calculated centiles (or scoring is
-slow), hand them to `centile_coverage()` directly with the `centiles` argument instead of a model:
+Each `centile_cdf()` calls re-scores every subject. If you've already calculated centiles (or scoring is slow), hand them to `centile_coverage()` directly with the `centiles` argument instead of a model:
 
 ```{r}
 df$centile <- score_centiles(pheno_model, df)

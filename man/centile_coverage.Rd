@@ -15,6 +15,7 @@ centile_coverage(
   batch_term = NULL,
   ref_data = NULL,
   min_ref = 5,
+  test = "ks",
   ...
 )
 
@@ -28,7 +29,8 @@ neither \code{group} nor \code{interval_var} is used.}
 
 \item{plot}{whether to plot results (\code{TRUE}, default) or output as a tibble (\code{FALSE})}
 
-\item{group}{(optional) name of grouping column}
+\item{group}{(optional) name(s) of grouping column(s). Supply several (e.g. \code{c("Study", "Sex")})
+to summarise each combination of their levels; the plot then has one panel per combination.}
 
 \item{interval_var}{(optional) numeric variable along which to group outputs. Uses \link[ggplot2:cut_interval]{ggplot2::cut_interval}, which
 requires additional args (\code{n} or \code{length}).}
@@ -49,6 +51,20 @@ character string. Passed to \code{\link[=score_centiles]{score_centiles()}} and 
 offset is trusted. Passed to \code{\link[=score_centiles]{score_centiles()}}, so it only applies when scoring from
 \code{gamlssModel}. Levels below the threshold score as \code{NA} and are dropped from the coverage
 summary, with a warning; see \code{\link[=score_centiles]{score_centiles()}}.}
+
+\item{test}{which goodness-of-fit test(s) to run on each group's centiles against the
+Uniform(0, 1) distribution they follow under a well-fit model, annotating each panel of the
+plot with the results:
+\itemize{
+\item \code{"ks"} (default): one-sample Kolmogorov-Smirnov test (\code{\link[stats:ks.test]{stats::ks.test()}}). Adds \code{ks_D} (the
+maximum distance between the empirical and theoretical CDFs) and \code{ks_p} columns.
+\item \code{"ad"}: one-sample Anderson-Darling test (\code{\link[goftest:ad.test]{goftest::ad.test()}}), which weights the tails
+more heavily. Adds \code{ad_A2} (the A² statistic) and \code{ad_p} columns.
+\item \code{"both"}: both tests.
+\item \code{NULL}: no test.
+}
+
+See Details.}
 }
 \value{
 ggplot object or tibble (if \code{plot==FALSE})
@@ -65,10 +81,24 @@ Supplying \code{centiles} skips the scoring step entirely, which is useful when 
 compute (e.g. large data, or scoring with \code{fit_data}/\code{batch_term}) or were produced some other way -
 score once with \code{\link[=score_centiles]{score_centiles()}}, then reuse the result across as many groupings as you like.
 
+If the model fits, centile scores are uniformly distributed, so their empirical CDF should
+follow the identity line. The K-S test (\code{\link[stats:ks.test]{stats::ks.test()}}) compares the whole empirical CDF,
+not just the nine centiles tabulated, against that line. A large \code{ks_p} means that no departure
+from uniformity is detected (i.e. can't reject the null that the centiles are uniform). However,
+p-values are optimistic when \code{data} is the data the model was fit to; the test
+is least sensitive in the tails; tied centiles (e.g. scores of exactly 0 or 1) make the p-value
+approximate; and large samples will cause even small miscalibrations to meet significance.
+All in all, read \code{ks_D} as an effect size alongside \code{ks_p}.
+
+The Anderson-Darling test weights deviations near 0 and 1 more heavily, so it is the better of
+the two for catching misfit in the extreme centiles. Because a centile of exactly 0 or 1 would
+make A² infinite, such scores are moved inside the interval by machine epsilon before testing.
+
 \code{cent_cdf()} is a deprecated alias for \code{centile_coverage()}.
 }
 \section{Optional dependency}{
 
+\code{test = "ad"} and \code{test = "both"} require the suggested package goftest.
 \code{batch_term} requires the \strong{dev} branch of the suggested package gamlss2charts.
 See \link{gamlssTools-optional}.
 }
@@ -108,6 +138,9 @@ centile_coverage(data=df, centiles=cents, interval_var="Age", n=4)
 #or from a column of the dataframe
 df$centile <- cents
 centile_coverage(data=df, centiles="centile", group="Study")
+
+#group by each combination of several variables
+centile_coverage(data=df, centiles=cents, group=c("Study", "Sex"))
 
 #with no grouping, the centiles alone are enough
 centile_coverage(centiles=cents, plot=FALSE)
