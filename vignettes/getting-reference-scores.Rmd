@@ -137,9 +137,60 @@ You can also return standardized scores, or "pseudo-z-scores"
 score_centiles(pheno_model, test_df, standardize=TRUE)
 ```
 
-The same code will work to calculate centiles for the original data the model was fit on.
+Standardized scores are calculated from the centiles. Each centile is the person's rank within the distribution the model predicts for someone with their covariates (the shaded area below their observed value). `qnorm()` then finds the point on a standard normal curve with that same area below it. The
+score is the person's rank, re-expressed in standard-deviation units (i.e. as if the distribution was a normal curve).
 
-However, this training data isn't necessary for running `score_centiles()` on new data, which is useful when the model is saved and reloaded and/or when the training data can't be shared.
+```{r zscore-illustration, echo = FALSE, fig.height = 4}
+# a skewed reference distribution, standing in for one person's predicted distribution
+mu <- 12; sigma <- 0.3; nu <- -1
+y_obs <- 18
+
+cent <- pBCCG(y_obs, mu = mu, sigma = sigma, nu = nu)
+z <- qnorm(cent)
+
+panel_names <- c(
+  sprintf("1. Model's distribution for this person\ncentile = pBCCG(y) = %.3f", cent),
+  sprintf("2. Standard normal\nz = qnorm(%.3f) = %.2f", cent, z)
+)
+
+y_grid <- seq(2, 35, length.out = 500)
+z_grid <- seq(-4, 4, length.out = 500)
+curves <- rbind(
+  data.frame(panel = panel_names[1], x = y_grid,
+             density = dBCCG(y_grid, mu = mu, sigma = sigma, nu = nu),
+             shaded = y_grid <= y_obs),
+  data.frame(panel = panel_names[2], x = z_grid,
+             density = dnorm(z_grid),
+             shaded = z_grid <= z)
+)
+curves$panel <- factor(curves$panel, levels = panel_names)
+
+cutoffs <- data.frame(panel = factor(panel_names, levels = panel_names),
+                      x = c(y_obs, z),
+                      label = c(sprintf("y = %g", y_obs), sprintf("z = %.2f", z)))
+centers <- data.frame(panel = factor(panel_names, levels = panel_names),
+                      x = c(mu, 0))
+areas <- data.frame(panel = factor(panel_names, levels = panel_names),
+                    x = c(mu, 0), y = c(0.02, 0.08),
+                    label = sprintf("%.1f%%", 100 * cent))
+
+ggplot(curves, aes(x = x, y = density)) +
+  geom_area(data = subset(curves, shaded), fill = "#1D9E75", alpha = 0.35) +
+  geom_line(linewidth = 0.8, colour = "grey30") +
+  geom_vline(data = centers, aes(xintercept = x), linetype = "dashed", colour = "grey60") +
+  geom_vline(data = cutoffs, aes(xintercept = x), colour = "#D85A30", linewidth = 1) +
+  geom_text(data = cutoffs, aes(x = x, y = Inf, label = label),
+            vjust = 1.5, hjust = -0.1, colour = "#D85A30", size = 3.8) +
+  geom_text(data = areas, aes(x = x, y = y, label = label), size = 4.2, colour = "#085041") +
+  facet_wrap(~ panel, scales = "free") +
+  labs(x = NULL, y = "Density",
+       caption = "Shaded areas are equal: the centile is preserved, only the scale changes.\nDashed lines mark the median.") +
+  theme_minimal(base_size = 12) +
+  theme(strip.text = element_text(hjust = 0, size = 11),
+        panel.grid.minor = element_blank())
+```
+
+The same code will work to calculate references scores for the original data the model was fit on. However, this training data isn't necessary for running `score_centiles()` on new data, which is useful when the model is saved and reloaded and/or when the training data can't be shared.
 
 ### Out-of-Sample Centile Scoring
 
