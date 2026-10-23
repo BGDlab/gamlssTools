@@ -6,6 +6,7 @@ inst/doc
 *.Rcheck/
 ..Rcheck/
 figs/
+gamlssTools-workshop/*
 
 # local scratch scripts
 check_nusigma.R
