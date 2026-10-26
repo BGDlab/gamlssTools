@@ -154,6 +154,12 @@ Breaking changes were restricted to minor unpopular functions and features
 
 ## Minor new features
 
+* New `dist_moments()` and `dist_sd()` compute the mean and SD of any gamlss.dist
+  distribution by integrating (or, for discrete families, summing over) its density.
+  This gives an exact SD for families without a closed-form variance, such as BCT and
+  BCPE. Where the variance isn't finite (e.g. heavy-tailed BCT), they return `NA` with a
+  warning.
+
 * `drop1_all()` gains `fit_data`. `gamlss::drop1()` refits each reduced model by
   re-evaluating the model call, which resolves the fitting data *by name* in the
   global environment; passing `fit_data` makes this work from inside functions and

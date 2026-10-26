@@ -203,6 +203,103 @@ GGalt.variance <- function(mu, sigma, nu){
          Inf)
 }
 
+#' Mean and SD of any gamlss distribution
+#'
+#' Computes the mean and standard deviation of a gamlss.dist distribution from its
+#' density, for families without a closed-form variance (e.g. BCT, BCPE):
+#' E(Y) = integral of y f(y), Var(Y) = integral of \[y - E(Y)\]^2 f(y), SD(Y) = sqrt(Var(Y)).
+#' Continuous families are integrated numerically over their support (the whole real line,
+#' positive values, or (0, 1)); discrete families are summed over 0, 1, 2, ... until the
+#' remaining probability is negligible. Mixed distributions (e.g. zero-adjusted) are not
+#' supported.
+#'
+#' Heavy-tailed distributions may not have a finite mean or variance (e.g. BCT with small
+#' tau, especially with negative nu). These return `NA` with a warning; a centile-based
+#' measure of spread is safer there.
+#'
+#' @param family gamlss family name, e.g. "BCTo", "GG", "NO", "PO"
+#' @param params named list of parameter values, e.g. `list(mu = 100, sigma = 0.1, nu = 0.5, tau = 10)`
+#'
+#' @returns named numeric vector with `mean` and `sd`
+#'
+#' @examples
+#' dist_moments("BCTo", list(mu = 100, sigma = 0.1, nu = 0.5, tau = 10))
+#'
+#' @seealso [dist_sd()] for a vectorized SD, [GGalt.variance()] for the closed-form GG variance
+#'
+#' @export
+dist_moments <- function(family, params) {
+  fam <- gamlss.dist::as.gamlss.family(family)
+  #look in gamlss.dist first, then anywhere on the search path (e.g. user-defined families)
+  get_fun <- function(prefix) {
+    fname <- paste0(prefix, family)
+    if (exists(fname, envir = asNamespace("gamlss.dist"), inherits = FALSE)) {
+      get(fname, envir = asNamespace("gamlss.dist"))
+    } else {
+      get(fname, mode = "function")
+    }
+  }
+  dfun <- get_fun("d")
+  qfun <- get_fun("q")
+  f <- function(y) do.call(dfun, c(list(y), params))
+  q <- function(p) do.call(qfun, c(list(p), params))
+
+  if (fam$type == "Discrete") {
+    #sum over the support 0, 1, 2, ... up to where the remaining probability is negligible
+    y <- seq(0, q(1 - 1e-12))
+    m1 <- sum(y * f(y))
+    v <- sum((y - m1)^2 * f(y))
+  } else if (fam$type == "Continuous") {
+    #support: whole real line, positive values, or (0, 1)
+    lower <- if (fam$y.valid(-1)) -Inf else 0
+    upper <- if (fam$y.valid(2)) Inf else 1
+    #split at central quantiles so integrate() finds the mass wherever it sits
+    breaks <- c(lower, q(c(0.001, 0.5, 0.999)), upper)
+    piece_int <- function(g) {
+      sum(sapply(seq_len(length(breaks) - 1),
+                 function(i) stats::integrate(g, breaks[i], breaks[i + 1])$value))
+    }
+    #integrate() fails when the mean or variance is infinite (heavy tails), so return NA
+    out <- tryCatch({
+      m1 <- piece_int(function(y) y * f(y))
+      v <- piece_int(function(y) (y - m1)^2 * f(y))
+      c(m1, v)
+    }, error = function(e) {
+      warning("mean/variance not finite for ", family, "(",
+              paste(names(params), signif(unlist(params), 3), sep = "=", collapse = ", "),
+              "): ", conditionMessage(e), call. = FALSE)
+      c(NA, NA)
+    })
+    m1 <- out[1]
+    v <- out[2]
+  } else {
+    stop("mixed distributions (e.g. zero-adjusted) are not supported")
+  }
+  c(mean = m1, sd = sqrt(v))
+}
+
+#' SD of any gamlss distribution
+#'
+#' Vectorized wrapper around [dist_moments()], e.g. to get one SD per row of
+#' [gamlss::predictAll()] output.
+#'
+#' @param family gamlss family name, e.g. "BCTo", "GG", "NO", "PO"
+#' @param mu vector of mu parameter values
+#' @param sigma vector of sigma parameter values, if the family has one
+#' @param nu vector of nu parameter values, if the family has one
+#' @param tau vector of tau parameter values, if the family has one
+#'
+#' @returns numeric vector of SDs (`NA` where the variance is not finite)
+#'
+#' @examples
+#' dist_sd("BCTo", mu = c(100, 500), sigma = c(0.06, 0.1), nu = 0.5, tau = 10)
+#'
+#' @export
+dist_sd <- function(family, mu, sigma = NULL, nu = NULL, tau = NULL) {
+  params <- Filter(Negate(is.null), list(mu = mu, sigma = sigma, nu = nu, tau = tau))
+  do.call(mapply, c(list(FUN = function(...) dist_moments(family, list(...))[["sd"]]), params))
+}
+
 
 #' drop1 across all terms and moments
 #' 
