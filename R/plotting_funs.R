@@ -27,7 +27,7 @@
 #' @param average_over logical indicating whether to average predicted centiles across each level of `color_var`.
 #' Defaults to `FALSE`, which will plot a different colored centile fan for each level of `color_var`.
 #' @param datafree logical; `TRUE` (default) predicts sigma WITHOUT the original data (reconstructed from
-#' stored coefficients / `pb()` smooths / `random()` effects), `FALSE` uses `df` as the reference data
+#' stored coefficients / `pb()`/`pvc()` smooths / `random()` effects), `FALSE` uses `df` as the reference data
 #' via [gamlss::predictAll()].
 #' @param sim_data_list optional argument that takes the output of `sim_data()`. Can be useful when you're plotting
 #' many models fit on the same dataframe 

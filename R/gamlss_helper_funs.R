@@ -744,7 +744,7 @@ trunc_coverage <- function(df,
 #' @param factor_var_levels (optional) specify the order for factor levels. E.g., `factor_var_levels = c("A", "B")`
 #' would calculate the difference A - B. Required (or inferred from `names(sim_data_list)`) when `df` is `NULL`.
 #' @param datafree logical; `TRUE` (default) predicts the trajectories WITHOUT the original data
-#' (reconstructed from stored coefficients / `pb()` smooths / `random()` effects), `FALSE` uses `df`
+#' (reconstructed from stored coefficients / `pb()`/`pvc()` smooths / `random()` effects), `FALSE` uses `df`
 #' as the fitted data via [gamlss::predictAll()].
 #' @param ... additional arguments passed to `sim_grid()` (e.g. `special_term`)
 #'

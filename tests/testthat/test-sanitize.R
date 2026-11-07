@@ -220,7 +220,7 @@ test_that("random_level_map pseudonymises grouping levels", {
 test_that("models with a non-reconstructable smooth are refused", {
   d <- sim_datafree()
   m <- gamlss::gamlss(Pheno ~ cs(Age) + Sex, data = d, family = "NO", trace = FALSE)
-  expect_error(sanitize_gamlss(m), regexp = "pb\\(\\)/random\\(\\)")
+  expect_error(sanitize_gamlss(m), regexp = "pb\\(\\)/pvc\\(\\)/random\\(\\)")
 })
 
 test_that("downstream gamlssTools functions work on a sanitized model", {
@@ -284,7 +284,7 @@ test_that("sanitize refuses a smooth on a transformed covariate", {
   d <- sim_datafree()
   m <- gamlss::gamlss(Pheno ~ pb(log(Age)) + Sex, data = d, family = "NO",
                       trace = FALSE)
-  expect_error(sanitize_gamlss(m), regexp = "pb\\(\\)/random\\(\\)")
+  expect_error(sanitize_gamlss(m), regexp = "pb\\(\\)/pvc\\(\\)/random\\(\\)")
 })
 
 test_that("quantile-knot fits are refused", {

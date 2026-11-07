@@ -61,10 +61,11 @@
 #' `.coefficients`, `.coefSmo`, `.xlevels`, and fit summaries such as the
 #' deviances and AIC). Within each smoother, the `pb()` interpolation function 
 #' is rebuilt on a regular grid (its closure otherwise holds the sorted covariate 
-#' values) and `random()` effect's grouping column, fitted values and standard 
-#' errors are removed.
+#' values), each `pvc()` smooth is reduced to its B-spline coefficients plus the
+#' handful of numbers needed to rebuild its basis (stored as `$spec`), and `random()`
+#' effect's grouping column, fitted values and standard errors are removed.
 #'
-#' Because right now only `pb()` and `random()` smooths can be reconstructed without the
+#' Because right now only `pb()`, `pvc()` and `random()` smooths can be reconstructed without the
 #' original data, models containing any other smoother (`cs()`, `ps()`, `ga()`,
 #' `s()`) or parametric terms whose models are computed from the whole data 
 #' (`poly()`, `ns()`, `bs()`, `scale()`, `cut()`) are rejected.
@@ -76,8 +77,14 @@
 #' 200 datapoints per edf, but this can be changed using the `points_per_edf` arg.
 #' Always be sure to confirm model fit is retained using [compare_scores()]. 
 #' 
-#' Quantile smooths (i.e. `pb.control(quantiles = TRUE)`) have not been tested for 
+#' Quantile smooths (i.e. `pb.control(quantiles = TRUE)`) have not been tested for
 #' datasharing/reconstruction accuracy and thus are not currently supported.
+#'
+#' `pvc()` smooths are rebuilt exactly (no grid). For `pvc(x, by = z)` with a numeric
+#' `z`, gamlss centres `z` on its training mean but does not store that mean. It is
+#' read from the model when `z` also enters as a linear term; otherwise pass the
+#' fitting data as `fit_data` so it can be recorded. Quantile knots
+#' (`pvc.control(quantiles = TRUE)`) are not supported.
 #'
 #' @section What still gets shared:
 #' Sanitizing is not anonymisation, and a few small things survive by
@@ -90,6 +97,10 @@
 #' * `N` and `noObs` -- the fitting sample size.
 #' * each `pb()` smooth's covariate range. This is min/max of your data, i.e.
 #'   two real observations, unless you declare it yourself via `xranges`.
+#' * each `pvc()` smooth's covariate range (padded by 1%, from which the min/max
+#'   can be recovered exactly). `xranges` cannot hide it: the basis is built on
+#'   the observed range. Also the training mean of a numeric `by` variable, and the
+#'   levels of a factor `by` variable.
 #'
 #' @section Sharing workflow:
 #' ```
@@ -134,6 +145,10 @@
 #' `FALSE`: the call can name your data object or embed a subsetting expression.
 #' @param points_per_edf grid points per effective degree of freedom below which
 #' `grid_n` is warned about. Defaults to 200. Set to 0 to silence the warning.
+#' @param fit_data optional; the data the model was fitted on. Only needed for a
+#' `pvc(x, by = z)` smooth with a numeric `z` that does not also enter the model as
+#' a linear term, to record the training mean of `z` (see details). Nothing else is
+#' taken from it.
 #'
 #' @returns a `gamlss` object carrying only the components needed for data-free
 #' prediction, with a `"sanitized"` attribute recording the settings used (to
@@ -160,7 +175,8 @@ sanitize_gamlss <- function(gamlssModel,
                             xranges          = NULL,
                             random_level_map = NULL,
                             keep_call        = FALSE,
-                            points_per_edf   = 200) {
+                            points_per_edf   = 200,
+                            fit_data         = NULL) {
 
   stopifnot(inherits(gamlssModel, "gamlss"))
   datadep <- .datadep_labels(gamlssModel)
@@ -168,8 +184,16 @@ sanitize_gamlss <- function(gamlssModel,
     stop("this model contains parametric term(s) whose columns are computed ",
          "from the data as a whole -- ", paste(datadep, collapse = "; "),
          ". Precompute the basis as plain columns and refit.", call. = FALSE)
+  ## record pvc(by = <numeric>) training means (only the means are kept)
+  gamlssModel <- .pvc_fill_by_means(gamlssModel, fit_data)
+  miss <- .pvc_missing_by_mean(gamlssModel)
+  if (length(miss))
+    stop("the training mean of the `by` variable is not stored for: ",
+         paste(miss, collapse = "; "), ". Pass the fitting data as `fit_data` ",
+         "so it can be recorded.", call. = FALSE)
   if (!.datafree_eligible_gamlss(gamlssModel))
-    stop("this model contains a smoother other than pb()/random(); ",
+    stop("this model contains a smoother other than pb()/pvc()/random() (or a ",
+         "pvc() smooth that cannot be rebuilt); ",
          "gamlssTools cannot predict from it without the original data")
 
   params  <- gamlssModel$parameters
@@ -242,6 +266,18 @@ sanitize_gamlss <- function(gamlssModel,
           if (!is.na(edf) && is.finite(edf) && grid_n < points_per_edf * edf)
             low_res <<- c(low_res, sprintf("%s (edf %.1f, suggests grid_n >= %d)",
                                            lab, edf, ceiling(points_per_edf * edf)))
+
+        } else if (grepl("^pvc\\(", lab)) {
+          ## keep only the coefficients + basis settings (see .pvc_spec());
+          ## x, by, fitted values and variances are all length n. Matched by
+          ## label: a pvc() without `by` stores a plain list, not class "pvc"
+          spec <- .pvc_spec(gamlssModel, p, i, lab)
+          if (!is.null(xranges[[spec$x]]))
+            warning("xranges$", spec$x, " is ignored for ", lab, ": a pvc() basis ",
+                    "is tied to the observed range, which is retained.", call. = FALSE)
+          sm <- structure(list(lambda = sm$lambda, edf = sm$edf,
+                               method = sm$method, spec = spec),
+                          class = class(sm))
 
         } else if (inherits(sm, "random")) {
           sm$fv     <- NULL                  # length n

@@ -201,7 +201,7 @@ sim_data <- function(df, x_var, factor_var=NULL, gamlssModel=NULL, special_term=
 #' back-transformed mean difference (the standard approximation).
 #'
 #' By default (`fit_data = NULL`) mu is reconstructed WITHOUT the original fitting data whenever
-#' possible (from the model's stored coefficients, `pb()` smooths and `random()` effects). Supplying
+#' possible (from the model's stored coefficients, `pb()`/`pvc()` smooths and `random()` effects). Supplying
 #' `fit_data` forces prediction via [gamlss::predictAll()] with those data, and is required when the
 #' model contains a non-reconstructable smoother (`cs()`, `ps()`, `ga()`, `s()`). `fit_data` is also
 #' the reference distribution used to compute the mean/mode each `rm_terms` value is held at.

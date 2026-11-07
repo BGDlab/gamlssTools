@@ -46,7 +46,7 @@ the value of sigma (after link function is applied) as a way to visualize variab
 
 For \link[gamlss]{gamlss} fits, by default (\code{fit_data = NULL}) sigma is predicted WITHOUT
 the original data by reconstructing the model's parameters from its stored coefficients,
-\code{pb()} smooths and \code{random()} effects. Supplying \code{fit_data} forces prediction via
+\code{pb()}/\code{pvc()} smooths and \code{random()} effects. Supplying \code{fit_data} forces prediction via
 \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}, and is required for a model with a non-reconstructable
 smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \link[gamlss2]{gamlss2} fits use gamlss2's own
 \code{predict()}.

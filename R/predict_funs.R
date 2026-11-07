@@ -91,7 +91,7 @@ pred_centile <- function(centile_returned, df, q_func, n_param) {
 #' @details
 #' For \link[gamlss]{gamlss} fits, by default (`fit_data = NULL`) centiles are predicted
 #' WITHOUT the original data by reconstructing the model's parameters from its stored
-#' coefficients, `pb()` smooths and `random()` effects. Supplying `fit_data` forces
+#' coefficients, `pb()`/`pvc()` smooths and `random()` effects. Supplying `fit_data` forces
 #' prediction via [gamlss::predictAll()] using the original data and is required
 #' if the model contains a smoother that cannot be rebuilt data-free (`cs()`, `ps()`, `ga()`,
 #' `s()`). For \link[gamlss2]{gamlss2} fits, prediction uses gamlss2's own `predict()`
@@ -382,7 +382,7 @@ centile_predict <- function(gamlssModel,
 #'
 #' @details
 #' For \link[gamlss]{gamlss} fits, by default (`fit_data=NULL`) centiles are computed by reconstructing
-#' parameters from stored coefficients, `pb()` smooths and `random()` effects.
+#' parameters from stored coefficients, `pb()`/`pvc()` smooths and `random()` effects.
 #' Supplying `fit_data` (original fitting data) forces the exact [gamlss::predictAll()] path
 #' (and additionally checks that `data` falls within its covariate range);
 #' `fit_data` is necessary when the model contains a non-reconstructable smoother
@@ -775,7 +775,7 @@ pred_og_centile <- function(gamlssModel, og.data, get.std.scores = FALSE, new.da
 #' @details
 #' For \link[gamlss]{gamlss} fits, by default (`fit_data = NULL`) sigma is predicted WITHOUT
 #' the original data by reconstructing the model's parameters from its stored coefficients,
-#' `pb()` smooths and `random()` effects. Supplying `fit_data` forces prediction via
+#' `pb()`/`pvc()` smooths and `random()` effects. Supplying `fit_data` forces prediction via
 #' [gamlss::predictAll()], and is required for a model with a non-reconstructable
 #' smoother (`cs()`, `ps()`, `ga()`, `s()`). \link[gamlss2]{gamlss2} fits use gamlss2's own
 #' `predict()`.

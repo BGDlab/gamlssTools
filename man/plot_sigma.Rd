@@ -40,7 +40,7 @@ age is formatted in days post-birth. if age is formatted in days post-conception
 Defaults to \code{FALSE}, which will plot a different colored centile fan for each level of \code{color_var}.}
 
 \item{datafree}{logical; \code{TRUE} (default) predicts sigma WITHOUT the original data (reconstructed from
-stored coefficients / \code{pb()} smooths / \code{random()} effects), \code{FALSE} uses \code{df} as the reference data
+stored coefficients / \code{pb()}/\code{pvc()} smooths / \code{random()} effects), \code{FALSE} uses \code{df} as the reference data
 via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}.}
 
 \item{sim_data_list}{optional argument that takes the output of \code{sim_data()}. Can be useful when you're plotting

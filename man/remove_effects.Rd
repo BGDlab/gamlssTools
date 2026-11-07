@@ -43,7 +43,7 @@ Because the adjustment is applied on the response scale, for non-identity mu lin
 back-transformed mean difference (the standard approximation).
 
 By default (\code{fit_data = NULL}) mu is reconstructed WITHOUT the original fitting data whenever
-possible (from the model's stored coefficients, \code{pb()} smooths and \code{random()} effects). Supplying
+possible (from the model's stored coefficients, \code{pb()}/\code{pvc()} smooths and \code{random()} effects). Supplying
 \code{fit_data} forces prediction via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} with those data, and is required when the
 model contains a non-reconstructable smoother (\code{cs()}, \code{ps()}, \code{ga()}, \code{s()}). \code{fit_data} is also
 the reference distribution used to compute the mean/mode each \code{rm_terms} value is held at.

@@ -37,7 +37,7 @@ model contains a non-reconstructable smoother). Can be left \code{NULL} for full
 would calculate the difference A - B. Required (or inferred from \code{names(sim_data_list)}) when \code{df} is \code{NULL}.}
 
 \item{datafree}{logical; \code{TRUE} (default) predicts the trajectories WITHOUT the original data
-(reconstructed from stored coefficients / \code{pb()} smooths / \code{random()} effects), \code{FALSE} uses \code{df}
+(reconstructed from stored coefficients / \code{pb()}/\code{pvc()} smooths / \code{random()} effects), \code{FALSE} uses \code{df}
 as the fitted data via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}}.}
 
 \item{...}{additional arguments passed to \code{sim_grid()} (e.g. \code{special_term})}

@@ -10,7 +10,8 @@ sanitize_gamlss(
   xranges = NULL,
   random_level_map = NULL,
   keep_call = FALSE,
-  points_per_edf = 200
+  points_per_edf = 200,
+  fit_data = NULL
 )
 }
 \arguments{
@@ -32,6 +33,11 @@ level of every \code{random()} term.}
 
 \item{points_per_edf}{grid points per effective degree of freedom below which
 \code{grid_n} is warned about. Defaults to 200. Set to 0 to silence the warning.}
+
+\item{fit_data}{optional; the data the model was fitted on. Only needed for a
+\code{pvc(x, by = z)} smooth with a numeric \code{z} that does not also enter the model as
+a linear term, to record the training mean of \code{z} (see details). Nothing else is
+taken from it.}
 }
 \value{
 a \code{gamlss} object carrying only the components needed for data-free
@@ -49,10 +55,11 @@ Retains only the components necessary for data-free prediction
 \code{.coefficients}, \code{.coefSmo}, \code{.xlevels}, and fit summaries such as the
 deviances and AIC). Within each smoother, the \code{pb()} interpolation function
 is rebuilt on a regular grid (its closure otherwise holds the sorted covariate
-values) and \code{random()} effect's grouping column, fitted values and standard
-errors are removed.
+values), each \code{pvc()} smooth is reduced to its B-spline coefficients plus the
+handful of numbers needed to rebuild its basis (stored as \verb{$spec}), and \code{random()}
+effect's grouping column, fitted values and standard errors are removed.
 
-Because right now only \code{pb()} and \code{random()} smooths can be reconstructed without the
+Because right now only \code{pb()}, \code{pvc()} and \code{random()} smooths can be reconstructed without the
 original data, models containing any other smoother (\code{cs()}, \code{ps()}, \code{ga()},
 \code{s()}) or parametric terms whose models are computed from the whole data
 (\code{poly()}, \code{ns()}, \code{bs()}, \code{scale()}, \code{cut()}) are rejected.
@@ -65,6 +72,12 @@ Always be sure to confirm model fit is retained using \code{\link[=compare_score
 
 Quantile smooths (i.e. \code{pb.control(quantiles = TRUE)}) have not been tested for
 datasharing/reconstruction accuracy and thus are not currently supported.
+
+\code{pvc()} smooths are rebuilt exactly (no grid). For \code{pvc(x, by = z)} with a numeric
+\code{z}, gamlss centres \code{z} on its training mean but does not store that mean. It is
+read from the model when \code{z} also enters as a linear term; otherwise pass the
+fitting data as \code{fit_data} so it can be recorded. Quantile knots
+(\code{pvc.control(quantiles = TRUE)}) are not supported.
 }
 \section{What still gets shared}{
 
@@ -78,6 +91,10 @@ ones.
 \item \code{N} and \code{noObs} -- the fitting sample size.
 \item each \code{pb()} smooth's covariate range. This is min/max of your data, i.e.
 two real observations, unless you declare it yourself via \code{xranges}.
+\item each \code{pvc()} smooth's covariate range (padded by 1\%, from which the min/max
+can be recovered exactly). \code{xranges} cannot hide it: the basis is built on
+the observed range. Also the training mean of a numeric \code{by} variable, and the
+levels of a factor \code{by} variable.
 }
 }
 

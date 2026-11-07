@@ -51,7 +51,7 @@ calculated by running \code{qnorm()} on centiles - may be more or less appropria
 "z scores" depending on distribution family of the model.
 
 For \link[gamlss]{gamlss} fits, by default (\code{fit_data=NULL}) centiles are computed by reconstructing
-parameters from stored coefficients, \code{pb()} smooths and \code{random()} effects.
+parameters from stored coefficients, \code{pb()}/\code{pvc()} smooths and \code{random()} effects.
 Supplying \code{fit_data} (original fitting data) forces the exact \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} path
 (and additionally checks that \code{data} falls within its covariate range);
 \code{fit_data} is necessary when the model contains a non-reconstructable smoother

@@ -55,7 +55,7 @@ values. Can also calculate and return the peak median (0.5) value of y across pr
 
 For \link[gamlss]{gamlss} fits, by default (\code{fit_data = NULL}) centiles are predicted
 WITHOUT the original data by reconstructing the model's parameters from its stored
-coefficients, \code{pb()} smooths and \code{random()} effects. Supplying \code{fit_data} forces
+coefficients, \code{pb()}/\code{pvc()} smooths and \code{random()} effects. Supplying \code{fit_data} forces
 prediction via \code{\link[gamlss:predict.gamlss]{gamlss::predictAll()}} using the original data and is required
 if the model contains a smoother that cannot be rebuilt data-free (\code{cs()}, \code{ps()}, \code{ga()},
 \code{s()}). For \link[gamlss2]{gamlss2} fits, prediction uses gamlss2's own \code{predict()}
