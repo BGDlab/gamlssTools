@@ -556,27 +556,9 @@ score_centiles.gamlss <- function(gamlssModel, data, fit_data = NULL, standardiz
     #predict, using fit_data if supplied
     predModel <- .predict_params_gamlss(gamlssModel, newdata=newData, data=fit_data)
 
-    #look for moments
-    has_sigma <- "sigma" %in% gamlssModel[[2]]
-    has_nu <- "nu" %in% gamlssModel[[2]]
-    has_tau <- "tau" %in% gamlssModel[[2]]
-
-    #iterate through in-sample participants
-    for (i in seq_along(predict_me)){
-      cent_args <- list(predict_me[[i]], predModel$mu[[i]])
-
-      if (has_sigma){
-        cent_args$sigma <- predModel$sigma[[i]]
-      }
-      if (has_nu){
-        cent_args$nu <- predModel$nu[[i]]
-      }
-      if (has_tau){
-        cent_args$tau <- predModel$tau[[i]]
-      }
-
-      in_centiles[i] <- do.call(pfun, cent_args)
-    }
+    #evaluate the family CDF at every observed value in one vectorised call
+    in_centiles <- .centile_prob(predict_me, predModel, pfun,
+                                 length(gamlssModel$parameters))
   }
 
   #recombine out-of-sample and in-sample centiles into original row order
@@ -717,16 +699,9 @@ score_centiles.gamlss2 <- function(gamlssModel, data, fit_data = NULL, standardi
     predModel$q <- predict_me
     arg_order <- c("q", "mu", "sigma", "nu", "tau")
 
-    in_centiles <- predModel %>%
-      rowwise() %>%
-      mutate(
-        centile = {
-          # extract all expected args in order
-          args <- pick(any_of(arg_order))
-          do.call(get(pfun), as.list(args))
-        }) %>%
-      ungroup() %>%
-      pull(centile)
+    #the p* functions are vectorised over parameters, so score all rows in one call
+    cdf_args <- as.list(predModel)[intersect(arg_order, names(predModel))]
+    in_centiles <- do.call(get(pfun), cdf_args)
   }
 
   #recombine out-of-sample and in-sample centiles into original row order

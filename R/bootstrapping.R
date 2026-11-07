@@ -564,21 +564,16 @@ peak_ci <- function(boot_list,
 ci_diffs <- function(ci_list){
   stopifnot(length(ci_list) == 2)
   
-  #https://stackoverflow.com/questions/3269434/whats-the-most-efficient-way-to-test-if-two-ranges-overlap
-  check_overlap <- function(A_lower, A_upper, B_lower, B_upper){
-    max(A_lower, B_lower) - min(A_upper, B_upper) <= 0 
-  }
-  
   #store original factor level names
   names(ci_list) <- c("A", "B") #rename to generic levels for calculations
   
   ci_df <- bind_rows(ci_list, .id = "factor") %>%
     select(-any_of("y")) %>% #drop y if calculating peak cis
     tidyr:::pivot_wider(names_from="factor", values_from = c("lower", "med", "upper")) %>%
-    rowwise() %>%
-    mutate(overlap = check_overlap(lower_A, upper_A, lower_B, upper_B)) %>%
-    ungroup() %>%
-    mutate(sig_diff = ifelse(overlap == TRUE, FALSE, TRUE))
+    #ranges overlap when the larger lower bound is <= the smaller upper bound
+    #https://stackoverflow.com/questions/3269434/whats-the-most-efficient-way-to-test-if-two-ranges-overlap
+    mutate(overlap = pmax(lower_A, lower_B) <= pmin(upper_A, upper_B),
+           sig_diff = !overlap)
   
   return(ci_df)
 }
