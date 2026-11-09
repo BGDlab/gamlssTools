@@ -97,9 +97,15 @@ test_that("a covariate sharing the data object's name is not dropped", {
 
 test_that("string arguments inside a term are not mistaken for variables", {
   d <- lp_data()
-  m <- gamlss::gamlss(Pheno ~ pb(Age, method = "GAIC") + Sex,
+  m <- gamlss::gamlss(Pheno ~ pb(Age, method = "GAIC", k=log(nrow(d))) + Sex,
                       data = d, family = "NO", trace = FALSE)
 
+  expect_no_warning(out <- list_predictors(m))
+  expect_setequal(out, c("Age", "Sex"))
+  
+  m <- suppressWarnings(gamlss::gamlss(Pheno ~ pvc(Age, by=Sex),
+                      data = d, family = "NO", trace = FALSE))
+  
   expect_no_warning(out <- list_predictors(m))
   expect_setequal(out, c("Age", "Sex"))
 })

@@ -384,7 +384,7 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), fit_data, name = NA,
 
 # ---- internal: variable names out of a model formula -------------------------
 # helper for list_predictors(). Like all.vars(), but resolves a data object's 
-# column to the column name
+# column to the column name & ignores df name
 #' @keywords internal
 #' @noRd
 .formula_vars <- function(x) {
@@ -409,8 +409,14 @@ drop1_all <- function(gamlssModel, list = c("mu", "sigma"), fit_data, name = NA,
     return(if (is.character(idx)) as.character(idx) else character(0))
   }
   
-  #otherwise recurse into the arguments, skipping the function being called
-  out <- unlist(lapply(as.list(x)[-1], .formula_vars), use.names = FALSE)
+  #otherwise recurse into the arguments, skipping the function being called &
+  #control params
+  args <- as.list(x)[-1]
+  nms <- names(args)
+  
+  ignore_args <- c("k", "method", "lambda", "df", "max.df", "control", "inter", "degree", "order")
+  if (!is.null(nms)) args <- args[!nms %in% ignore_args]
+  out <- unlist(lapply(args, .formula_vars), use.names = FALSE)
   if (is.null(out)) character(0) else unique(out)
 }
 
