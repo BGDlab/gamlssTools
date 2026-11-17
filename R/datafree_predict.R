@@ -81,8 +81,7 @@
 #
 # predict()/predictAll() cannot be trusted for pvc(x, by = z) with a numeric z:
 # they refit the smoother on rbind(data, newdata), and pvc() centres the by
-# variable on the mean of WHATEVER it is handed (by - mean(by)), so the centring
-# constant -- and therefore every prediction -- shifts with the newdata.
+# variable on the mean of WHATEVER it is handed, so the centring shifts with the newdata.
 #
 # A fitted pvc term is
 #   no by      : b * x + B(x) %*% beta                 (b = coef(object, p)[lab])

@@ -354,83 +354,94 @@ pointwise_pct_ci <- function(df, x_var, col_name, interval){
 }
 
 #' Simultaneous Confidence Intervals
-#' 
+#'
 #' Helper function for `gamlss_ci()`, `ci_type` = "simultaneous"
 #' Implements simultaneous CIs along `x_var` as described in Gao, Konietschke, & Li, 2021 (doi: 10.3390/sym13071212).
-#' 
+#'
+#' @details
+#' The band is the envelope of exactly `ceiling(B * interval)` whole bootstrap curves:
+#' 1. At each value of `x_var`, curves are ranked by `col_name`. The `ceiling(B * (1 - alpha/2))` curves
+#'    with the lowest maximum rank (across `x_var`) are kept.
+#' 2. Kept curves are re-ranked at each `x_var`, and the `ceiling(B * (1 - alpha))` curves with the highest
+#'    minimum rank are kept. This drops `alpha/(2 - alpha)` of the remaining curves, i.e. `alpha/2` of all B.
+#' 3. The band is the min and max of the remaining curves at each `x_var`.
+#'
+#' Curves are ranked at each value of `x_var`, so every bootstrap should be evaluated
+#' on the same grid of `x_var` values, with one row per bootstrap per `x_var`. Curves tied at a trimming
+#' cutoff (common on fine grids, where many curves are the single highest/lowest at some x) are split at
+#' random, as the paper recommends, so results depend on seed when `n_tied_upper` or
+#' `n_tied_lower` is > 1.
+#'
+#' @param df long dataframe with one row per bootstrap per value of `x_var`, with a `boot` column
+#' identifying bootstraps
+#' @param x_var name of the continuous variable the band is calculated across
+#' @param col_name name of the column holding each bootstrap's values (e.g. `cent_0.5` or `sigma`)
+#' @param interval size of the band, e.g. 0.95
+#'
+#' @returns dataframe with one row per value of `x_var` and columns `lower`, `upper`, `x_var`,
+#' `n_boot_sim` (curves in the band), and `n_tied_upper`/`n_tied_lower` (curves randomly split at
+#' each trimming cutoff; 1 means no tie-break was needed)
+#'
 #' @export
 simultaneous_pct_ci <- function(df, x_var, col_name, interval){
-  
-  upper_pct <- 0.5+(interval/2)
-  lower_pct <- 0.5-(interval/2)
-  
-  #subfunction to get bootstrap rankings
-  boot_ranks <- function(df, xvar, f, col_name){
-    f <- match.fun(f)
-    
-    df %>%
-      #group at each x
-      arrange(!!sym(xvar)) %>%
-      mutate(x_bin = cut(!!sym(xvar), breaks = 500)) %>%
-      group_by(x_bin) %>%
-      #at each x, rank boot by cent_0.5 (or sigma, etc)
-      mutate(rank = frank(!!sym(col_name), ties.method = "random")) %>%
-      ungroup() %>%
-      #find each bootstrap's biggest rank across x
-      group_by(boot) %>%
-      summarise(
-        rank_stat = f(rank),
-        .groups="keep"
-      )
+  stopifnot(interval > 0 && interval < 1)
+  alpha <- 1 - interval
+
+  df <- df %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(!is.na(!!sym(col_name)))
+
+  stopifnot("each bootstrap must have exactly one row per value of x_var" =
+              !anyDuplicated(df[c("boot", x_var)]))
+
+  n_boot <- dplyr::n_distinct(df$boot)
+  stopifnot("no non-missing bootstrap values" = n_boot > 0)
+  n_phi <- ceiling(n_boot * (1 - alpha / 2)) #curves kept after the upper trim
+  n_final <- ceiling(n_boot * (1 - alpha)) #curves kept in the band
+
+  #subfunction: rank curves at each x, summarise each curve's rank w/ f (max or min),
+  #and keep the n_keep curves w/ the lowest (or highest) rank stat. ties at the cutoff split at random
+  trim_curves <- function(df, f, n_keep, keep_lowest){
+    rank_df <- df %>%
+      dplyr::group_by(!!sym(x_var)) %>%
+      dplyr::mutate(rank = data.table::frank(!!sym(col_name), ties.method = "random")) %>%
+      dplyr::group_by(boot) %>%
+      dplyr::summarise(rank_stat = f(rank), .groups = "drop") %>%
+      dplyr::mutate(tiebreak = stats::runif(dplyr::n()))
+
+    direction <- if (keep_lowest) 1 else -1
+    rank_df <- rank_df %>%
+      dplyr::arrange(direction * rank_stat, tiebreak)
+
+    #tie only matters if it straddles the cutoff
+    cutoff <- rank_df$rank_stat[n_keep]
+    straddles <- n_keep < nrow(rank_df) && rank_df$rank_stat[n_keep + 1] == cutoff
+    n_tied <- if (straddles) sum(rank_df$rank_stat == cutoff) else 1L
+
+    list(boot = rank_df$boot[seq_len(n_keep)], n_tied = n_tied)
   }
-  
-  #subfuction to filter by bootstrap percentile
-  filt_rank_pct <- function(df, pct, keep=c("less", "greater")){
-    stopifnot(pct > 0 && pct < 1)
-    cutoff <- quantile(df$rank_stat, probs=pct)
-    
-    pct_pretty <- pct*100
-    
-    keep <- match.arg(keep)
-    if(keep == "less"){
-      print(paste0("keep ranks less than or = ", cutoff, " (", pct_pretty, "%)"))
-      df <- df %>%
-        filter(rank_stat <= cutoff)
-    } else if(keep == "greater"){
-      print(paste0("keep ranks greater than or = ", cutoff, " (", pct_pretty, "%)"))
-      df <- df %>%
-        filter(rank_stat >= cutoff)
-    }
-    return(df)
-  }
-  
-  #rank bootstraps at each x
-  max_ranks <- boot_ranks(df, xvar= x_var, f="max", col_name=col_name)
-  
-  #filter by rank < upper_pct
-  max_ranks_pct <- filt_rank_pct(max_ranks, pct=upper_pct, keep="less")
-  phi <- df %>% filter(boot %in% max_ranks_pct$boot)
-  
-  #rank bootstraps again at each x
-  min_ranks <- boot_ranks(phi, xvar= x_var, f="min", col_name=col_name)
-  
-  #filter by ranks
-  min_ranks_pct <- filt_rank_pct(min_ranks, pct=lower_pct, keep="greater")
-  final_boot_dfs <- phi %>% filter(boot %in% min_ranks_pct$boot)
-  
-  #now get CIs as min and max remaining y values at each x
-  ci_list <- final_boot_dfs %>%
-    #group at each x
-    arrange(!!sym(x_var)) %>%
-    mutate(x_bin = cut(!!sym(x_var), breaks = 500)) %>%
-    group_by(x_bin) %>%
-    #calculate their y values
-    summarise(
+
+  #upper trim: keep n_phi curves w/ the lowest max rank
+  upper_trim <- trim_curves(df, max, n_phi, keep_lowest = TRUE)
+  phi <- df %>% dplyr::filter(boot %in% upper_trim$boot)
+
+  #lower trim: re-rank within phi & keep n_final curves w/ the highest min rank
+  lower_trim <- trim_curves(phi, min, n_final, keep_lowest = FALSE)
+  final <- phi %>% dplyr::filter(boot %in% lower_trim$boot)
+
+  #band = envelope of the remaining curves at each x
+  final %>%
+    dplyr::group_by(!!sym(x_var)) %>%
+    dplyr::summarise(
       lower = min(!!sym(col_name)),
       upper = max(!!sym(col_name)),
-      !!sym(x_var) := mean(!!sym(x_var)),
+      n_boot_sim = dplyr::n_distinct(boot),
       .groups = "drop"
-    )
+    ) %>%
+    dplyr::arrange(!!sym(x_var)) %>%
+    dplyr::relocate(lower, upper, .before = 1) %>%
+    dplyr::mutate(n_tied_upper = upper_trim$n_tied,
+                  n_tied_lower = lower_trim$n_tied)
 }
 
 
@@ -605,8 +616,7 @@ ci_diffs <- function(ci_list){
 #' @param interval size of confidence interval to calculate. Defaults to 0.95, or 95%
 #' @param boot_list output of gamlssTools::bootstrap_gamlss() (optional)
 #' @param ci_type options for type of precentile CI to return. `pointwise` (default) calculates percentiles at 500 points
-#' along `x_var`. `simultaneous` implements simultaneous CIs along `x_var`
-#' as described in Gao et al (doi: 10.3390/sym13071212).
+#' along `x_var`. `simultaneous` implements simultaneous CIs along `x_var`as described in Gao et al (doi: 10.3390/sym13071212).
 #' @param factor_var_levels (optional) specify the order for factor levels. E.g., `factor_var_levels = c("A", "B")`
 #' would calculate the difference A - B.
 #' 

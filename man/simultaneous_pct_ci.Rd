@@ -6,7 +6,38 @@
 \usage{
 simultaneous_pct_ci(df, x_var, col_name, interval)
 }
+\arguments{
+\item{df}{long dataframe with one row per bootstrap per value of \code{x_var}, with a \code{boot} column
+identifying bootstraps}
+
+\item{x_var}{name of the continuous variable the band is calculated across}
+
+\item{col_name}{name of the column holding each bootstrap's values (e.g. \code{cent_0.5} or \code{sigma})}
+
+\item{interval}{size of the band, e.g. 0.95}
+}
+\value{
+dataframe with one row per value of \code{x_var} and columns \code{lower}, \code{upper}, \code{x_var},
+\code{n_boot_sim} (curves in the band), and \code{n_tied_upper}/\code{n_tied_lower} (curves randomly split at
+each trimming cutoff; 1 means no tie-break was needed)
+}
 \description{
 Helper function for \code{gamlss_ci()}, \code{ci_type} = "simultaneous"
 Implements simultaneous CIs along \code{x_var} as described in Gao, Konietschke, & Li, 2021 (doi: 10.3390/sym13071212).
+}
+\details{
+The band is the envelope of exactly \code{ceiling(B * interval)} whole bootstrap curves:
+\enumerate{
+\item At each value of \code{x_var}, curves are ranked by \code{col_name}. The \code{ceiling(B * (1 - alpha/2))} curves
+with the lowest maximum rank (across \code{x_var}) are kept.
+\item Kept curves are re-ranked at each \code{x_var}, and the \code{ceiling(B * (1 - alpha))} curves with the highest
+minimum rank are kept. This drops \code{alpha/(2 - alpha)} of the remaining curves, i.e. \code{alpha/2} of all B.
+\item The band is the min and max of the remaining curves at each \code{x_var}.
+}
+
+Curves are ranked at each value of \code{x_var}, so every bootstrap should be evaluated
+on the same grid of \code{x_var} values, with one row per bootstrap per \code{x_var}. Curves tied at a trimming
+cutoff (common on fine grids, where many curves are the single highest/lowest at some x) are split at
+random, as the paper recommends, so results depend on seed when \code{n_tied_upper} or
+\code{n_tied_lower} is > 1.
 }

@@ -55,8 +55,7 @@ value of sigma (with link-function applied)}
 \item{interval}{size of confidence interval to calculate. Defaults to 0.95, or 95\%}
 
 \item{ci_type}{options for type of precentile CI to return. \code{pointwise} (default) calculates percentiles at 500 points
-along \code{x_var}. \code{simultaneous} implements simultaneous CIs along \code{x_var}
-as described in Gao et al (doi: 10.3390/sym13071212).}
+along \code{x_var}. \code{simultaneous} implements simultaneous CIs along \code{x_var}as described in Gao et al (doi: 10.3390/sym13071212).}
 
 \item{boot_list}{output of gamlssTools::bootstrap_gamlss() (optional)}
 
