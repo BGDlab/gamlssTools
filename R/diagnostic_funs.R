@@ -530,58 +530,6 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
   return(out)
 }
 
-# ---- internal: rows where two models predict identically ---------------------
-# Models of different families are never treated as agreeing: their parameters
-# are not the same quantity.
-#' @keywords internal
-#' @noRd
-.models_agree <- function(gamlssModel1, gamlssModel2, newdata,
-                          fit_data1, fit_data2) {
-  if (!identical(gamlssModel1$family[1], gamlssModel2$family[1]))
-    return(logical(nrow(newdata)))
-
-  p1 <- .predict_params_gamlss(gamlssModel1, newdata = newdata, data = fit_data1)
-  p2 <- .predict_params_gamlss(gamlssModel2, newdata = newdata, data = fit_data2)
-
-  agree <- rep(TRUE, nrow(newdata))
-  for (nm in gamlssModel1$parameters) {
-    a <- as.numeric(p1[[nm]]); b <- as.numeric(p2[[nm]])
-    stopifnot(length(a) == nrow(newdata) && length(b) == nrow(newdata))
-    #EXACT equality, not a tolerance. A structural tie is exact -- a splinefun
-    #evaluated at one of its own nodes returns the stored value bit for bit
-    #NA counts as disagreement: an unscorable row is not evidence of a tie.
-    agree <- agree & !is.na(a) & !is.na(b) & a == b
-  }
-  agree
-}
-
-# ---- internal: the same rows, moved just off wherever they sit ---------------
-# Used to tell "these two models are the same model" from "these particular
-# points are forced to agree". Each numeric column is shifted by half the
-# smallest gap between its sorted unique values (midpoint of a regular grid),
-# where a rebuilt spline's error is detectable. Shifts stay inside the column's
-# own range so nothing extrapolates.
-#
-# Returns NULL when there is no numeric column to move, or only one distinct
-# value to move it by; the caller then has no evidence either way.
-#' @keywords internal
-#' @noRd
-.nudge_frame <- function(newdata) {
-  num <- names(newdata)[vapply(newdata, is.numeric, logical(1))]
-  moved <- FALSE
-  for (v in num) {
-    x <- newdata[[v]]
-    u <- sort(unique(x[is.finite(x)]))
-    if (length(u) < 2) next
-    d <- min(diff(u)) / 2
-    if (!is.finite(d) || d <= 0) next
-    hi <- max(u)
-    newdata[[v]] <- ifelse(x + d <= hi, x + d, x - d)
-    moved <- TRUE
-  }
-  if (moved) newdata else NULL
-}
-
 # ---- internal: max |z difference| between two models at each centile ---------
 # For each of `cent_to_check`, the largest absolute difference in z the two
 # models assign, over the rows of `newdata`.
@@ -649,20 +597,11 @@ wp.taki<-function (object = NULL, xvar = NULL, resid = NULL, n.inter = 4,
 #' that model is predicted data-free.
 #'
 #' @returns invisibly, a list with the components the call produced: `z_diffs`, a
-#' named numeric of the `max` and `mean` absolute z-score difference, with
-#' `n_tied` alongside it; `nudged`, present only when a frame had to be moved
-#' off points that measured nothing; `centile_diffs`, a named list holding, for each level
-#' of `sim_grid_list`, the maximum absolute z difference at each centile checked.
+#' named numeric of the `max` and `mean` absolute z-score difference; and
+#' `centile_diffs`, a named list holding, for each level of `sim_grid_list`, the
+#' maximum absolute z difference at each centile checked.
 #'
 #' @details
-#' A rebuilt `pb()` spline (see [sanitize_gamlss()]) interpolates the grid it was
-#' rebuilt on, so it reproduces the original smooth *exactly* at each grid node
-#' and the error peaks between them. These points are uninformative and thus ignored
-#' by `z_diffs` summaries (`n_tied` indicates how many such points are ignored).
-#' If EVERY point in a frame is tied due to smooth interpolation, the comparison is
-#' moved off those points (by half the smallest gap between distinct covariate values),
-#' indicated by `nudged`.
-#'
 #' `centile_diffs` is symmetric, so the output is the same regardless of which model
 #' is passed as `gamlssModel1` vs `gamlssModel2`.
 #'
@@ -707,46 +646,7 @@ compare_scores <- function(gamlssModel1,
          "observations, `sim_grid_list` to compare predicted values at each ",
          "centile, or both", call. = FALSE)
 
-  ## shift prediction points as necessary
-  nudged <- character()
-  resolve <- function(df, label) {
-    ag <- .models_agree(gamlssModel1, gamlssModel2, df, fit_data1, fit_data2)
-    if (!all(ag)) return(list(df = df, agree = ag))
-
-    #shift the PREDICTORS only: shifting the response would change the z-scores
-    #directly, and the z-score branch needs it to have anything to score at all
-    preds <- intersect(list_predictors(gamlssModel1), names(df))
-    moved <- .nudge_frame(df[, preds, drop = FALSE])
-    if (is.null(moved)) return(list(df = df, agree = ag))   #nothing to move
-    alt <- df                     #`df` itself stays untouched: it is what the
-    alt[preds] <- moved[preds]    #same-model path below hands back
-    ag2 <- .models_agree(gamlssModel1, gamlssModel2, alt, fit_data1, fit_data2)
-    #actually same model, return original data
-    if (all(ag2)) return(list(df = df, agree = ag))
-
-    #else shift
-    nudged <<- c(nudged, label)
-    list(df = alt, agree = ag2)
-  }
-
-  if (!is.null(data)) {
-    r <- resolve(data, "data")
-    data <- r$df
-    data_agree <- r$agree
-  }
-  if (!is.null(sim_grid_list))
-    for (nm in names(sim_grid_list)) {
-      r <- resolve(sim_grid_list[[nm]], paste0("sim_grid_list$", nm))
-      sim_grid_list[[nm]] <- r$df
-    }
-
-  if (length(nudged))
-    warning("both models evaluate ", paste(nudged, collapse = ", "), " identically ",
-            "at points passed to sim_grid_list - likely a model being compared against",
-            "its own cleaned sanitize_gamlss() output. Shifting points of comparison.", call. = FALSE)
-
   out <- list()
-  if (length(nudged)) out$nudged <- nudged
 
   #compare z-scores
   if (!is.null(data)){
@@ -758,14 +658,8 @@ compare_scores <- function(gamlssModel1,
     ## check for NAs (unseen sites)
     stopifnot(!is.na(c(std1, std2)))
 
-    #get max diff over nonzero rows - if models are identical (determined by resolve
-    #function above), return 0
-    diff    <- abs(std1 - std2)
-    tied    <- data_agree
-    keep    <- if (all(tied)) rep(TRUE, length(diff)) else !tied
-
-    out$z_diffs <- c(max = max(diff[keep]), mean = mean(diff[keep]))
-    out$n_tied  <- sum(tied)
+    diff <- abs(std1 - std2)
+    out$z_diffs <- c(max = max(diff), mean = mean(diff))
 
     if (out$z_diffs[["max"]] < tol) {
       cat("OK: z-scores match within ", tol, "\n", sep = "")
@@ -774,10 +668,6 @@ compare_scores <- function(gamlssModel1,
           "Max abs diff = ", out$z_diffs[["max"]], "\n",
           "Mean abs diff = ", out$z_diffs[["mean"]], "\n", sep = "")
     }
-    if (sum(tied) > 0 && !all(tied))
-      cat("  (", sum(tied), " of ", length(diff), " row(s) give identical ",
-          "prediction, excluded from summary)\n",
-          sep = "")
   }
 
   #compare y at each centile

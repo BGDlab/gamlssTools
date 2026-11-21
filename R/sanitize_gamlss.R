@@ -9,47 +9,6 @@
 
 ################################################
 
-# ---- internal: rebuild a pb() interpolation function on a regular grid -------
-# splinefun() keeps its interpolation table (the sorted UNIQUE covariate values
-# and the smooth fit at each) in the returned closure's environment. Re-fitting
-# on an even grid reproduces the same function without carrying the observed
-# covariate values.
-#
-#' @keywords internal
-#' @noRd
-.regrid_fun <- function(f, xrange, grid_n) {
-  g  <- seq(xrange[1], xrange[2], length.out = grid_n)
-  fg <- as.numeric(f(g))
-  stopifnot(all(is.finite(fg)))
-  stats::splinefun(g, fg, method = "natural")
-}
-
-# ---- internal: x range of a fitted pb() smooth -------------------------------
-# Read off the fitted smooth. Both routes return the min/max of the observed
-# covariate (the knots are laid out over the observed range), i.e. two real
-# observations -- see the `xranges` argument of sanitize_gamlss().
-#' @keywords internal
-#' @noRd
-.pb_xrange <- function(sm, lab) {
-  e <- environment(sm$fun)
-  if (!is.null(e) && !is.null(e$z$x)) return(range(e$z$x))
-  if (!is.null(sm$knots))             return(range(sm$knots))
-  stop("cannot determine the x range for ", lab,
-       "; pass it explicitly via xranges = list(<var> = c(lo, hi))")
-}
-
-# ---- internal: are a pb() smooth's knots an even grid? -----------------------
-# Subfuction of audit_gamlss().
-# Returns NA when there are too few knots to tell.
-#' @keywords internal
-#' @noRd
-.pb_knots_even <- function(sm) {
-  k <- sm$knots
-  if (is.null(k) || !is.numeric(k) || length(k) < 4) return(NA)
-  dk <- diff(sort(k))
-  diff(range(dk)) <= 1e-8 * max(abs(dk))
-}
-
 #' Strip per-observation data out of a fitted gamlss model
 #'
 #' Returns a copy of `gamlssModel` that still supports data-free prediction (i.e.
@@ -59,32 +18,30 @@
 #' Retains only the components necessary for data-free prediction
 #' (`parameters`, `family`, each parameter's `.link`, `.formula`, `.terms`,
 #' `.coefficients`, `.coefSmo`, `.xlevels`, and fit summaries such as the
-#' deviances and AIC). Within each smoother, the `pb()` interpolation function 
-#' is rebuilt on a regular grid (its closure otherwise holds the sorted covariate 
-#' values), each `pvc()` smooth is reduced to its B-spline coefficients plus the
-#' handful of numbers needed to rebuild its basis (stored as `$spec`), and `random()`
-#' effect's grouping column, fitted values and standard errors are removed.
+#' deviances and AIC). Each `pb()` and `pvc()` smooth is reduced to its B-spline
+#' coefficients plus the handful of numbers needed to rebuild its basis (stored as
+#' `$spec`), so it predicts exactly as the original does. Each `random()` effect's
+#' grouping column, fitted values and standard errors are removed.
 #'
 #' Because right now only `pb()`, `pvc()` and `random()` smooths can be reconstructed without the
 #' original data, models containing any other smoother (`cs()`, `ps()`, `ga()`,
 #' `s()`) or parametric terms whose models are computed from the whole data 
-#' (`poly()`, `ns()`, `bs()`, `scale()`, `cut()`) are rejected.
+#' (`poly()`, `ns()`, `bs()`, `scale()`, `cut()`) are rejected, as are models
+#' with an `offset()` term in any parameter's formula.
 #' 
 #' @details
-#' pb() smooths are reconstructed over a grid of size `grid_n`. How much you need
-#' depends on how wiggly the smooth is/how many edf are used. A warning is raised when
-#' `grid_n` looks too coarse for a smooth's edf. The default based on testing is 
-#' 200 datapoints per edf, but this can be changed using the `points_per_edf` arg.
-#' Always be sure to confirm model fit is retained using [compare_scores()]. 
-#' 
-#' Quantile smooths (i.e. `pb.control(quantiles = TRUE)`) have not been tested for
-#' datasharing/reconstruction accuracy and thus are not currently supported.
+#' `pb()` and `pvc()` smooths are rebuilt exactly from their coefficients. Neither
+#' extrapolates: beyond the fitted covariate range (padded by 1%) the rebuilt curve
+#' decays to 0, and a warning is raised. Confirm the sanitized model with
+#' [compare_scores()].
 #'
-#' `pvc()` smooths are rebuilt exactly (no grid). For `pvc(x, by = z)` with a numeric
+#' Quantile knots (`pb.control(quantiles = TRUE)`, `pvc.control(quantiles = TRUE)`)
+#' place knots at sample quantiles of the covariate, so they are not supported.
+#'
+#' For `pvc(x, by = z)` with a numeric
 #' `z`, gamlss centres `z` on its training mean but does not store that mean. It is
 #' read from the model when `z` also enters as a linear term; otherwise pass the
-#' fitting data as `fit_data` so it can be recorded. Quantile knots
-#' (`pvc.control(quantiles = TRUE)`) are not supported.
+#' fitting data as `fit_data` so it can be recorded.
 #'
 #' @section What still gets shared:
 #' Sanitizing is not anonymisation, and a few small things survive by
@@ -95,12 +52,11 @@
 #' * the names of `random()` BLUPs -- your site, study or subject labels. Use
 #'   `random_level_map` to pseudonymise them.
 #' * `N` and `noObs` -- the fitting sample size.
-#' * each `pb()` smooth's covariate range. This is min/max of your data, i.e.
-#'   two real observations, unless you declare it yourself via `xranges`.
-#' * each `pvc()` smooth's covariate range (padded by 1%, from which the min/max
-#'   can be recovered exactly). `xranges` cannot hide it: the basis is built on
-#'   the observed range. Also the training mean of a numeric `by` variable, and the
-#'   levels of a factor `by` variable.
+#' * each `pb()` and `pvc()` smooth's covariate range (padded by 1%, from which
+#'   the min/max of your data -- two real observations -- can be recovered
+#'   exactly). The basis is built on the observed range, so it cannot be hidden.
+#' * for `pvc()`, the training mean of a numeric `by` variable, and the levels of
+#'   a factor `by` variable.
 #'
 #' @section Sharing workflow:
 #' ```
@@ -111,9 +67,7 @@
 #' grid <- sim_grid(fit_data, "age_days", "sex", models[[1]])
 #'
 #' ## 2. sanitize (eligibility is checked for you, per model)
-#' clean <- lapply(models, sanitize_gamlss,
-#'                 grid_n  = 500,
-#'                 xranges = list(age_days = c(0, 36500)))
+#' clean <- lapply(models, sanitize_gamlss)
 #'
 #' ## 3. audit
 #' for (nm in names(clean)) { cat("\n==== ", nm, " ====\n"); audit_gamlss(clean[[nm]]) }
@@ -133,18 +87,11 @@
 #' ```
 #'
 #' @param gamlssModel a fitted `gamlss` model object.
-#' @param grid_n number of grid points used to rebuild each `pb()` interpolation
-#' function. Defaults to 2000. Higher is more faithful to wigglier smooths but
-#' makes the stored object larger.
-#' @param xranges optional named list of covariate ranges, e.g.
-#' `list(age_days = c(0, 36500))`, rather than retaining data min/max.
 #' @param random_level_map optional named character vector mapping old level ->
 #' new label, for pseudonymising `random()` grouping levels. Must cover every
 #' level of every `random()` term.
 #' @param keep_call logical, whether to keep `gamlssModel$call`. Defaults to
 #' `FALSE`: the call can name your data object or embed a subsetting expression.
-#' @param points_per_edf grid points per effective degree of freedom below which
-#' `grid_n` is warned about. Defaults to 200. Set to 0 to silence the warning.
 #' @param fit_data optional; the data the model was fitted on. Only needed for a
 #' `pvc(x, by = z)` smooth with a numeric `z` that does not also enter the model as
 #' a linear term, to record the training mean of `z` (see details). Nothing else is
@@ -162,7 +109,7 @@
 #'                      sigma.formula = ~ pb(Sepal.Length),
 #'                      data = iris, family = NO, trace = FALSE)
 #'
-#' clean <- sanitize_gamlss(iris_model, xranges = list(Sepal.Length = c(4, 8)))
+#' clean <- sanitize_gamlss(iris_model)
 #' audit_gamlss(clean)
 #'
 #' #compare outputs
@@ -171,11 +118,8 @@
 #'
 #' @export
 sanitize_gamlss <- function(gamlssModel,
-                            grid_n           = 2000,
-                            xranges          = NULL,
                             random_level_map = NULL,
                             keep_call        = FALSE,
-                            points_per_edf   = 200,
                             fit_data         = NULL) {
 
   stopifnot(inherits(gamlssModel, "gamlss"))
@@ -184,6 +128,10 @@ sanitize_gamlss <- function(gamlssModel,
     stop("this model contains parametric term(s) whose columns are computed ",
          "from the data as a whole -- ", paste(datadep, collapse = "; "),
          ". Precompute the basis as plain columns and refit.", call. = FALSE)
+  offs <- .offset_labels(gamlssModel)
+  if (length(offs))
+    stop("this model contains offset() term(s), which data-free prediction ",
+         "does not support -- ", paste(offs, collapse = "; "), call. = FALSE)
   ## record pvc(by = <numeric>) training means (only the means are kept)
   gamlssModel <- .pvc_fill_by_means(gamlssModel, fit_data)
   miss <- .pvc_missing_by_mean(gamlssModel)
@@ -191,29 +139,26 @@ sanitize_gamlss <- function(gamlssModel,
     stop("the training mean of the `by` variable is not stored for: ",
          paste(miss, collapse = "; "), ". Pass the fitting data as `fit_data` ",
          "so it can be recorded.", call. = FALSE)
-  if (!.datafree_eligible_gamlss(gamlssModel))
-    stop("this model contains a smoother other than pb()/pvc()/random() (or a ",
-         "pvc() smooth that cannot be rebuilt); ",
-         "gamlssTools cannot predict from it without the original data")
+  params <- gamlssModel$parameters
 
-  params  <- gamlssModel$parameters
-  low_res <- character()          # pb() smooths too wiggly for this grid_n
-
-  ## refuse quantile-knot fits
-  quantile_knots <- character()
+  ## name any pb()/pvc() smooth that can't be rebuilt, and why
+  unbuildable <- character()
   for (p in params) {
     sm_labs <- colnames(gamlssModel[[paste0(p, ".s")]])
-    smos_p  <- gamlssModel[[paste0(p, ".coefSmo")]]
-    for (i in seq_along(smos_p)) {
-      if (!inherits(smos_p[[i]], "pb")) next
-      if (isFALSE(.pb_knots_even(smos_p[[i]])))
-        quantile_knots <- c(quantile_knots, paste0(p, ": ", sm_labs[i]))
+    for (i in seq_along(sm_labs)) {
+      spec <- if (grepl("^pb\\(", sm_labs[i])) .pb_spec(gamlssModel, p, i, sm_labs[i])
+              else if (grepl("^pvc\\(", sm_labs[i])) .pvc_spec(gamlssModel, p, i, sm_labs[i])
+      if (is.character(spec))
+        unbuildable <- c(unbuildable, paste0(p, ": ", sm_labs[i], " (", spec, ")"))
     }
   }
-  if (length(quantile_knots))
-    stop("pb() smooth(s) fitted with pb.control(quantiles = TRUE) are not 
-         currently implemented.",
-         call. = FALSE)
+  if (length(unbuildable))
+    stop("these smooths cannot be rebuilt from their coefficients: ",
+         paste(unbuildable, collapse = "; "), call. = FALSE)
+
+  if (!.datafree_eligible_gamlss(gamlssModel))
+    stop("this model contains a smoother other than pb()/pvc()/random(); ",
+         "gamlssTools cannot predict from it without the original data")
 
   keep <- c("parameters", "family", "type", "N", "noObs",
             "df.fit", "df.residual", "G.deviance", "P.deviance",
@@ -252,29 +197,13 @@ sanitize_gamlss <- function(gamlssModel,
         sm  <- smos[[i]]
         lab <- labs[i]
 
-        if (inherits(sm, "pb")) {
-          v  <- all.vars(str2lang(lab))[1]
-          #either use declared xrange or real min/max
-          declared <- !is.null(xranges[[v]])
-          xr <- if (declared) xranges[[v]] else .pb_xrange(sm, lab)
-          sm$fun <- .regrid_fun(sm$fun, xr, grid_n)
-          sm$fv  <- NULL # fitted values
-          if (declared && !is.null(sm$knots))
-            sm$knots <- seq(xr[1], xr[2], length.out = length(sm$knots))
-          ## a wigglier smooth needs a finer grid to reproduce (see `points_per_edf`)
-          edf <- suppressWarnings(as.numeric(sm$edf)[1])
-          if (!is.na(edf) && is.finite(edf) && grid_n < points_per_edf * edf)
-            low_res <<- c(low_res, sprintf("%s (edf %.1f, suggests grid_n >= %d)",
-                                           lab, edf, ceiling(points_per_edf * edf)))
-
-        } else if (grepl("^pvc\\(", lab)) {
-          ## keep only the coefficients + basis settings (see .pvc_spec());
-          ## x, by, fitted values and variances are all length n. Matched by
-          ## label: a pvc() without `by` stores a plain list, not class "pvc"
-          spec <- .pvc_spec(gamlssModel, p, i, lab)
-          if (!is.null(xranges[[spec$x]]))
-            warning("xranges$", spec$x, " is ignored for ", lab, ": a pvc() basis ",
-                    "is tied to the observed range, which is retained.", call. = FALSE)
+        if (grepl("^(pb|pvc)\\(", lab)) {
+          ## keep only the coefficients + basis settings (see .pb_spec() /
+          ## .pvc_spec()); x, by, fitted values, variances and gamlss's
+          ## interpolating spline are all length n. Matched by label: a pvc()
+          ## without `by` stores a plain list, not class "pvc"
+          spec <- if (grepl("^pb\\(", lab)) .pb_spec(gamlssModel, p, i, lab)
+                  else .pvc_spec(gamlssModel, p, i, lab)
           sm <- structure(list(lambda = sm$lambda, edf = sm$edf,
                                method = sm$method, spec = spec),
                           class = class(sm))
@@ -295,16 +224,8 @@ sanitize_gamlss <- function(gamlssModel,
     }
   }
 
-  if (length(low_res))
-    warning("grid_n = ", grid_n, " may be too coarse for: ",
-            paste(low_res, collapse = "; "),
-            ". Confirm with compare_scores() and raise grid_n if the ",
-            "predictions differ.", call. = FALSE)
-
   class(out) <- class(gamlssModel)
-  attr(out, "sanitized") <- list(grid_n  = grid_n,
-                                 xranges = xranges,
-                                 pseudonymised = !is.null(random_level_map),
+  attr(out, "sanitized") <- list(pseudonymised = !is.null(random_level_map),
                                  date    = Sys.Date())
   out
 }
@@ -314,10 +235,9 @@ sanitize_gamlss <- function(gamlssModel,
 #'
 #' Recursively walks a gamlssmodel object and checks for atomic vectors of 
 #' length `n`, which could be a row-level vector that survived and
-#' needs investigating. The exception is `pb()`, which are reconstructed by
-#' [sanitize_gamlss()] to length `grid_n`, which could coincidentally be equal to
-#' `n`: here the audit confirms that the `x` values are evenly spaced (i.e. a
-#' reconstructed grid).
+#' needs investigating. An unsanitized `pb()` smooth also carries an interpolating
+#' spline whose table holds the observed covariate values; any such table is
+#' flagged whatever its length.
 #'
 #' The audit only sees vectors longer than `max_len` (Default 50). Short but still 
 #' disclosive components -- factor levels, `random()` level names, the fitting `N` 
@@ -358,7 +278,6 @@ audit_gamlss <- function(x, max_len = 50, max_depth = 15,
          "output of sanitize_gamlss() or the original gamlss fit.", call. = FALSE)
 
   hits  <- character()
-  notes <- character()
   seen  <- list()               # environments already walked -- see below
   safe_envs <- c("R_GlobalEnv", "R_EmptyEnv", "base", "stats", "gamlss",
                  "gamlss.dist", "gamlssTools")
@@ -384,15 +303,8 @@ audit_gamlss <- function(x, max_len = 50, max_depth = 15,
 
       z <- spline_table(e)
       if (!is.null(z)) {
-        dx   <- diff(z$x)
-        even <- diff(range(dx)) <= 1e-8 * max(abs(dx))
-        if (even) {
-          notes <<- c(notes, sprintf("%-55s spline grid[%d], evenly spaced -- rebuilt",
-                                     path, length(z$x)))
-        } else {
-          hits <<- c(hits, sprintf("%-55s spline grid[%d], UNEVEN -- observed covariate values%s",
-                                   path, length(z$x), flag_n(z$x)))
-        }
+        hits <<- c(hits, sprintf("%-55s spline table[%d] -- observed covariate values%s",
+                                 path, length(z$x), flag_n(z$x)))
         return(invisible(NULL))
       }
 
@@ -434,10 +346,6 @@ audit_gamlss <- function(x, max_len = 50, max_depth = 15,
 
   if (!quiet) {
     cat("size: ", format(utils::object.size(x), units = "auto"), "\n", sep = "")
-    if (length(notes)) {
-      cat("rebuilt smooths (", length(notes), "):\n", sep = "")
-      cat(notes, sep = "\n"); cat("\n")
-    }
     if (!length(hits)) {
       cat("no atomic vectors longer than ", max_len, " found.\n", sep = "")
     }
