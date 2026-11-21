@@ -3,7 +3,7 @@
 
 skip_if_not_installed("gamlss")
 
-tol <- 1e-8
+tol <- 1e-12
 
 test_that("data-free parameters match predictAll for pb + factor + random", {
   d <- sim_datafree()
@@ -45,7 +45,7 @@ test_that("score_centiles centiles are data-free by default and match the gold p
                       data = d, family = "BCCG", trace = FALSE)
 
   free <- score_centiles(m, d)
-  expect_equal(free, gold_centiles(m, d), tolerance = 1e-6)
+  expect_equal(free, gold_centiles(m, d), tolerance = tol)
 })
 
 test_that("centile_fan_values default (data-free) matches the fit_data-supplied path", {
@@ -59,7 +59,7 @@ test_that("centile_fan_values default (data-free) matches the fit_data-supplied 
   legacy <- suppressMessages(centile_fan_values(m, sim, "Age", fit_data = d))
 
   for (nm in names(free))
-    expect_equal(unlist(free[[nm]]), unlist(legacy[[nm]]), tolerance = 1e-6, info = nm)
+    expect_equal(unlist(free[[nm]]), unlist(legacy[[nm]]), tolerance = 1e-8, info = nm)
 })
 
 test_that("centile_predict() is a deprecated alias that matches centile_fan_values()", {
@@ -77,7 +77,7 @@ test_that("centile_predict() is a deprecated alias that matches centile_fan_valu
     centile_fan_values(m, sim, "Age", centiles = c(0.25, 0.5, 0.75), fit_data = d)
   )
   for (nm in names(new))
-    expect_equal(unlist(old[[nm]]), unlist(new[[nm]]), tolerance = 1e-10, info = nm)
+    expect_equal(unlist(old[[nm]]), unlist(new[[nm]]), tolerance = tol, info = nm)
 })
 
 test_that("remove_effects default (data-free) matches the fit_data-supplied path", {
@@ -88,7 +88,7 @@ test_that("remove_effects default (data-free) matches the fit_data-supplied path
 
   free   <- suppressMessages(remove_effects(m, d, rm_terms = "Sex"))
   legacy <- suppressMessages(remove_effects(m, d, fit_data = d, rm_terms = "Sex"))
-  expect_equal(free$Pheno, legacy$Pheno, tolerance = 1e-6)
+  expect_equal(free$Pheno, legacy$Pheno, tolerance = tol)
 })
 
 test_that("deprecated aliases warn and match their renamed functions", {
@@ -129,23 +129,23 @@ test_that("pheno_at_centiles accepts deprecated argument names with a warning", 
   expect_warning(
     a <- suppressMessages(pheno_at_centiles(m, df = d, x_var = "Age", factor_var = "Sex", centiles = cent)),
     regexp = "`df` is deprecated")
-  expect_equal(a, new, tolerance = 1e-8)
+  expect_equal(a, new, tolerance = tol)
 
   expect_warning(
     b <- suppressMessages(pheno_at_centiles(m, data = d, range_var = "Age", factor_var = "Sex", centiles = cent)),
     regexp = "`range_var` is deprecated")
-  expect_equal(b, new, tolerance = 1e-8)
+  expect_equal(b, new, tolerance = tol)
 
   expect_warning(
     cc <- suppressMessages(pheno_at_centiles(m, data = d, x_var = "Age", factor_var = "Sex", desiredCentiles = cent)),
     regexp = "`desiredCentiles` is deprecated")
-  expect_equal(cc, new, tolerance = 1e-8)
+  expect_equal(cc, new, tolerance = tol)
 
   g <- suppressMessages(sim_grid(d, "Age", "Sex", m))
   expect_warning(
     e <- suppressMessages(pheno_at_centiles(m, data = d, x_var = "Age", factor_var = "Sex", centiles = cent, sim_data_list = g)),
     regexp = "`sim_data_list` is deprecated")
-  expect_equal(e, new, tolerance = 1e-8)
+  expect_equal(e, new, tolerance = tol)
 })
 
 test_that("make_centile_fan (and wrappers) accept deprecated sim_data_list", {
@@ -267,15 +267,6 @@ test_that("data-dependent parametric terms are not data-free eligible", {
                                               type = "response"))
   expect_equal(free$mu, gold$mu, tolerance = tol)
 
-  # how wrong the data-free path would have been, had it not been refused:
-  # a grid that does not match the fitting distribution shifts the rebuilt basis
-  grid <- data.frame(Age = seq(1, 6, length.out = 100),
-                     Sex = factor("M", levels = levels(d$Sex)))
-  wrong <- .predictAll_nodata_gamlss(m, grid)$mu
-  right <- suppressWarnings(gamlss::predictAll(m, newdata = grid, data = d,
-                                               type = "response")$mu)
-  expect_gt(max(abs(wrong - right)), 0.1)     # measured ~0.75, vs sd(Pheno) ~0.93
-
   # the same fit with the basis precomputed as plain columns IS eligible
   P <- stats::poly(d$Age, 2)
   d2 <- transform(d, p1 = P[, 1], p2 = P[, 2])
@@ -335,4 +326,40 @@ test_that(".smooth_arg finds the covariate wherever it sits in the call", {
 
   # not a supported smoother at all
   expect_null(.smooth_arg("cs(Age)"))
+})
+
+test_that("offset() terms are not data-free eligible", {
+  d <- sim_datafree()
+  d$off <- rnorm(nrow(d))
+
+  # offset() isn't a term label, so the rebuild would silently drop it; the
+  # model must be refused rather than mispredicted
+  m <- gamlss::gamlss(Pheno ~ pb(Age) + Sex + offset(off), data = d,
+                      family = "NO", trace = FALSE)
+  expect_false(.datafree_eligible_gamlss(m))
+  expect_equal(.offset_labels(m), "mu: offset(off)")
+
+  # the dispatcher names the offset ...
+  nd <- d[1:25, ]
+  expect_error(.predict_params_gamlss(m, newdata = nd),
+               regexp = "offset\\(\\) term.*mu: offset\\(off\\)")
+
+  # ... and with the data supplied it matches predictAll()
+  free <- .predict_params_gamlss(m, newdata = nd, data = d)
+  gold <- gamlss::predictAll(m, newdata = nd, data = d, type = "response")
+  expect_equal(free$mu, gold$mu, tolerance = tol)
+
+  # offsets are found in any parameter's formula, including transformed ones
+  m2 <- gamlss::gamlss(Pheno ~ pb(Age) + Sex,
+                       sigma.formula = ~ Age + offset(log(Age) / 10),
+                       data = d, family = "NO", trace = FALSE)
+  expect_false(.datafree_eligible_gamlss(m2))
+  expect_equal(.offset_labels(m2), "sigma: offset(log(Age)/10)")
+
+  # dropping a term doesn't make an offset model eligible
+  expect_false(.datafree_eligible_gamlss(m, drop.term = "off"))
+
+  # no offset -> nothing found
+  m3 <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d, family = "NO", trace = FALSE)
+  expect_length(.offset_labels(m3), 0)
 })
