@@ -1,0 +1,561 @@
+---
+title: "Data-Free Prediction"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Data-Free Prediction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  markup = FALSE,
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+```{r setup}
+library(gamlssTools)
+```
+
+This vignette explains the whole data-free prediction pipeline in
+`gamlssTools` and how `sanitize_gamlss()` uses it to make models safe to share. 
+This vignette is aimed at those who are curious about how this pipeline works. 
+Most users will not have to worry about this and can just interact with the 
+package as outlined in the other vignettes. 
+
+# 1. Why data-free prediction?
+
+`gamlss::predictAll()` predicts on new data by *refitting* the model's smoothers
+on `rbind(data, newdata)` (see *Flexible Regression and Smoothing* section 5.4.1). 
+That needs the original fitting data in scope (passed explicitly or found in the 
+environment), and it causes two problems:
+
+* You can't share a model without its data.
+* Some predictions can shift with `newdata` (see [section 6.3](#pvc)).
+
+The data-free path instead rebuilds each distribution parameter's contribution 
+directly from the model's stored coefficients, formulas, factor levels, and each 
+smoother's coefficients.
+
+Notably, `gamlss2` fits store everything they need to predict without the fitting data,
+so this pipeline is not needed.
+
+```{r}
+set.seed(42)
+n <- 400
+d <- data.frame(
+  Age   = runif(n, 1, 20),
+  Sex   = factor(sample(c("F", "M"), n, TRUE)),
+  Study = factor(sample(c("A", "B", "C"), n, TRUE)),
+  Score = rnorm(n, 50, 10)
+)
+d$Pheno <- 5 + log(d$Age) + (d$Sex == "M") * 0.4 +
+  c(A = 0, B = 0.3, C = -0.2)[as.character(d$Study)] +
+  0.01 * (d$Score - 50) * d$Age + rnorm(n, 0, 0.5)
+
+m <- gamlss(Pheno ~ pb(Age) + Sex + random(Study),
+            sigma.formula = ~ pb(Age),
+            data = d, family = NO, trace = FALSE)
+
+newd <- data.frame(Age   = c(2, 10, 18),
+                   Sex   = factor(c("F", "M", "F")),
+                   Study = factor(c("A", "B", "C")))
+```
+
+# 2. Where the pipeline is used
+
+By default, any models that can be predicted data-free ("data-free eligible")
+are predicted via this pipeline. Every function that needs a gamlss model's fitted 
+parameters goes through one internal dispatcher, `.predict_params_gamlss()`, and 
+each function has a `fit_data` argument (or equivalent); this argument defaults to 
+`NULL`, meaning "predict data-free". You can force the regular gamlss prediction 
+pipeline by passing the data the model was fitted on:
+
+| Function | What it predicts | How data-free is switched off |
+|---|---|---|
+| `score_centiles()` | centiles / z-scores of observed values | `fit_data =` |
+| `centile_fan_values()` | response value at each centile across a grid | `fit_data =` |
+| `make_centile_fan()` | (calls `centile_fan_values()`) | `datafree = FALSE` (then `df` is used as `fit_data`)\* |
+| `sigma_values()` | sigma across a grid | `fit_data =` |
+| `plot_sigma()` | (calls `sigma_values()`) | `datafree = FALSE` (then `df` is used as `fit_data`) |
+| `remove_effects()` | mu with some terms held fixed | `fit_data =` |
+| `trajectory_diff()` | (calls `centile_fan_values()`) | `datafree = FALSE` (then `df` is used as `fit_data`)\* |
+| `compare_scores()` | z / centile differences between two models | `fit_data1 =`, `fit_data2 =` |
+
+\* `make_centile_fan()` and `trajectory_diff()` already have the data in hand
+(`df`), so with `datafree = TRUE` they first check eligibility
+(`.datafree_eligible_gamlss()`, section 4) and, if the model can't be rebuilt,
+warn and fall back to `df` automatically. The other functions can't fall back, so
+they stop and ask for `fit_data`.
+
+
+# 3. The dispatcher: `.predict_params_gamlss()`
+
+`.predict_params_gamlss(object, newdata, data = NULL, drop.term = NULL)` returns
+a named list of response-scale parameters (i.e. `mu`, `sigma`, `nu`, `tau`), in
+the same format as `predictAll(object, newdata, type = "response")`. 
+
+It picks one of four routes:
+
+```
+                  data supplied?
+                 /              \
+               no                yes
+               |                  |
+     eligible for data-free?    model has a pvc(x, by = <numeric>)?
+       /            \              /                        \
+     yes             no          yes                         no
+      |              |            |                           |
+  REBUILD          ERROR       record <numeric>'s mean    predictAll(object,
+  (data-free)                  from data then REBUILD     newdata, data,
+                               if eligible, else ERROR    type = "response")
+```
+
+1. **No data, model eligible** → rebuild with `.predictAll_nodata_gamlss()`.
+2. **No data, model not eligible** → stop with informative error.
+3. [**Data supplied, model has a `pvc(x, by = <numeric>)`**]{#route3} → `predictAll()` would
+   mis-center it, so `data` is used only to recover the training mean of each
+   `z` variable (`.pvc_fill_by_means()`), and the prediction goes through the
+   data-free pipeline anyway. If something else in the model can't be rebuilt, it 
+   stops.
+4. **Data supplied, otherwise** → regular `gamlss::predictAll()`.
+
+So supplying `fit_data` means "use the regular gamlss package's prediction", with one
+deliberate exception for `pvc(x, by = <numeric>)` (see [section 6.3](#pvc)).
+
+# 4. Eligibility: `.datafree_eligible_gamlss()`
+
+A model can be predicted data-free when every term it uses can be rebuilt from
+stored quantities. `.datafree_eligible_gamlss()` checks each parameter's 
+formula and returns `TRUE` only when all of the following hold:
+
+1. **No data-dependent parametric terms.** `.datadep_labels()` parses each
+   non-smooth term label and walks every function called in it
+   (`.called_funs()`). A term calling `poly()`, `ns()`, `bs()`, `scale()` or `cut()`
+   is rejected since their columns depend on the whole dataset.
+2. **Every smoother is supported**, judged by its label:
+   * `pb(...)`: info must be retrievable by `.pb_spec()` (see [section 6.2](#pb)).
+   * `pvc(...)`: info must be retrievable by `.pvc_spec()`, for a numeric `by=z`, 
+     z's training mean must be known (see [section 6.3](#pvc)).
+   * `random(...)`: effect must be on plain categorical variable, not an expression
+     (as verified by `.smooth_arg()`).
+   * Smooths that haven't been implemented (`cs()`, `ps()`, `ga()`, `s()`, `lo()`, 
+     `nn()`, ...) are rejected.
+3. **No `offset()` terms.** An offset isn't a term label (R records it
+   separately, in the `terms` object's `"offset"` attribute), so the pipeline as
+   currently implemented would silently leave it out.
+
+Note: terms passed to the `drop.term` arg are excepted from checks 1 and 2, since 
+they won't be predicted anyway. In practice, nothing in this package passes 
+`drop.term`, but it exists for compatibility with [gamlss2charts](https://github.com/andy1764/gamlss2charts).
+
+```{r}
+#datafree eligible
+gamlssTools:::.datafree_eligible_gamlss(m)
+
+#not eligible - cs() smooths not implemented
+m_cs <- gamlss(Pheno ~ cs(Age) + Sex, data = d, family = NO, trace = FALSE)
+gamlssTools:::.datafree_eligible_gamlss(m_cs)
+
+#not eligible - poly() depends on fit data d
+m_poly <- gamlss(Pheno ~ poly(Age, 2) + Sex, data = d, family = NO, trace = FALSE)
+gamlssTools:::.datadep_labels(m_poly)
+gamlssTools:::.datafree_eligible_gamlss(m_poly)
+```
+
+```{r, error = TRUE}
+score_centiles(m_cs, d[1:5, ]) #correctly errors
+
+score_centiles(m_cs, d[1:5, ], fit_data=d) #works with fit_data
+```
+
+# 5. The rebuild: `.predictAll_nodata_gamlss()`
+
+For each distribution parameter `p`(i.e. `mu`, `sigma`, `nu`, `tau`):
+
+1. `.lp_nodata_gamlss(object, p, newdata)` builds the link-scale linear
+   contribution, one value per row of `newdata`.
+2. `.linkinv_gamlss(object[[paste0(p, ".link")]])` looks up that parameter's
+   inverse link via gamlss.dist's `make.link.gamlss()`, and transforms the
+   predictor to the response scale.
+
+Inside `.lp_nodata_gamlss()` the linear predictor is the sum of up to four
+pieces, in this order:
+
+## 5.1 Factor alignment
+
+Each factor covariate in `newdata` is re-leveled to match the levels the model
+was trained on (`object$<p>.xlevels`), so dummy columns line up with the fitted
+coefficients. Ordered factors stay ordered.
+
+## 5.2 The parametric part
+
+The parametric terms (all non-smooths) are turned back into a formula with 
+`reformulate()` (or `~ 1` for intercept-only parameters), and a design matrix is 
+built on `newdata` with `model.frame(..., na.action = na.pass)` and 
+`model.matrix()`. NA rows are kept and output `NA` so predictions stay aligned 
+with `newdata` rows.
+
+The parametric coefficients are pulled from `coef(object, p)` by column name,
+because `coef()` also has an entry for every smoother. Some of those coefficients 
+can be `NA`: aliased columns in a rank-deficient fit, such as a linear effect of 
+`Age` if `pb(Age)` is also in the same moment and are set to 0 by `.zap_aliased()`.
+
+```{r}
+m2 <- gamlss(Pheno ~ pb(Age) + Age + Sex + random(Study),
+            sigma.formula = ~ pb(Age),
+            data = d, family = NO, trace = FALSE)
+
+coef(m2, "mu")
+```
+
+In this example, the `(Intercept)` and `SexM` coefficients are matched to their
+design-matrix columns. The aliased `Age` coefficient (a single `NA`) would be 
+set to 0.
+
+The smooth terms (`pb(Age)`, `random(Study)`) are handled below.
+
+## 5.3 The smooth terms
+
+Each smooth label is matched to its stored smoother, `object$<p>.coefSmo[[i]]`,
+by position along `colnames(object$<p>.s)`.
+
+* **`pb(x)`** adds `coef[["pb(x)"]] * x` (the linear component) plus the B-spline part,
+  `.pb_eval(spec, x)`.
+* **`pvc(x)`** (no `by`) adds the linear trend plus `B(x) %*% beta`.
+* **`pvc(x, by = z)`**, numeric `z`, adds `B(x) %*% beta * (z - mean_train(z))`.
+* **`pvc(x, by = f)`**, factor `f`, adds `B(x) %*% beta_level` (a separate curve
+  for each level).
+* **`random(g)`** adds the stored per-level effect (BLUP),
+  `getSmo(object, p, which = i)$coef[level]`. A level not seen in the fit gets
+  0, the population value, with a warning.
+
+```{r}
+colnames(m$mu.s)
+m$mu.coefSmo[[1]] #pb(Age)
+m$mu.coefSmo[[2]] #random(Study)
+
+gamlss::getSmo(m, what = "mu", which = 2)$coef #random effect (BLUP) for each level of Study
+```
+
+Section 6 describes how the pieces of the B-spline terms are recovered.
+
+# 6. Rebuilding B-spline smooths
+
+## 6.1 The shared basis: `.bbase()`
+
+`pb()` (with default settings) and `pvc()` both use the same penalised B-spline
+basis: `ndx` equally spaced intervals spanning `[xl, xr]`, which is the
+training range of `x` padded by 1% on each side, with splines of degree `deg`
+(3, cubic, by default). That gives `ndx + deg` basis functions.
+`.bbase(x, xl, xr, ndx, deg)` is a verbatim copy of the `bbase()` both
+functions define internally: truncated power functions at equally spaced knots,
+differenced `deg + 1` times to become B-splines.
+
+So a fitted smooth is fully described by:
+
+* the covariate name,
+* `degree` and `inter` (aka `ndx`),
+* `xl` and `xr`,
+* the B-spline coefficient vector(s) β.
+
+This allows us to evaluate the smooth curve at any x, which is the weighted sum 
+of the basis functions there:
+
+smooth(x) = B(x) %*% β
+
+where B(x) (`.bbase()`) holds the basis functions evaluated at x, and β is the 
+coefficient vector. Thus the rebuild path is essentially "evaluate the basis at 
+the new `x`, multiply by the coefficients".
+
+NOTE: The B-spline part of a rebuilt curve decays to 0 beyond the 1% padded
+training range; the linear trend of `pb(x)` and `pvc(x)` without `by` carries on.
+Both `pb()` and `pvc()` warn whenever `newdata` goes outside `[xl, xr]`.
+(`predictAll()` extrapolates differently, so data-free and data-based predictions
+disagree outside x's training range.)
+
+## 6.2 `pb()` smooths: `.pb_spec()` and `.pb_eval()` {#pb}
+
+To predict without the original data, `.pb_spec()` rebuilds the basis functions,
+then `.pb_eval()` uses them to predict.
+
+pb() reconstruction compiles the components needed to evaluate smooth(x) as:
+
+* `degree`: parsed from the term label (e.g. `"pb(Age)"`) by `.smooth_ctrl_args(lab, "pb")`
+* β coefficient vector: `pb()` smooth's stored `$coef` component
+* `inter`: length(`$coef`) - `degree`
+* `xl`: smallest value in the `pb(x)` design-matrix column, minus 1% of the range
+* `xr`: largest value in the `pb(x)` design-matrix column, plus 1% of the range
+
+Plus the linear component of the smooth from `coef(object, p)` 
+
+For example:
+```{r}
+degree <- gamlssTools:::.smooth_ctrl_args(colnames(m$mu.s)[[1]], "pb")$control$degree
+beta <- m$mu.coefSmo[[1]]$coef
+inter <- length(beta) - degree
+xs <- m$mu.x[, "pb(Age)"]
+pad <- 0.01 * (max(xs) - min(xs))
+xl  <- min(xs) - pad
+xr  <- max(xs) + pad
+
+#linear component
+lin <- coef(m, "mu")[["pb(Age)"]]
+
+#manually defined components
+str(list(degree = degree, inter = inter, xl = xl, xr = xr,
+         linear_effect = lin, beta = as.numeric(beta)))
+```
+
+ `.pb_spec(object, p, i, lab)` parses this info for us as `list(x, degree, inter, xl, xr, coef)`, 
+ or reports why the term can't be rebuilt:
+
+1. Parse the label with `.smooth_ctrl_args(lab, "pb")`. This matches the call
+   against `gamlss::pb()` and reads the relevant control settings (`inter`, 
+   `degree`, `quantiles`).
+2. Reject ineligible `pb()` formulations (e.g. transformed covariate `pb(log(Age))`,
+   knots at sample quantiles).
+3. Read the training `x` from the design matrix: `pb(x)`'s model-matrix column
+   is `x` itself, in fit order. Its min/max give `xl`/`xr` (padded by 1%). 
+   **Note that the model matrix itself does contain the training data**. It is
+   removed by `sanitize_gamlss()` ([section 7](#sanitize)), which
+   instead stores `xl` and `xr` directly for future `.pb_spec()` runs to use.
+4. Read `inter` off the coefficient count (`length(coef) - degree`).
+5. Verify the rebuilt basis by evaluating at the training `x` and checking it
+   reproduces the stored fitted values (`sm$fv`) to within 1e-12 (relative).
+   If there's any mismatch, `.pb_spec()` returns a reason instead of a spec, so
+   the term is unbuildable and the model isn't data-free eligible. The dispatcher
+   then errors (no data) or uses `predictAll()` (data supplied), rather than
+   returning incorrect outputs.
+
+```{r}
+spec <- gamlssTools:::.pb_spec(m, "mu", 1, "pb(Age)")
+str(spec) #same result as chunk above
+
+#verify
+fv  <- as.numeric(m$mu.coefSmo[[1]]$fv) #stored fits
+fit <- drop(gamlssTools:::.bbase(xs, spec$xl, spec$xr, spec$inter, spec$degree) %*% spec$coef) #calc fits
+plot(x = fv, y = fit, xlab = "stored fitted values (sm$fv)", ylab = "rebuilt B(x) %*% coef")
+abline(0, 1, col = "red")
+max(abs(fit - fv)) #largest disagreement
+```
+
+Next, `.pb_eval(spec, x, lab)` takes the output of `.pb_spec()` and evaluates
+the basis at the new `x`, taking the row-wise sum. It also warns about values outside
+`[xl, xr]`, and returns `NA` for missing `x`.
+
+```{r}
+B <- gamlssTools:::.bbase(newd$Age, spec$xl, spec$xr, spec$inter, spec$degree) #eval basis funs
+out <- rowSums(B * rep(spec$coef, each = nrow(B))) #sum rowwise across basis funs
+#add linear component: pb(Age)'s contribution to mu's linear predictor (not mu itself)
+coef(m, "mu")[["pb(Age)"]] * newd$Age + out
+```
+
+Note: gamlss' `pb()` smooths store `$fun`, a natural interpolating spline through 
+the fitted values at every training `x`. That spline isn't used, because if two
+training `x` values are very close, rounding-level differences in their 
+fitted values make it overshoot wildly between them, causing 'blips' in the centiles.
+
+## 6.3 `pvc()` smooths: `.pvc_spec()` {#pvc}
+
+`pvc()` can take three forms:
+
+| Form | Contribution to the linear predictor |
+|---|---|
+| `pvc(x)` | `b * x + B(x) %*% beta`, with `b = coef(object, p)[lab]` (basically pb()) |
+| `pvc(x, by = z)`, numeric `z` | `(B(x) %*% beta) * (z - mean_train(z))` * |
+| `pvc(x, by = f)`, factor `f` | `B(x) %*% beta[, level of f]` (one curve per level) |
+
+*`predictAll()` gets by=<numeric> wrong, because `pvc()` re-centers z across both training
+and new data, which can shift the mean and thus every prediction. The data-free rebuild 
+always centers on the training mean, so it is exact and independent of `newdata`.
+
+`.pvc_spec(object, p, i, lab)` returns
+`list(x, by, type, degree, inter, xl, xr, beta, levels, by_mean)` or a string stating
+why it can't be reconstructed:
+
+1. Parses the pvc() term with `.smooth_ctrl_args(lab, "pvc")`
+2. Decides the `type` of variable x is smoothed by: `"none"`, `"factor"` 
+   (smoother has `is.Factor = TRUE`) or `"numeric"`.
+3. Finds the training `x`: from the design matrix when type is "none", else
+   from `sm$x`.
+4. Recomputes `inter` as `gamlss::pvc()` does: 10 if fewer than 99 observations,
+   and never more than the number of distinct `x` values.
+5. Gets the coefficients:
+   * `none`/`numeric`: `sm$coef`, one curve.
+   * `factor`: `sm$coef` holds one vector per level. When the pvc() fit's
+     `method = "ML"`, though, gamlss stores `coef = NULL`, so each level's
+     coefficients are reverse-engineered from the stored fitted values by least
+     squares on that level's basis rows (`qr.coef()`). If the level of factor
+     var `f` doesn't have enough distinct `x` values for a basis, the term
+     can't be rebuilt data-free.
+6. Verify the rebuild against the stored per-observation contribution
+   (`object$<p>.s[, i]`) to within 1e-12 (relative).
+7. Recovers the training mean of a numeric `by`: gamlss stores the `by` vector
+   already centered, and never the mean itself. **Thus this step of the process**
+   **does require that the original training data is available in some form at some**
+   **point**. `.pvc_spec` looks for the training mean of `z` (the `by` variable)
+   3 ways, in this order:
+
+   a. **`$spec$by_mean`**, available in sanitized models (see [section 7](#sanitize)),
+      which calculate the mean and save it in the `spec` list as part of the
+      sanitization process.
+   b. **`sm$by_mean`**, calculated from the fitting data when supplied and written
+      onto the smoother by `.pvc_fill_by_means(object, data)` before `.pvc_spec()`
+      is called.
+   c. **`.pvc_by_mean_from_x()`**: if `z` also enters the model as a plain
+      linear term, the mean can be calculated from its training values, which are
+      stored in that parameter's design matrix (`object$<p>.x`).
+
+If none of these work, the model isn't eligible without data, and
+`.pvc_missing_by_mean()` lists the terms for the error message.
+
+```{r}
+m_pvc <- gamlss(Pheno ~ pb(Age) + Sex + pvc(Age, by = Score),
+                data = d, family = NO, trace = FALSE)
+newd2 <- transform(newd, Score = c(80, 80, 80))
+```
+
+Without data, and without `Score` as a linear term, the mean is unknown:
+
+```{r, error = TRUE}
+gamlssTools:::.predict_params_gamlss(m_pvc, newd2)
+```
+
+With data, the dispatcher takes [route 3](#route3): it records the mean, then rebuilds.
+Compare that with `predictAll()`, which centers `Score` on the mean of the
+fitting data **plus** these three rows:
+
+```{r}
+rebuilt <- gamlssTools:::.predict_params_gamlss(m_pvc, newd2, data = d)$mu
+pall    <- predictAll(m_pvc, newdata = newd2, data = d, type = "response")$mu
+rbind(rebuilt = rebuilt, predictAll = pall)
+```
+
+**The key take-away here** is that while the data-free rebuild of `pvc(x, by = z)`
+for a numeric `z` avoids the `gamlss::predictAll()` problem of re-centering `z` on
+the new data, it does require the training values of `z` to be available, either
+in the design matrix or passed explicitly. The way around this is to first run
+[`sanitize_gamlss()`](#sanitize) with `fit_data`, which stores `z`'s mean directly
+in the model object.
+
+# 7. Sharing data-free models: `sanitize_gamlss()` {#sanitize}
+
+A fitted gamlss object is full of per-observation data: the design matrices,
+fitted values, residuals, weights, each smoother's `x` and fitted values, the
+`random()` grouping column, the formula environments (which can hold the data
+frame itself), and `pb()`'s interpolating spline (whose table *is* the observed
+covariate values). Since the rebuild path never reads any of that,
+`sanitize_gamlss()` throws it all away so we can share the models without sharing
+the underlying data.
+
+**Disclaimer:** This code was written and tested using gamlss v5.5.0 with a limited
+set of model configurations, smooths, etc. *Always check that all subject-level*
+*data is removed prior to sharing model objects!*
+
+## 7.1 What it does
+
+1. Refuses models the data-free path can't handle.
+2. Records `pvc(x, by=<numeric>)` means calculated from `fit_data` 
+   using `.pvc_fill_by_means()` (see [section 6.3](#pvc)).
+3. Keeps only `parameters`, `family`, `type`, `N`, `noObs`, fit summaries
+   (`df.fit`, `df.residual`, deviances, `aic`, `sbc`, `method`, `converged`,
+   `iter`), and for each parameter its `.link`, `.formula`, `.terms`,
+   `.coefficients`, `.coefSmo`, `.xlevels`, `.s`, `.df` and `.nl.df`. `call`
+   (the `gamlss()` call, which can name your data object or embed a subsetting
+   expression) is dropped unless `keep_call = TRUE`.
+4. Empties each `<p>.s` (matrix containing smooth components' fitted values)
+   to a 0-row matrix with the same column names (which datafree prediction needs).
+5. Detaches formula environments, resetting them to `globalenv()`.
+6. Reduces each `pb()`/`pvc()` smoother to
+   `list(lambda, edf, method, spec)`, where `spec` is computed by `.pb_spec()`
+   or `.pvc_spec()`.
+7. Scrubs each `random()` smoother: drops `fv`, `factor` (the grouping
+   column values) and `se`; optionally renames factor levels with `random_level_map`.
+8. Tags the result with a `"sanitized"` attribute (pseudonymised or not, and the
+   date).
+
+```{r}
+clean <- sanitize_gamlss(m)
+str(clean$mu.coefSmo[[1]], max.level = 1)
+attr(clean, "sanitized")
+
+#same outputs
+original <- gamlssTools:::.predict_params_gamlss(m, newd, data = d)$mu #predictAll()
+clean_mu <- gamlssTools:::.predict_params_gamlss(clean, newd)$mu      #data-free
+rbind(original = original, sanitized = clean_mu)
+```
+
+## 7.2 Checking the result
+
+`audit_gamlss()` walks the object recursively (lists, attributes, and closure
+environments) and returns, invisibly, every atomic vector longer than `max_len`
+(default 50) which could possibly contain subject-level data. It marks vectors 
+of exactly length `N` and flags any interpolating-spline table regardless of length.
+
+```{r}
+hits <- audit_gamlss(m, quiet = TRUE)   # the original fit, LOTS OF HITS
+length(hits)
+head(hits, 4)
+
+audit_gamlss(clean)                     # the sanitized fit, no hits
+```
+
+`compare_scores()` confirms the sanitized model predicts the same as the
+original, both on observed rows (z-scores) and across a covariate grid (values
+at each centile). Scores are considered the same when they match within `tol` 
+(default 1e-6):
+
+```{r}
+grid <- sim_grid(d, "Age", "Sex", m)
+compare_scores(m, clean, data = d, sim_grid_list = grid)
+```
+
+For `pvc(x, by=<numeric>)` model, pass `fit_data` when sanitizing so the mean is recorded:
+
+```{r}
+clean_pvc <- sanitize_gamlss(m_pvc, fit_data = d)
+clean_pvc$mu.coefSmo[[2]]$spec$by_mean
+gamlssTools:::.predict_params_gamlss(clean_pvc, newd2)$mu
+```
+
+## 7.3 What still gets shared
+
+The following values are necessary for calculating reference scores (even with 
+the data-free pipeline) and thus are retained even after "sanitization":
+
+* `<p>.xlevels`: every factor level, including rare ones
+* the names of `random()` BLUPs; use `random_level_map` to pseudonymise them
+* `N` and `noObs`: the sample size
+* each `pb()`/`pvc()` covariate range, `xl`/`xr`, from which the observed min
+  and max values of x can be recovered exactly (`xr - xl` is 1.02 times the range)
+* a numeric `pvc()` `by` variable's training mean, and a factor `by`'s levels
+
+# 8. Function index
+
+All in `R/datafree_predict.R` unless noted.
+
+| Function | Role |
+|---|---|
+| `.predict_params_gamlss()` | dispatcher used by every caller (section 3) |
+| `.datafree_eligible_gamlss()` | can this model be rebuilt? (section 4) |
+| `.datadep_labels()`, `.called_funs()` | find whole-data parametric terms |
+| `.offset_labels()` | find `offset()` terms (always ineligible) |
+| `.smooth_arg()` | get name of variable passed to `pb()` or `random()` |
+| `.predictAll_nodata_gamlss()` | rebuild every parameter, apply inverse links |
+| `.lp_nodata_gamlss()` | rebuild one parameter's link-scale predictor |
+| `.linkinv_gamlss()` | inverse link from a gamlss link name |
+| `.zap_aliased()` | treat `NA` (aliased) coefficients as 0 |
+| `.bbase()` | B-spline basis shared by `pb()` and `pvc()` |
+| `.smooth_ctrl_args()`, `.pvc_args()` | read `x`, `by` and literal control settings from a label |
+| `.pb_spec()`, `.pb_eval()` | recover and evaluate a `pb()` term |
+| `.pvc_spec()` | recover a `pvc()` term |
+| `.pvc_fill_by_means()`, `.pvc_by_mean_from_x()` | recover a numeric `by`'s training mean |
+| `.pvc_missing_by_mean()`, `.has_numeric_pvc()` | find numeric-by `pvc()` terms (for routing and errors) |
+| `sanitize_gamlss()`, `audit_gamlss()` | strip and audit models for sharing (`R/sanitize_gamlss.R`) |
+| `compare_scores()` | check two models predict the same (`R/diagnostic_funs.R`) |
