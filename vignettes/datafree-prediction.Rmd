@@ -249,7 +249,7 @@ Section 6 describes how the pieces of the B-spline terms are recovered.
 
 ## 6.1 The shared basis: `.bbase()`
 
-`pb()` (with default settings) and `pvc()` both use the same penalised B-spline
+`pb()` (with default settings) and `pvc()` both use the same penalized B-spline
 basis: `ndx` equally spaced intervals spanning `[xl, xr]`, which is the
 training range of `x` padded by 1% on each side, with splines of degree `deg`
 (3, cubic, by default). That gives `ndx + deg` basis functions.
@@ -274,10 +274,9 @@ coefficient vector. Thus the rebuild path is essentially "evaluate the basis at
 the new `x`, multiply by the coefficients".
 
 NOTE: The B-spline part of a rebuilt curve decays to 0 beyond the 1% padded
-training range; the linear trend of `pb(x)` and `pvc(x)` without `by` carries on.
-Both `pb()` and `pvc()` warn whenever `newdata` goes outside `[xl, xr]`.
-(`predictAll()` extrapolates differently, so data-free and data-based predictions
-disagree outside x's training range.)
+training range. Both `pb()` and `pvc()` warn whenever `newdata` goes outside 
+`[xl, xr]`. `predictAll()` extrapolates differently, so data-free and data-based 
+predictions disagree outside x's training range.
 
 ## 6.2 `pb()` smooths: `.pb_spec()` and `.pb_eval()` {#pb}
 
@@ -312,10 +311,10 @@ str(list(degree = degree, inter = inter, xl = xl, xr = xr,
          linear_effect = lin, beta = as.numeric(beta)))
 ```
 
- `.pb_spec(object, p, i, lab)` parses this info for us as `list(x, degree, inter, xl, xr, coef)`, 
+`.pb_spec(object, p, i, lab)` parses this info for us as `list(x, degree, inter, xl, xr, coef)`, 
  or reports why the term can't be rebuilt:
 
-1. Parse the label with `.smooth_ctrl_args(lab, "pb")`. This matches the call
+1. Parse the term with `.smooth_ctrl_args(lab, "pb")`. This matches the call
    against `gamlss::pb()` and reads the relevant control settings (`inter`, 
    `degree`, `quantiles`).
 2. Reject ineligible `pb()` formulations (e.g. transformed covariate `pb(log(Age))`,
@@ -328,10 +327,11 @@ str(list(degree = degree, inter = inter, xl = xl, xr = xr,
 4. Read `inter` off the coefficient count (`length(coef) - degree`).
 5. Verify the rebuilt basis by evaluating at the training `x` and checking it
    reproduces the stored fitted values (`sm$fv`) to within 1e-12 (relative).
-   If there's any mismatch, `.pb_spec()` returns a reason instead of a spec, so
-   the term is unbuildable and the model isn't data-free eligible. The dispatcher
-   then errors (no data) or uses `predictAll()` (data supplied), rather than
-   returning incorrect outputs.
+   If there's any mismatch, `.pb_spec()` prompts the dispatcher to either error
+   or use `predictAll()` (if fitting data is supplied). 
+
+If the model has been sanitized (see ([section 7](#sanitize)), then all this info
+is already stored in a `spec` attribute that's passed straight to `.pb_eval()`.
 
 ```{r}
 spec <- gamlssTools:::.pb_spec(m, "mu", 1, "pb(Age)")
@@ -352,14 +352,15 @@ the basis at the new `x`, taking the row-wise sum. It also warns about values ou
 ```{r}
 B <- gamlssTools:::.bbase(newd$Age, spec$xl, spec$xr, spec$inter, spec$degree) #eval basis funs
 out <- rowSums(B * rep(spec$coef, each = nrow(B))) #sum rowwise across basis funs
-#add linear component: pb(Age)'s contribution to mu's linear predictor (not mu itself)
+#add linear component
 coef(m, "mu")[["pb(Age)"]] * newd$Age + out
 ```
 
 Note: gamlss' `pb()` smooths store `$fun`, a natural interpolating spline through 
 the fitted values at every training `x`. That spline isn't used, because if two
 training `x` values are very close, rounding-level differences in their 
-fitted values make it overshoot wildly between them, causing 'blips' in the centiles.
+fitted values make `$fun` overshoot wildly between them, causing 'blips' in the 
+centiles.
 
 ## 6.3 `pvc()` smooths: `.pvc_spec()` {#pvc}
 
@@ -368,12 +369,13 @@ fitted values make it overshoot wildly between them, causing 'blips' in the cent
 | Form | Contribution to the linear predictor |
 |---|---|
 | `pvc(x)` | `b * x + B(x) %*% beta`, with `b = coef(object, p)[lab]` (basically pb()) |
-| `pvc(x, by = z)`, numeric `z` | `(B(x) %*% beta) * (z - mean_train(z))` * |
+| `pvc(x, by = z)`, numeric `z` | `(B(x) %*% beta) * (z - mean_train(z))`\* |
 | `pvc(x, by = f)`, factor `f` | `B(x) %*% beta[, level of f]` (one curve per level) |
 
-*`predictAll()` gets by=<numeric> wrong, because `pvc()` re-centers z across both training
-and new data, which can shift the mean and thus every prediction. The data-free rebuild 
-always centers on the training mean, so it is exact and independent of `newdata`.
+\*`predictAll()` gets by=<numeric> wrong, because `pvc()` re-centers z across both 
+training and new data, which can shift the mean and thus every prediction. The 
+data-free rebuild centers on the training mean, so it is exact and independent 
+of `newdata`.
 
 `.pvc_spec(object, p, i, lab)` returns
 `list(x, by, type, degree, inter, xl, xr, beta, levels, by_mean)` or a string stating
@@ -396,19 +398,19 @@ why it can't be reconstructed:
      can't be rebuilt data-free.
 6. Verify the rebuild against the stored per-observation contribution
    (`object$<p>.s[, i]`) to within 1e-12 (relative).
-7. Recovers the training mean of a numeric `by`: gamlss stores the `by` vector
+7. Recovers the training mean of a numeric z: gamlss stores the `by` vector
    already centered, and never the mean itself. **Thus this step of the process**
    **does require that the original training data is available in some form at some**
-   **point**. `.pvc_spec` looks for the training mean of `z` (the `by` variable)
+   **point**. `.pvc_spec` looks for the training mean of `z` ( from `by = z`)
    3 ways, in this order:
 
-   a. **`$spec$by_mean`**, available in sanitized models (see [section 7](#sanitize)),
+   a. `$spec$by_mean`, available in sanitized models (see [section 7](#sanitize)),
       which calculate the mean and save it in the `spec` list as part of the
       sanitization process.
-   b. **`sm$by_mean`**, calculated from the fitting data when supplied and written
+   b. `sm$by_mean`, calculated from the fitting data when supplied and written
       onto the smoother by `.pvc_fill_by_means(object, data)` before `.pvc_spec()`
       is called.
-   c. **`.pvc_by_mean_from_x()`**: if `z` also enters the model as a plain
+   c. `.pvc_by_mean_from_x()`: if `z` also enters the model as a plain
       linear term, the mean can be calculated from its training values, which are
       stored in that parameter's design matrix (`object$<p>.x`).
 
@@ -499,7 +501,7 @@ environments) and returns, invisibly, every atomic vector longer than `max_len`
 of exactly length `N` and flags any interpolating-spline table regardless of length.
 
 ```{r}
-hits <- audit_gamlss(m, quiet = TRUE)   # the original fit, LOTS OF HITS
+hits <- audit_gamlss(m, quiet = TRUE)   # the original object, LOTS OF HITS
 length(hits)
 head(hits, 4)
 
@@ -533,7 +535,7 @@ the data-free pipeline) and thus are retained even after "sanitization":
 * the names of `random()` BLUPs; use `random_level_map` to pseudonymise them
 * `N` and `noObs`: the sample size
 * each `pb()`/`pvc()` covariate range, `xl`/`xr`, from which the observed min
-  and max values of x can be recovered exactly (`xr - xl` is 1.02 times the range)
+  and max values of x can be recovered (`xr - xl` is 1.02 times the range)
 * a numeric `pvc()` `by` variable's training mean, and a factor `by`'s levels
 
 # 8. Function index
