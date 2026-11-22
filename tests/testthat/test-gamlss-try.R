@@ -11,6 +11,17 @@ fit_args <- function(...) {
        control = gamlss.control(trace = FALSE), ...)
 }
 
+# For the guard tests: a good fit, and safe_gamlss() run with gamlss() swapped
+# for `stub`, so each test can hand back exactly the bad model it needs.
+good <- gamlss::gamlss(Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+                       control = gamlss.control(trace = FALSE))
+call_with <- function(stub) {
+  with_mocked_bindings(
+    safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
+                control = gamlss.control(trace = FALSE)),
+    gamlss = stub, .package = "gamlss")
+}
+
 test_that("safe_gamlss() fits with the default method", {
   m <- do.call(safe_gamlss, fit_args())
   expect_s3_class(m, "gamlss")
@@ -74,22 +85,14 @@ test_that("gamlss_try() passes weights and method through to gamlss()", {
   )
   expect_s3_class(m, "gamlss")
   expect_equal(sum(m$weights), sum(w))
+  # nothing failed, so there was nothing to warm-start from
+  expect_null(m$call$start.from)
 
   m_cg <- suppressMessages(
     gamlss_try(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
                method = "CG()", control = gamlss.control(trace = FALSE))
   )
   expect_equal(deparse(m_cg$method), "CG()")
-})
-
-test_that("gamlss_try() retries a non-converged fit with more iterations", {
-  m <- suppressMessages(
-    gamlss_try(formula = Sepal.Width ~ pb(Sepal.Length), data = iris,
-               family = BCT, control = gamlss.control(trace = FALSE, n.cyc = 1))
-  )
-  expect_s3_class(m, "gamlss")
-  expect_true(m$converged)
-  expect_gte(m$control$n.cyc, 200)
 })
 
 test_that("gamlss_try() returns NULL rather than erroring when nothing fits", {
@@ -163,19 +166,27 @@ test_that("safe_gamlss() promotes a nonconvergence warning to an error", {
   expect_s3_class(m, "gamlss")
   expect_false(m$converged)
 
-  # safe_gamlss() turns that same fit into an error
-  expect_error(do.call(safe_gamlss, args), "not yet converged")
+  # safe_gamlss() turns that same fit into an error, with the unconverged model
+  # attached so gamlss_try() can warm-start its retry from it
+  e <- tryCatch(do.call(safe_gamlss, args), error = function(e) e)
+  expect_s3_class(e, "gamlss_fit_failure")
+  expect_match(conditionMessage(e), "not yet converged")
+  expect_match(conditionMessage(e), "did not converge")
+  expect_s3_class(e$model, "gamlss")
+  expect_false(e$model$converged)
 })
 
 test_that("safe_gamlss() errors when both mu and sigma coefficients are NULL", {
   # fixing both parameters gives a model that "converges" with no coefficients
-  expect_error(
+  e <- tryCatch(
     safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
                 mu.fix = TRUE, mu.start = rep(3, nrow(iris)),
                 sigma.fix = TRUE, sigma.start = rep(0.4, nrow(iris)),
                 control = gamlss.control(trace = FALSE)),
-    "coefficients are NULL"
-  )
+    error = function(e) e)
+  expect_match(conditionMessage(e), "coefficients are NULL")
+  # an error that leaves nothing to restart from carries no model
+  expect_null(e$model)
 
   # the guard needs BOTH to be missing -- fixing only mu is a legitimate fit
   m <- safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
@@ -189,15 +200,6 @@ test_that("safe_gamlss() errors when both mu and sigma coefficients are NULL", {
 test_that("safe_gamlss() catches a non-converged model that didn't warn", {
   # the warning handler normally fires first, so this backstop is only reachable
   # when gamlss() reports converged = FALSE without warning about it
-  good <- gamlss::gamlss(Sepal.Width ~ Sepal.Length, data = iris, family = NO,
-                         control = gamlss.control(trace = FALSE))
-  call_with <- function(stub) {
-    with_mocked_bindings(
-      safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
-                  control = gamlss.control(trace = FALSE)),
-      gamlss = stub, .package = "gamlss")
-  }
-
   expect_error(call_with(function(...) { m <- good; m$converged <- FALSE; m }),
                "did not converge")
 
@@ -206,15 +208,6 @@ test_that("safe_gamlss() catches a non-converged model that didn't warn", {
 })
 
 test_that("safe_gamlss() promotes only the warnings that mean the fit is bad", {
-  good <- gamlss::gamlss(Sepal.Width ~ Sepal.Length, data = iris, family = NO,
-                         control = gamlss.control(trace = FALSE))
-  call_with <- function(stub) {
-    with_mocked_bindings(
-      safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
-                  control = gamlss.control(trace = FALSE)),
-      gamlss = stub, .package = "gamlss")
-  }
-
   # "Error" anywhere in a warning means the fit failed, whatever the case
   expect_error(call_with(function(...) { warning("Error in fitting step"); good }),
                "Error in fitting step")
@@ -242,26 +235,6 @@ test_that("safe_gamlss() promotes only the warnings that mean the fit is bad", {
 # A model that ran out of iterations is still a partial fit, so gamlss_try()
 # hands it back to the n.cyc retry as `start.from` rather than starting over.
 
-test_that("safe_gamlss() attaches the unconverged model to the error it raises", {
-  args <- list(formula = Sepal.Width ~ pb(Sepal.Length), data = iris, family = BCT,
-               control = gamlss.control(trace = FALSE, n.cyc = 1))
-  e <- tryCatch(do.call(safe_gamlss, args), error = function(e) e)
-
-  expect_s3_class(e, "gamlss_fit_failure")
-  expect_match(conditionMessage(e), "did not converge")
-  expect_s3_class(e$model, "gamlss")
-  expect_false(e$model$converged)
-
-  # errors that leave nothing to restart from carry no model
-  e_null <- tryCatch(
-    safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
-                mu.fix = TRUE, mu.start = rep(3, nrow(iris)),
-                sigma.fix = TRUE, sigma.start = rep(0.4, nrow(iris)),
-                control = gamlss.control(trace = FALSE)),
-    error = function(e) e)
-  expect_null(e_null$model)
-})
-
 test_that(".start_from() keeps only what gamlss()'s start.from reads", {
   m <- gamlss::gamlss(Sepal.Width ~ Sepal.Length, data = iris, family = BCT,
                       control = gamlss.control(trace = FALSE))
@@ -281,12 +254,14 @@ test_that(".start_from() keeps only what gamlss()'s start.from reads", {
   expect_null(.start_from(list(parameters = "mu", mu.fv = 1)))
 })
 
-test_that("gamlss_try() restarts the n.cyc retry from the unconverged fit", {
+test_that("gamlss_try() retries a non-converged fit, restarting from where it stalled", {
   m <- suppressMessages(
     gamlss_try(formula = Sepal.Width ~ pb(Sepal.Length), data = iris, family = BCT,
                control = gamlss.control(trace = FALSE, n.cyc = 3))
   )
+  expect_s3_class(m, "gamlss")
   expect_true(m$converged)
+  expect_gte(m$control$n.cyc, 200)   # the retry raised the iteration budget
   expect_s3_class(m$call$start.from, "gamlss")
 
   # the same fit a cold start reaches, minus the iterations already spent
@@ -298,16 +273,6 @@ test_that("gamlss_try() restarts the n.cyc retry from the unconverged fit", {
 
   # and the call it records is still self-contained and refittable
   expect_s3_class(eval(m$call), "gamlss")
-})
-
-test_that("gamlss_try() only warm-starts the n.cyc retry", {
-  # the CG()/tiny-step retries change tack because the fit was going nowhere,
-  # so they must not inherit a diverging fit's values
-  m <- suppressMessages(
-    gamlss_try(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
-               control = gamlss.control(trace = FALSE))
-  )
-  expect_null(m$call$start.from)  # nothing failed, nothing to start from
 })
 
 test_that("gamlss_try() escalates to mixed() when CG() fails", {
@@ -364,15 +329,6 @@ test_that("gamlss_try() gives mixed() the config's iteration budget, not its def
 test_that("safe_gamlss() rejects a blown-up fit that claims to have converged", {
   # gamlss() sets converged = TRUE once the deviance stops moving, which also
   # happens when the parameters have overflowed and it has nothing left to move
-  good <- gamlss::gamlss(Sepal.Width ~ Sepal.Length, data = iris, family = NO,
-                         control = gamlss.control(trace = FALSE))
-  call_with <- function(stub) {
-    with_mocked_bindings(
-      safe_gamlss(formula = Sepal.Width ~ Sepal.Length, data = iris, family = NO,
-                  control = gamlss.control(trace = FALSE)),
-      gamlss = stub, .package = "gamlss")
-  }
-
   expect_error(
     call_with(function(...) { m <- good; m$residuals[] <- NaN; m }),
     "no finite residuals")

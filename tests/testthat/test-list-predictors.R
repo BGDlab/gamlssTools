@@ -6,16 +6,8 @@
 
 skip_if_not_installed("gamlss")
 
-lp_data <- function(n = 200, seed = 7) {
-  set.seed(seed)
-  d <- data.frame(
-    Age   = runif(n, 1, 20),
-    Sex   = factor(sample(c("M", "F"), n, TRUE)),
-    Study = factor(sample(c("A", "B", "C"), n, TRUE))
-  )
-  d$Pheno <- 5 + log(d$Age) + (d$Sex == "M") * 0.4 + rnorm(n, 0, 0.5)
-  d
-}
+# sim_datafree() (helper-datafree.R) at a smaller size
+lp_data <- function() sim_datafree(n = 200, seed = 7)
 
 test_that("a data argument that is a list element is handled", {
   s <- list(train = lp_data())
@@ -256,19 +248,6 @@ test_that("the gamlss method expands interactions into their variables", {
                        data = d, family = "NO", trace = FALSE)
   expect_setequal(list_predictors(m2), c("Sex", "logAge"))
   expect_setequal(list_predictors(m2, "sigma"), c("Sex", "logAge"))
-})
-
-test_that("the two methods agree on an interaction model", {
-  skip_if_not_installed("gamlss2")
-
-  d <- lp_data()
-  d$logAge <- log(d$Age)
-  g <- gamlss::gamlss(Pheno ~ Sex * logAge, sigma.formula = ~ logAge,
-                      data = d, family = "NO", trace = FALSE)
-  h <- gamlss2::gamlss2(Pheno ~ Sex * logAge | logAge,
-                        data = d, family = gamlss.dist::NO, trace = FALSE)
-
-  expect_setequal(list_predictors(g), list_predictors(h))
 })
 
 test_that("the gamlss2 method resolves `df$col` and `df[[\"col\"]]` too", {

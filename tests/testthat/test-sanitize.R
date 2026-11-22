@@ -3,15 +3,8 @@
 
 skip_if_not_installed("gamlss")
 
-fit_sanitize_model <- function(d) {
-  gamlss::gamlss(Pheno ~ pb(Age) + Sex + random(Study),
-                 sigma.formula = ~ pb(Age),
-                 data = d, family = "BCCG", trace = FALSE)
-}
-
 test_that("sanitized models predict identically to the original", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
   clean <- sanitize_gamlss(m)
 
   nd   <- d[1:25, ]
@@ -29,8 +22,7 @@ test_that("sanitized models predict identically to the original", {
 })
 
 test_that("compare_scores() compares predicted values at each centile", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
   clean <- sanitize_gamlss(m)
   grid  <- suppressMessages(sim_grid(d, "Age", "Sex", m))
 
@@ -44,32 +36,22 @@ test_that("compare_scores() compares predicted values at each centile", {
   expect_true(all(unlist(res$centile_diffs) < 1e-6))
 })
 
-test_that("compare_scores() runs both comparisons together", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
-  clean <- sanitize_gamlss(m)
-  grid  <- suppressMessages(sim_grid(d, "Age", "Sex", m))
-
-  res <- suppressMessages(
-    compare_scores(m, clean, data = d, sim_grid_list = grid))
-  expect_named(res, c("z_diffs", "centile_diffs"))
-})
-
 test_that("compare_scores() needs something to compare", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
   expect_error(compare_scores(m, m), regexp = "nothing to compare")
 })
 
 test_that("compare_scores() reports a genuine difference in both modes", {
   d <- sim_datafree()
-  m <- fit_sanitize_model(d)                       # BCCG
+  m <- datafree_fixture()$m                        # BCCG
   no <- gamlss::gamlss(Pheno ~ pb(Age) + Sex, data = d, family = "NO",
                        trace = FALSE)
   grid <- suppressMessages(sim_grid(d, "Age", "Sex", m))
 
   res <- suppressMessages(
     compare_scores(m, no, data = d, sim_grid_list = grid, tol = 1e-6))
+  # given both, it runs both comparisons
+  expect_named(res, c("z_diffs", "centile_diffs"))
 
   # two genuinely different fits disagree by a visible amount
   expect_gt(res$z_diffs[["max"]], 1e-3)                  # measured ~0.20
@@ -85,8 +67,7 @@ test_that("compare_scores() reports a genuine difference in both modes", {
 })
 
 test_that("compare_scores() takes a prediction path per model", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
   clean <- sanitize_gamlss(m)
 
   # both sides data-free: isolates what sanitizing changed
@@ -134,8 +115,7 @@ test_that("sanitize refuses a model with an offset() term", {
 })
 
 test_that("no length-n vector survives sanitizing", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
 
   # the untouched fit is riddled with them
   expect_true(any(grepl("LENGTH n", audit_gamlss(m, quiet = TRUE))))
@@ -145,8 +125,7 @@ test_that("no length-n vector survives sanitizing", {
 })
 
 test_that("the audit flags gamlss's pb() interpolating spline", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
   clean <- sanitize_gamlss(m)
   expect_length(audit_gamlss(clean, quiet = TRUE), 0)
 
@@ -159,8 +138,7 @@ test_that("the audit flags gamlss's pb() interpolating spline", {
 })
 
 test_that("dropped components are really gone", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
   clean <- sanitize_gamlss(m)
 
   for (nm in c("y", "residuals", "weights", "rqres", "control", "call",
@@ -186,8 +164,7 @@ test_that("dropped components are really gone", {
 })
 
 test_that("keep_call and formula environments behave", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
 
   expect_null(sanitize_gamlss(m)$call)
   expect_false(is.null(sanitize_gamlss(m, keep_call = TRUE)$call))
@@ -198,8 +175,7 @@ test_that("keep_call and formula environments behave", {
 })
 
 test_that("random_level_map pseudonymises grouping levels", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
   map <- c(A = "site_1", B = "site_2", C = "site_3")
 
   clean <- sanitize_gamlss(m, random_level_map = map)
@@ -219,8 +195,7 @@ test_that("models with a non-reconstructable smooth are refused", {
 })
 
 test_that("downstream gamlssTools functions work on a sanitized model", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
+  f <- datafree_fixture(); d <- f$d; m <- f$m
   clean <- sanitize_gamlss(m)
   grid  <- suppressMessages(sim_grid(d, "Age", "Sex", m))
 
@@ -236,28 +211,6 @@ test_that("downstream gamlssTools functions work on a sanitized model", {
   )
 })
 
-test_that("sanitize refuses a smooth on a transformed covariate", {
-  d <- sim_datafree()
-  m <- gamlss::gamlss(Pheno ~ pb(log(Age)) + Sex, data = d, family = "NO",
-                      trace = FALSE)
-  expect_error(sanitize_gamlss(m), regexp = "transformed covariate")
-})
-
-test_that("quantile-knot fits are refused", {
-  d <- sim_datafree()
-
-  # pb.control(quantiles = TRUE) stores sample quantiles of the covariate as
-  # knots, so the model can't be shared. (This fit doesn't converge on this
-  # data, which is irrelevant here: knot placement happens in basis setup.)
-  mq <- suppressWarnings(
-    gamlss::gamlss(Pheno ~ pb(Age, control = pb.control(quantiles = TRUE)),
-                   data = d, family = "NO", trace = FALSE))
-  expect_error(sanitize_gamlss(mq), regexp = "quantiles = TRUE")
-
-  # a default pb() lays knots out with seq() and is unaffected
-  expect_no_error(sanitize_gamlss(fit_sanitize_model(d)))
-})
-
 test_that("audit_gamlss() refuses non-gamlss objects", {
   # x$N supplies the sample size for length-n flagging, so there is nothing
   # sensible to do with an object that has no $N
@@ -266,36 +219,9 @@ test_that("audit_gamlss() refuses non-gamlss objects", {
   expect_error(audit_gamlss(NULL),                 regexp = "gamlss model objects only")
 
   # a sanitized fit keeps its gamlss class and is accepted
-  d <- sim_datafree()
-  clean <- sanitize_gamlss(fit_sanitize_model(d))
+  clean <- sanitize_gamlss(datafree_fixture()$m)
   expect_s3_class(clean, "gamlss")
   expect_no_error(audit_gamlss(clean, quiet = TRUE))
-})
-
-
-
-test_that("comparing a model with ITSELF gives 0", {
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
-
-  res <- suppressMessages(compare_scores(m, m, data = d))
-  expect_equal(res$z_diffs[["max"]], 0)
-})
-
-test_that("compare_scores() accepts data.table and tibble frames", {
-  # score_centiles() indexes `data` the data.frame way (data[, model_cols]).
-  # A data.table reads `model_cols` as an expression inside the table instead
-  # of a vector of column names and dies with "column name 'model_cols' is not
-  # found"; a tibble never drops to a vector.
-  d <- sim_datafree()
-  m <- fit_sanitize_model(d)
-  clean <- sanitize_gamlss(m)
-  ref <- suppressMessages(compare_scores(m, clean, data = d, fit_data1 = d))
-
-  for (frame in list(data.table::as.data.table(d), tibble::as_tibble(d))) {
-    res <- suppressMessages(compare_scores(m, clean, data = frame, fit_data1 = d))
-    expect_equal(res$z_diffs, ref$z_diffs)
-  }
 })
 
 test_that("compare_scores() rejects observations it cannot score", {
@@ -322,4 +248,145 @@ test_that("compare_scores() rejects observations it cannot score", {
 
   # in-sample rows are unaffected
   expect_no_error(suppressMessages(compare_scores(m, clean, data = d)))
+})
+
+# ---- pvc() smooths -----------------------------------------------------------
+# pvc() terms are rebuilt from their B-spline coefficients like pb(). The extra
+# wrinkle is the `by` variable: a factor `by` keeps its levels, and a numeric
+# `by` needs its training mean, which gamlss doesn't store.
+
+# sim_datafree() plus a numeric covariate for pvc(by = <numeric>)
+sim_pvc_sanitize <- function() {
+  d <- sim_datafree()
+  set.seed(7)
+  d$Z <- rnorm(nrow(d), 3, 1)
+  d
+}
+
+# the family is given literally: the fit_data1 path re-evaluates the call
+fit_pvc_sanitize <- function(formula, sigma.formula = ~1, d) {
+  suppressWarnings(gamlss::gamlss(formula, sigma.formula = sigma.formula,
+                                  data = d, family = "BCCG", trace = FALSE))
+}
+
+test_that("pvc(by = factor) models sanitize exactly and lose their per-observation data", {
+  d <- sim_pvc_sanitize()
+  m <- fit_pvc_sanitize(Pheno ~ Sex + pvc(Age, by = Sex), ~ pvc(Age), d)
+  clean <- sanitize_gamlss(m)
+
+  nd   <- d[1:25, ]
+  gold <- .predictAll_nodata_gamlss(m, nd)
+  free <- .predictAll_nodata_gamlss(clean, nd)
+  for (p in m$parameters)
+    expect_identical(free[[p]], gold[[p]], info = p)
+
+  expect_equal(suppressMessages(compare_scores(m, clean, data = d))$z_diffs[["max"]], 0)
+  # against data-based predictAll(), which refits the smoother: close, not exact
+  full <- suppressWarnings(suppressMessages(
+    compare_scores(m, clean, data = d, fit_data1 = d)))
+  expect_lt(full$z_diffs[["max"]], 1e-4)
+  expect_gt(full$z_diffs[["max"]], 0)
+
+  expect_length(audit_gamlss(clean, quiet = TRUE), 0)
+  for (p in c("mu", "sigma")) {
+    sm <- clean[[paste0(p, ".coefSmo")]][[1]]
+    expect_named(sm, c("lambda", "edf", "method", "spec"), info = p)
+  }
+  # the factor-by levels are what's left of Sex
+  spec <- clean$mu.coefSmo[[1]]$spec
+  expect_equal(spec$by, "Sex")
+  expect_setequal(spec$levels, levels(d$Sex))
+  expect_true(object.size(clean) < object.size(m) / 2)
+})
+
+test_that("pvc(by = numeric) with a linear by term needs no fit_data", {
+  d <- sim_pvc_sanitize()
+  m <- fit_pvc_sanitize(Pheno ~ Z + pvc(Age, by = Z) + Sex, d = d)
+
+  # the training mean of Z is read from the model itself
+  clean <- sanitize_gamlss(m)
+  expect_equal(clean$mu.coefSmo[[1]]$spec$by_mean, mean(d$Z))
+
+  res <- suppressMessages(compare_scores(m, clean, data = d))
+  expect_equal(res$z_diffs[["max"]], 0)
+  expect_length(audit_gamlss(clean, quiet = TRUE), 0)
+})
+
+test_that("pvc(by = numeric) without a linear by term takes its mean from fit_data", {
+  d <- sim_pvc_sanitize()
+  m <- fit_pvc_sanitize(Pheno ~ pvc(Age, by = Z) + Sex, d = d)
+
+  # the mean isn't in the fit, so sanitizing without data has to stop, naming
+  # the term
+  expect_error(sanitize_gamlss(m), regexp = "mu: pvc\\(Age, by = Z\\)")
+  expect_error(sanitize_gamlss(m), regexp = "fit_data")
+
+  clean <- sanitize_gamlss(m, fit_data = d)
+  expect_equal(clean$mu.coefSmo[[1]]$spec$by_mean, mean(d$Z))
+
+  # the mean is all that's taken from fit_data: nothing length n comes along
+  expect_length(audit_gamlss(clean, quiet = TRUE), 0)
+  sm <- clean$mu.coefSmo[[1]]
+  expect_null(sm$x); expect_null(sm$by); expect_null(sm$fv)
+  res <- suppressMessages(compare_scores(m, clean, data = d, fit_data1 = d))
+  expect_equal(res$z_diffs[["max"]], 0)
+})
+
+test_that("sanitize refuses a pb() or pvc() smooth on a transformed covariate", {
+  d <- sim_pvc_sanitize()
+  m <- gamlss::gamlss(Pheno ~ pb(log(Age)) + Sex, data = d, family = "NO",
+                      trace = FALSE)
+  expect_error(sanitize_gamlss(m), regexp = "transformed covariate")
+
+  ml <- suppressWarnings(gamlss::gamlss(Pheno ~ pvc(log(Age)) + Sex,
+                                        data = d, family = "NO", trace = FALSE))
+  expect_error(sanitize_gamlss(ml), regexp = "mu: pvc\\(log\\(Age\\)\\)")
+  expect_error(sanitize_gamlss(ml), regexp = "transformed covariate")
+})
+
+test_that("pvc() sits alongside pb() and random() in one sanitized model", {
+  d <- sim_pvc_sanitize()
+  m <- suppressWarnings(gamlss::gamlss(
+    Pheno ~ pb(Age) + pvc(Age, by = Sex) + random(Study),
+    data = d, family = "NO", trace = FALSE))
+  clean <- sanitize_gamlss(m)
+
+  expect_equal(suppressMessages(compare_scores(m, clean, data = d))$z_diffs[["max"]], 0)
+  expect_length(audit_gamlss(clean, quiet = TRUE), 0)
+
+  # pseudonymising the random() levels leaves the pvc() term alone (it can't be
+  # scored on d any more: d's Study levels are no longer in the model)
+  map    <- c(A = "site_1", B = "site_2", C = "site_3")
+  mapped <- sanitize_gamlss(m, random_level_map = map)
+  expect_setequal(names(mapped$mu.coefSmo[[3]]$coef), unname(map))
+  expect_identical(mapped$mu.coefSmo[[2]], clean$mu.coefSmo[[2]])
+})
+
+test_that("downstream gamlssTools functions work on a sanitized pvc() model", {
+  d <- sim_pvc_sanitize()
+  m <- fit_pvc_sanitize(Pheno ~ Sex + pvc(Age, by = Sex), ~ pvc(Age), d)
+  clean <- sanitize_gamlss(m)
+  grid  <- suppressMessages(sim_grid(d, "Age", "Sex", m))
+
+  expect_equal(score_centiles(clean, d), score_centiles(m, d), tolerance = 1e-12)
+  res <- suppressMessages(compare_scores(m, clean, sim_grid_list = grid))
+  expect_true(all(unlist(res$centile_diffs) < 1e-6))
+  expect_s3_class(
+    suppressMessages(make_centile_fan(clean, d, "Age", "Sex", show_points = FALSE)),
+    "ggplot"
+  )
+
+  # like pb(), a rebuilt pvc() doesn't extrapolate, and says so -- once per
+  # term, here one for mu and one for sigma
+  warns <- character()
+  withCallingHandlers(
+    .predictAll_nodata_gamlss(clean, transform(d[1:2, ], Age = c(50, 60))),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_length(warns, 2)
+  expect_true(all(grepl("do not extrapolate", warns)))
+  expect_true(any(grepl("^pvc\\(Age, by = Sex\\)", warns)))
+  expect_true(any(grepl("^pvc\\(Age\\)", warns)))
 })

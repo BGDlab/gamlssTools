@@ -77,6 +77,13 @@ fit_batch_gamlss2 <- function(train) {
                    data = train, family = gamlss.dist::NO, trace = FALSE)
 }
 
+# The default split and its fits, built once per test run (see cached() in
+# helper-datafree.R). batch_data() is split_batch(sim_batch()).
+batch_data    <- function() cached("batch_data", split_batch(sim_batch()))
+batch_model   <- function(family = "NO") cached(paste0("batch_model_", family),
+                                                fit_batch_gamlss(batch_data()$train, family))
+batch_model2  <- function() cached("batch_model2", fit_batch_gamlss2(batch_data()$train))
+
 # A diagnosis column that is deliberately *not* a model covariate: controls
 # ("CN") follow the reference model, while cases carry an extra shift, and only
 # in the unseen studies, so the fitting data stays untouched. Estimating a

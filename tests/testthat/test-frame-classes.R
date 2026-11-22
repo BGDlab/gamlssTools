@@ -69,3 +69,18 @@ test_that("coercing a caller's data.table does not modify it", {
 
   expect_equal(dt, before)
 })
+
+test_that("compare_scores() accepts data.table and tibble frames", {
+  # score_centiles() indexes `data` the data.frame way (data[, model_cols]).
+  # A data.table reads `model_cols` as an expression inside the table instead
+  # of a vector of column names and dies with "column name 'model_cols' is not
+  # found"; a tibble never drops to a vector.
+  f <- datafree_fixture(); d <- f$d; m <- f$m
+  clean <- sanitize_gamlss(m)
+  ref <- suppressMessages(compare_scores(m, clean, data = d, fit_data1 = d))
+
+  for (frame in list(data.table::as.data.table(d), tibble::as_tibble(d))) {
+    res <- suppressMessages(compare_scores(m, clean, data = frame, fit_data1 = d))
+    expect_equal(res$z_diffs, ref$z_diffs)
+  }
+})

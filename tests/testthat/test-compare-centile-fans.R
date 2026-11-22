@@ -24,7 +24,6 @@ line_layers  <- function(p) Filter(function(l) inherits(l$geom, "GeomLine"), p$l
 point_layers <- function(p) Filter(function(l) inherits(l$geom, "GeomPoint"), p$layers)
 fan_layers   <- function(p) Filter(function(l) !is.null(l$data) && is.data.frame(l$data) &&
                                      nrow(l$data) > 2, line_layers(p))
-quiet <- function(expr) suppressMessages(utils::capture.output(res <- expr))
 
 test_that("both models' fans are drawn solid, in their own color, at the given alpha", {
   f <- cmp_fixture()

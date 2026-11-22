@@ -17,7 +17,6 @@ lab_fixture <- function(seed = 7, n = 150) {
                           control = gamlss::gamlss.control(trace = FALSE)))
 }
 
-quiet <- function(expr) suppressMessages(utils::capture.output(res <- expr))
 axis_labs <- function(p) ggplot2::ggplot_build(p)$plot$labels[c("x", "y")]
 
 test_that("axis labels name the variables, not the expressions that built the layers", {

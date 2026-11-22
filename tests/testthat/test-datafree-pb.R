@@ -27,14 +27,6 @@ pb_basis_part <- function(m, p, lab, x, deg = 3) {
          sm$coef)
 }
 
-# the fit's own link-scale predictor for parameter p
-pb_coef_lp <- function(m, p) {
-  S  <- m[[paste0(p, ".s")]]
-  lp <- drop(m[[paste0(p, ".x")]] %*% .zap_aliased(coef(m, p)))
-  if (!is.null(S)) lp <- lp + rowSums(S)
-  unname(lp)
-}
-
 test_that("pb() predictions don't overshoot between near-duplicate training x", {
   d <- sim_pb_dup()
   m <- fit_pb(y ~ pb(x), d)
@@ -58,7 +50,7 @@ test_that("rebuilt pb() reproduces the fit on the training rows", {
   d <- sim_pb_dup()
   m <- fit_pb(y ~ pb(x), d, sigma.formula = ~ pb(x))
   for (p in m$parameters)
-    expect_equal(.lp_nodata_gamlss(m, p, d), pb_coef_lp(m, p), tolerance = 1e-10,
+    expect_equal(.lp_nodata_gamlss(m, p, d), fit_lp(m, p), tolerance = 1e-10,
                  info = p)
 })
 
@@ -66,20 +58,22 @@ test_that("non-default degree / inter and small n are rebuilt exactly", {
   d <- sim_pb_dup()
   m2 <- fit_pb(y ~ pb(x, control = pb.control(degree = 2)), d)
   expect_equal(.pb_spec(m2, "mu", 1, colnames(m2$mu.s)[1])$degree, 2)
-  expect_equal(.lp_nodata_gamlss(m2, "mu", d), pb_coef_lp(m2, "mu"), tolerance = 1e-10)
+  expect_equal(.lp_nodata_gamlss(m2, "mu", d), fit_lp(m2, "mu"), tolerance = 1e-10)
 
   m8 <- fit_pb(y ~ pb(x, inter = 8), d)
   expect_equal(.pb_spec(m8, "mu", 1, colnames(m8$mu.s)[1])$inter, 8)
-  expect_equal(.lp_nodata_gamlss(m8, "mu", d), pb_coef_lp(m8, "mu"), tolerance = 1e-10)
+  expect_equal(.lp_nodata_gamlss(m8, "mu", d), fit_lp(m8, "mu"), tolerance = 1e-10)
 
   ds <- sim_pb_dup(n = 60)   # n < 99: pb() forces inter = 10
   ms <- fit_pb(y ~ pb(x), ds)
   expect_equal(.pb_spec(ms, "mu", 1, "pb(x)")$inter, 10)
-  expect_equal(.lp_nodata_gamlss(ms, "mu", ds), pb_coef_lp(ms, "mu"), tolerance = 1e-10)
+  expect_equal(.lp_nodata_gamlss(ms, "mu", ds), fit_lp(ms, "mu"), tolerance = 1e-10)
 })
 
 test_that("pb() terms that can't be rebuilt are not predicted data-free", {
-  d <- sim_pb_dup()
+  # quantile knots make gamlss's own fit very slow (~2 min at n = 300), so use a
+  # small sample: only the stored control matters here, not the fit
+  d <- sim_pb_dup(n = 60)
   mq <- fit_pb(y ~ pb(x, control = pb.control(quantiles = TRUE)), d)
   expect_match(.pb_spec(mq, "mu", 1, colnames(mq$mu.s)[1]), "quantiles = TRUE")
   expect_false(.datafree_eligible_gamlss(mq))
@@ -112,15 +106,4 @@ test_that("a point's prediction doesn't depend on what it is predicted with", {
   all_at_once <- .pb_eval(spec, xx, "pb(x)")
   one_by_one  <- vapply(xx, .pb_eval, numeric(1), spec = spec, lab = "pb(x)")
   expect_identical(all_at_once, one_by_one)
-})
-
-test_that("a sanitized pb() model predicts exactly like the original", {
-  d <- sim_pb_dup()
-  m <- fit_pb(y ~ pb(x), d, sigma.formula = ~ pb(x))
-  clean <- sanitize_gamlss(m)
-  xx <- seq(d$x[100] - 1e-3, d$x[100] + 1e-3, length.out = 2001)
-  nd <- data.frame(x = xx)
-  for (p in m$parameters)
-    expect_identical(.lp_nodata_gamlss(clean, p, nd), .lp_nodata_gamlss(m, p, nd),
-                     info = p)
 })

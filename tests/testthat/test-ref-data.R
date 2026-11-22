@@ -9,8 +9,8 @@ skip_if_not_installed("gamlss")
 # ---- argument checking (no offsets estimated, so these run anywhere) ---------
 
 test_that("ref_data without batch_term is rejected", {
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   expect_error(score_centiles(m, add_dx(s$all), ref_data = ~ dx == "CN"),
                regexp = "requires `batch_term`")
@@ -18,8 +18,8 @@ test_that("ref_data without batch_term is rejected", {
 
 test_that("a malformed ref_data condition is rejected", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   sc <- function(rd) suppressWarnings(score_centiles(m, d, batch_term = "Study", ref_data = rd))
@@ -32,8 +32,8 @@ test_that("a malformed ref_data condition is rejected", {
 
 test_that("NAs in the condition are refused rather than read as FALSE", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   # dx is not a model column, so it escapes the NA check on `data`: an NA row is
   # neither in nor out of the reference, and guessing either way is wrong
@@ -48,8 +48,8 @@ test_that("NAs in the condition are refused rather than read as FALSE", {
 
 test_that("a new batch level with no reference rows scores NA, and only that level", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   # offsets are estimated within each batch, so E having controls elsewhere in
@@ -74,8 +74,8 @@ test_that("a new batch level with no reference rows scores NA, and only that lev
 
 test_that("an external ref_data dataframe is held to the same checks as data", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   expect_error(
@@ -96,8 +96,8 @@ test_that("an external ref_data dataframe is held to the same checks as data", {
 
 test_that("formula, string and dataframe forms all select the same reference", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   by_formula <- suppressWarnings(
@@ -113,8 +113,8 @@ test_that("formula, string and dataframe forms all select the same reference", {
 
 test_that("a formula condition resolves variables where the user wrote it", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   #`target` lives in this frame, not in `d`: the formula's environment finds it
@@ -130,8 +130,8 @@ test_that("a formula condition resolves variables where the user wrote it", {
 
 test_that("the condition may use a column the model never saw", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   # dx is not a model covariate, so unseen levels of it are none of the model's
   # business - only `batch_term` may introduce levels the model has to handle
@@ -148,8 +148,8 @@ test_that("the condition may use a column the model never saw", {
 
 test_that("ref_data leaves length, order and in-sample rows alone", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   out <- suppressWarnings(
@@ -168,8 +168,8 @@ test_that("ref_data leaves length, order and in-sample rows alone", {
 
 test_that("scores follow their rows when the data is permuted", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   out <- suppressWarnings(
@@ -185,8 +185,8 @@ test_that("scores follow their rows when the data is permuted", {
 
 test_that("reference rows are themselves scored with the offset they produced", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   out <- suppressWarnings(
@@ -205,8 +205,8 @@ test_that("reference rows are themselves scored with the offset they produced", 
 
 test_that("offsets fit on controls recentre controls, not the whole batch", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)   # unseen studies D and E: cases carry a further +2
 
   default <- suppressWarnings(score_centiles(m, d, batch_term = "Study"))
@@ -231,8 +231,8 @@ test_that("offsets fit on controls recentre controls, not the whole batch", {
 
 test_that("with no cases to exclude, ref_data reproduces the default", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   d <- add_dx(s$all)
   d$dx[] <- "CN"        # every row is a reference row
@@ -250,8 +250,8 @@ test_that("score_centiles.gamlss2 takes ref_data the same way", {
   skip_if_not_installed("gamlss2")
   skip_if_no_charts_dev()
 
-  s <- split_batch(sim_batch())
-  m2 <- fit_batch_gamlss2(s$train)
+  s <- batch_data()
+  m2 <- batch_model2()
   d <- add_dx(s$all)
 
   default <- suppressWarnings(score_centiles(m2, d, batch_term = "Study"))
@@ -267,24 +267,4 @@ test_that("score_centiles.gamlss2 takes ref_data the same way", {
   expect_lt(mean(default[ctrl]), 0.25)
 })
 
-# ---- pass-through ------------------------------------------------------------
-
-test_that("centile_coverage() forwards ref_data and refuses it with centiles", {
-  skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
-  d <- add_dx(s$all)
-
-  via_cc <- suppressWarnings(
-    centile_coverage(m, d, plot = FALSE, batch_term = "Study", ref_data = ~ dx == "CN"))
-  direct <- suppressWarnings(
-    centile_coverage(data = d, plot = FALSE,
-                     centiles = suppressWarnings(
-                       score_centiles(m, d, batch_term = "Study", ref_data = ~ dx == "CN"))))
-  expect_equal(via_cc, direct, tolerance = 1e-12)
-
-  expect_error(
-    centile_coverage(data = d, centiles = runif(nrow(d)), ref_data = ~ dx == "CN"),
-    regexp = "only applies when scoring"
-  )
-})
+# centile_coverage()'s ref_data pass-through is tested in test-centile-coverage.R

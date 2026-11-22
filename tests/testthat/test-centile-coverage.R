@@ -3,12 +3,12 @@
 
 skip_if_not_installed("gamlss")
 
-fit_cov_model <- function() {
+fit_cov_model <- function() cached("coverage", {
   d <- sim_datafree()
   list(model = gamlss::gamlss(Pheno ~ pb(Age) + Sex, sigma.formula = ~ pb(Age),
                               data = d, family = "BCCG", trace = FALSE),
        data = d)
-}
+})
 
 test_that("pre-calculated centiles reproduce the scored result", {
   f <- fit_cov_model()
@@ -80,8 +80,8 @@ test_that("NA centiles are dropped with a warning rather than rejected", {
 test_that("batch_term is passed through to score_centiles()", {
   skip_if_no_charts_dev()
 
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   cents <- suppressWarnings(score_centiles(m, s$all, batch_term = "Study"))
   expect_equal(suppressWarnings(centile_coverage(m, s$all, plot = FALSE, batch_term = "Study")),
@@ -94,25 +94,21 @@ test_that("batch_term is passed through to score_centiles()", {
   )))
 })
 
-test_that("batch_term cannot be combined with pre-calculated centiles", {
+test_that("scoring-only arguments cannot be combined with pre-calculated centiles", {
   f <- fit_cov_model()
   cents <- score_centiles(f$model, f$data)
-  expect_error(centile_coverage(data = f$data, centiles = cents, batch_term = "Study", plot = FALSE),
-               "only applies when scoring")
-})
-
-test_that("min_ref cannot be combined with pre-calculated centiles", {
-  f <- fit_cov_model()
-  cents <- score_centiles(f$model, f$data)
-  expect_error(centile_coverage(data = f$data, centiles = cents, min_ref = 10, plot = FALSE),
-               "only applies when scoring")
+  scoring_args <- list(batch_term = "Study", min_ref = 10, ref_data = ~ Sex == "M")
+  for (nm in names(scoring_args)) {
+    args <- c(list(data = f$data, centiles = cents, plot = FALSE), scoring_args[nm])
+    expect_error(do.call(centile_coverage, args), "only applies when scoring", info = nm)
+  }
 })
 
 test_that("min_ref is passed through to score_centiles()", {
   skip_if_no_charts_dev()
 
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   thin <- thin_batch(s$all, level = "D", n = 3)
 
   #a threshold D cannot clear, but every other level can
@@ -132,6 +128,21 @@ test_that("min_ref is passed through to score_centiles()", {
     centile_coverage(m, thin, plot = FALSE, batch_term = "Study", min_ref = 10, group = "Study"))
   expect_true("D" %in% lax$Study)
   expect_false("D" %in% strict$Study)
+})
+
+test_that("ref_data is passed through to score_centiles()", {
+  skip_if_no_charts_dev()
+  s <- batch_data()
+  m <- batch_model()
+  d <- add_dx(s$all)
+
+  via_cc <- suppressWarnings(
+    centile_coverage(m, d, plot = FALSE, batch_term = "Study", ref_data = ~ dx == "CN"))
+  direct <- suppressWarnings(
+    centile_coverage(data = d, plot = FALSE,
+                     centiles = suppressWarnings(
+                       score_centiles(m, d, batch_term = "Study", ref_data = ~ dx == "CN"))))
+  expect_equal(via_cc, direct, tolerance = 1e-12)
 })
 
 test_that("an unmatched argument errors instead of being swallowed by ...", {

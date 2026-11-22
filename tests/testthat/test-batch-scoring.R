@@ -11,8 +11,8 @@ skip_if_not_installed("gamlss")
 # ---- routing: when nothing is out-of-sample, nothing should change -----------
 
 test_that("batch_term is a no-op when every level was seen in fitting", {
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   plain <- score_centiles(m, s$train)
   batch <- expect_no_warning(score_centiles(m, s$train, batch_term = "Study"))
@@ -21,8 +21,8 @@ test_that("batch_term is a no-op when every level was seen in fitting", {
 })
 
 test_that("a defined-but-unused factor level is not treated as a new batch", {
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   # "Z" is a declared level with no rows: it is not a batch present in the data
   nd <- s$train
@@ -33,8 +33,8 @@ test_that("a defined-but-unused factor level is not treated as a new batch", {
 })
 
 test_that("NAs in model columns are rejected before any batch handling", {
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   nd <- s$all
   nd$Age[1] <- NA
@@ -42,8 +42,8 @@ test_that("NAs in model columns are rejected before any batch handling", {
 })
 
 test_that("new levels are announced by a warning that names them", {
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   expect_warning(
     try(score_centiles(m, s$all, batch_term = "Study"), silent = TRUE),
@@ -55,8 +55,8 @@ test_that("new levels are announced by a warning that names them", {
 
 test_that("in-sample rows keep their normal centiles and their original positions", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   out <- suppressWarnings(score_centiles(m, s$all, batch_term = "Study"))
 
@@ -74,19 +74,14 @@ test_that("in-sample rows keep their normal centiles and their original position
 
 test_that("several unseen levels are each scored, in the right rows", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())            # D and E are both unseen
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()            # D and E are both unseen
+  m <- batch_model()
 
   out <- suppressWarnings(score_centiles(m, s$all, batch_term = "Study"))
 
-  for (lev in c("D", "E")) {
-    idx <- which(s$all$Study == lev)
-    expect_true(all(is.finite(out[idx])), info = lev)
-    expect_true(all(out[idx] > 0 & out[idx] < 1), info = lev)
-  }
-
-  # scoring the two unseen levels together must agree with scoring each on its
-  # own: batches are independent, so bundling them cannot change either one
+  # every row coming back finite and in (0, 1) is checked in the test above.
+  # Here: scoring the two unseen levels together must agree with scoring each
+  # on its own -- batches are independent, so bundling them cannot change either
   d_only <- s$all[s$all$Study %in% c("A", "B", "D"), , drop = FALSE]
   alone  <- suppressWarnings(score_centiles(m, d_only, batch_term = "Study"))
   expect_equal(alone[d_only$Study == "D"],
@@ -96,8 +91,8 @@ test_that("several unseen levels are each scored, in the right rows", {
 
 test_that("data consisting entirely of unseen levels scores without error", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   oos <- s$all[s$all$Study == "D", , drop = FALSE]
   out <- suppressWarnings(score_centiles(m, oos, batch_term = "Study"))
@@ -108,8 +103,8 @@ test_that("data consisting entirely of unseen levels scores without error", {
 
 test_that("a character batch column is coerced to a factor, with a warning", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   chr <- s$all
   chr$Study <- as.character(chr$Study)
@@ -131,8 +126,8 @@ test_that("a character batch column is coerced to a factor, with a warning", {
 
 test_that("standardize = TRUE returns z-scores for out-of-sample rows too", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   out <- suppressWarnings(
     score_centiles(m, s$all, batch_term = "Study", standardize = TRUE)
@@ -147,8 +142,8 @@ test_that("standardize = TRUE returns z-scores for out-of-sample rows too", {
 
 test_that("supplying fit_data agrees with the data-free path", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   free   <- suppressWarnings(score_centiles(m, s$all, batch_term = "Study"))
   withfd <- suppressWarnings(
@@ -161,8 +156,8 @@ test_that("supplying fit_data agrees with the data-free path", {
 
 test_that("removing an unseen study's offset makes its centiles roughly uniform", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   oos <- s$all[s$all$Study == "D", , drop = FALSE]   # simulated offset +3
 
@@ -182,8 +177,8 @@ test_that("removing an unseen study's offset makes its centiles roughly uniform"
 
 test_that("a multi-parameter family (BCCG) flows through the batch path", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train, family = "BCCG")
+  s <- batch_data()
+  m <- batch_model("BCCG")
 
   out <- suppressWarnings(score_centiles(m, s$all, batch_term = "Study"))
   expect_length(out, nrow(s$all))
@@ -196,8 +191,8 @@ test_that("score_centiles.gamlss2 handles mixed known and unknown levels", {
   skip_if_not_installed("gamlss2")
   skip_if_no_charts_dev()
 
-  s <- split_batch(sim_batch())
-  m2 <- fit_batch_gamlss2(s$train)
+  s <- batch_data()
+  m2 <- batch_model2()
 
   out <- suppressWarnings(score_centiles(m2, s$all, batch_term = "Study"))
 
@@ -212,7 +207,7 @@ test_that("score_centiles.gamlss2 handles mixed known and unknown levels", {
 })
 
 test_that("levels seen in fitting are not treated as new for a random() model", {
-  s <- split_batch(sim_batch())
+  s <- batch_data()
   m <- fit_batch_random(s$train)
 
   expect_no_warning(
@@ -223,8 +218,8 @@ test_that("levels seen in fitting are not treated as new for a random() model", 
 # ---- min_ref: refuse to score a batch too thin to back its own offset -------
 
 test_that("min_ref is validated before anything else happens", {
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   for (bad in list("5", NA_real_, -1, c(5, 10), NULL)) {
     expect_error(score_centiles(m, s$all, batch_term = "Study", min_ref = bad),
@@ -234,8 +229,8 @@ test_that("min_ref is validated before anything else happens", {
 
 test_that("a batch that clears min_ref is scored normally when no ref_data is given", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
 
   #with no ref_data the batch backs its own offset, so the count that matters is
   #the batch's own size - 200 rows here, well clear of any of these thresholds
@@ -249,13 +244,23 @@ test_that("a batch that clears min_ref is scored normally when no ref_data is gi
                tolerance = 1e-12)
 })
 
-test_that("an under-referenced batch scores NA in exactly its own rows", {
+test_that("an under-referenced batch scores NA in exactly its own rows, and says so", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   thin <- thin_batch(s$all, level = "D", n = 3)   # E stays at full size
 
-  out <- suppressWarnings(score_centiles(m, thin, batch_term = "Study", min_ref = 10))
+  #the warning names the level, the count and the threshold. Muffle the
+  #(expected) new-levels warning only, so expect_warning() sees the min_ref one
+  expect_warning(
+    withCallingHandlers(
+      out <- score_centiles(m, thin, batch_term = "Study", min_ref = 10),
+      warning = function(w) {
+        if (!grepl("min_ref", conditionMessage(w))) invokeRestart("muffleWarning")
+      }
+    ),
+    regexp = "Only 3 reference row\\(s\\) in level 'D' of `Study` \\(min_ref = 10\\)"
+  )
 
   expect_length(out, nrow(thin))
   expect_equal(which(is.na(out)), which(thin$Study == "D"))
@@ -268,29 +273,19 @@ test_that("an under-referenced batch scores NA in exactly its own rows", {
                suppressWarnings(score_centiles(m, thin[keep, , drop = FALSE],
                                                batch_term = "Study")),
                tolerance = 1e-8)
-})
 
-test_that("the min_ref warning names the level, the count and the threshold", {
-  skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
-  thin <- thin_batch(s$all, level = "D", n = 3)
-
-  expect_warning(
-    withCallingHandlers(
-      score_centiles(m, thin, batch_term = "Study", min_ref = 10),
-      warning = function(w) {
-        if (!grepl("min_ref", conditionMessage(w))) invokeRestart("muffleWarning")
-      }
-    ),
-    regexp = "Only 3 reference row\\(s\\) in level 'D' of `Study` \\(min_ref = 10\\)"
-  )
+  #standardize = TRUE returns NA in both columns for the skipped batch
+  std <- suppressWarnings(
+    score_centiles(m, thin, batch_term = "Study", min_ref = 10, standardize = TRUE))
+  expect_true(all(is.na(std$centile[!keep])))
+  expect_true(all(is.na(std$std_score[!keep])))
+  expect_true(all(is.finite(std$std_score[keep])))
 })
 
 test_that("min_ref counts reference rows, not batch rows, when ref_data is given", {
   skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
+  s <- batch_data()
+  m <- batch_model()
   d <- add_dx(s$all)
 
   #a threshold the full batch clears easily but its control subset does not
@@ -308,27 +303,12 @@ test_that("min_ref counts reference rows, not batch rows, when ref_data is given
   expect_true(all(is.finite(ok[d$Study == "D"])))
 })
 
-test_that("standardize = TRUE returns NA in both columns for a skipped batch", {
-  skip_if_no_charts_dev()
-  s <- split_batch(sim_batch())
-  m <- fit_batch_gamlss(s$train)
-  thin <- thin_batch(s$all, level = "D", n = 3)
-
-  out <- suppressWarnings(
-    score_centiles(m, thin, batch_term = "Study", min_ref = 10, standardize = TRUE))
-
-  na_rows <- thin$Study == "D"
-  expect_true(all(is.na(out$centile[na_rows])))
-  expect_true(all(is.na(out$std_score[na_rows])))
-  expect_true(all(is.finite(out$std_score[!na_rows])))
-})
-
 test_that("score_centiles.gamlss2 honours min_ref too", {
   skip_if_not_installed("gamlss2")
   skip_if_no_charts_dev()
 
-  s <- split_batch(sim_batch())
-  m2 <- fit_batch_gamlss2(s$train)
+  s <- batch_data()
+  m2 <- batch_model2()
   thin <- thin_batch(s$all, level = "D", n = 3)
 
   out <- suppressWarnings(score_centiles(m2, thin, batch_term = "Study", min_ref = 10))

@@ -19,18 +19,10 @@ fit_pvc <- function(formula, sigma.formula = ~1, d) {
                                   family = "GA", trace = FALSE))
 }
 
-# the fit's own link-scale predictor for parameter p
-coef_lp <- function(m, p) {
-  S  <- m[[paste0(p, ".s")]]
-  lp <- drop(m[[paste0(p, ".x")]] %*% .zap_aliased(coef(m, p)))
-  if (!is.null(S)) lp <- lp + rowSums(S)
-  unname(lp)
-}
-
 expect_matches_fit <- function(m, data = NULL, d) {
   m2 <- .pvc_fill_by_means(m, data)
   for (p in m$parameters)
-    expect_equal(.lp_nodata_gamlss(m2, p, d), coef_lp(m, p), tolerance = 1e-12, info = p)
+    expect_equal(.lp_nodata_gamlss(m2, p, d), fit_lp(m, p), tolerance = 1e-12, info = p)
 }
 
 test_that("pvc(by = numeric) is rebuilt exactly when z is also a linear term", {
@@ -86,8 +78,9 @@ test_that("pvc() without by, and with non-default control, is rebuilt exactly", 
 test_that("pvc() on a transformed covariate or with quantile knots is not eligible", {
   d <- sim_pvc()
   expect_false(.datafree_eligible_gamlss(fit_pvc(y ~ pvc(log(x)), d = d)))
+  # quantile knots make the fit itself slow, so use a small sample for that one
   expect_false(.datafree_eligible_gamlss(
-    fit_pvc(y ~ pvc(x, control = pvc.control(quantiles = TRUE)), d = d)))
+    fit_pvc(y ~ pvc(x, control = pvc.control(quantiles = TRUE)), d = sim_pvc(n = 60))))
 })
 
 test_that("drop.term on a pvc() by variable removes that term", {
@@ -101,22 +94,4 @@ test_that("drop.term on a pvc() by variable removes that term", {
   expect_equal(lp_full - lp_drop, unname(pvc_col), tolerance = 1e-12)
 })
 
-test_that("sanitize_gamlss() keeps pvc() models exact and strips per-observation data", {
-  d <- sim_pvc()
-  m <- fit_pvc(y ~ g + pvc(x, by = z) + pvc(x, by = g), ~ pvc(x), d)
-
-  expect_error(sanitize_gamlss(m), "fit_data")
-  clean <- sanitize_gamlss(m, fit_data = d)
-
-  ref <- .pvc_fill_by_means(m, d)
-  for (p in m$parameters)
-    expect_equal(.lp_nodata_gamlss(clean, p, d), .lp_nodata_gamlss(ref, p, d),
-                 tolerance = 1e-12, info = p)
-  expect_equal(.lp_nodata_gamlss(clean, "mu", d), coef_lp(m, "mu"), tolerance = 1e-12)
-
-  expect_length(audit_gamlss(clean, quiet = TRUE), 0)
-  # the mean is the only thing taken from fit_data
-  sm <- clean$mu.coefSmo[[1]]
-  expect_equal(sm$spec$by_mean, mean(d$z))
-  expect_null(sm$x); expect_null(sm$by); expect_null(sm$fv)
-})
+# sanitize_gamlss() on pvc() models is tested in test-sanitize.R
