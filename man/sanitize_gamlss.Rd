@@ -39,7 +39,8 @@ carries any length-\eqn{n} vector from which the training data could be recovere
 \details{
 Retains only the components necessary for data-free prediction
 (\code{parameters}, \code{family}, each parameter's \code{.link}, \code{.formula}, \code{.terms},
-\code{.coefficients}, \code{.coefSmo}, \code{.xlevels}, and fit summaries such as the
+\code{.coefficients}, \code{.coefSmo}, \code{.xlevels}, \code{.contrasts} (each factor's contrast
+coding, copied from the discarded design matrix), and fit summaries such as the
 deviances and AIC). Each \code{pb()} and \code{pvc()} smooth is reduced to its B-spline
 coefficients plus the handful of numbers needed to rebuild its basis (stored as
 \verb{$spec}), so it predicts exactly as the original does. Each \code{random()} effect's

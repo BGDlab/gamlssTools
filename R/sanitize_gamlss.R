@@ -17,7 +17,8 @@
 #'
 #' Retains only the components necessary for data-free prediction
 #' (`parameters`, `family`, each parameter's `.link`, `.formula`, `.terms`,
-#' `.coefficients`, `.coefSmo`, `.xlevels`, and fit summaries such as the
+#' `.coefficients`, `.coefSmo`, `.xlevels`, `.contrasts` (each factor's contrast
+#' coding, copied from the discarded design matrix), and fit summaries such as the
 #' deviances and AIC). Each `pb()` and `pvc()` smooth is reduced to its B-spline
 #' coefficients plus the handful of numbers needed to rebuild its basis (stored as
 #' `$spec`), so it predicts exactly as the original does. Each `random()` effect's
@@ -173,6 +174,9 @@ sanitize_gamlss <- function(gamlssModel,
   out <- gamlssModel[intersect(names(gamlssModel), keep)]
 
   for (p in params) {
+
+    ## keep contrasts for any factors
+    out[[paste0(p, ".contrasts")]] <- .contrasts_gamlss(gamlssModel, p)
 
     ## Throw away the n x k matrix of per-observation smooth contributions.
     s_nm <- paste0(p, ".s")

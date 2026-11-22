@@ -223,6 +223,24 @@
   b
 }
 
+# ---- internal: the contrast coding each factor was fitted with ---------------
+# Recover the coding gamlss used in the fit (contrasts attribute of
+# design matrix `<param>.x`), which sanitize_gamlss() copies to `<param>.contrasts`. 
+# Returns a named list (var -> coding name or matrix), 
+# an empty list when the fit has no factor, or NULL when the coding was not recorded.
+#' @keywords internal
+#' @noRd
+.contrasts_gamlss <- function(object, p) {
+  # pull if saved by sanitize
+  nm <- paste0(p, ".contrasts")
+  if (nm %in% names(object)) return(as.list(object[[nm]]))
+  # else get from matrix
+  X <- object[[paste0(p, ".x")]]
+  if (is.null(X)) return(NULL)                      # sanitized before .contrasts existed
+  ctr <- attr(X, "contrasts")
+  if (is.null(ctr)) list() else ctr
+}
+
 # ---- internal: data-free link-scale linear predictor for one parameter -------
 # Rebuilds parameter `p`'s link-scale predictor on `newdata` WITHOUT the original
 # fitting data, optionally dropping `drop.term`.
@@ -230,7 +248,8 @@
 #' @noRd
 .lp_nodata_gamlss <- function(object, p, newdata, drop.term = NULL) {
   cf   <- coef(object, p)
-  tl   <- attr(terms(object[[paste0(p, ".formula")]]), "term.labels")
+  tt   <- terms(object[[paste0(p, ".formula")]])
+  tl   <- attr(tt, "term.labels")
   # the smooth terms; none -> empty, so the loops below simply don't run
   sm   <- colnames(object[[paste0(p, ".s")]]); if (is.null(sm)) sm <- character(0)
   pb_lab     <- sm[grepl("^pb\\(", sm)]
@@ -251,23 +270,46 @@
     }
   }
   
-  # parametric terms (or intercept only)
-  p_formula <- if (length(param_lab)) stats::reformulate(param_lab) else ~1
+  # parametric terms (or intercept only), keeping the fitted formula's intercept
+  # (y ~ 0 + z codes z with one column per level, not reference + contrasts)
+  has_int   <- attr(tt, "intercept") == 1
+  p_formula <- if (length(param_lab)) stats::reformulate(param_lab, intercept = has_int)
+               else if (has_int) ~1 else ~0
   # keep rows with NA covars so output stays aligned with newdata
   mf  <- stats::model.frame(p_formula, newdata, na.action = stats::na.pass)
-  Xp  <- stats::model.matrix(p_formula, mf) # newdata design matrix
+  # rebuild each factor with the coding it was FITTED with (see .contrasts_gamlss())
+  fvars <- Filter(function(v) is.factor(mf[[v]]), intersect(names(xlev), names(mf)))
+  if (length(fvars)) {
+    ctr <- .contrasts_gamlss(object, p)
+    unknown <- if (is.null(ctr)) fvars else setdiff(fvars, names(ctr))
+    if (length(unknown))
+      stop("the contrast coding of factor(s) ", paste(unknown, collapse = ", "),
+           " in ", p, " is not recorded in the model, so they cannot be rebuilt ",
+           "without the original data. Supply the fitting data (e.g. `fit_data`)",
+          call. = FALSE)
+    Xp <- stats::model.matrix(p_formula, mf, contrasts.arg = ctr[fvars])
+  } else {
+    Xp <- stats::model.matrix(p_formula, mf)
+  }
+  # a column absent from coef() means the design matrix has a reconstruction
+  # bug, don't zero it
+  absent <- setdiff(colnames(Xp), names(cf))
+  if (length(absent))
+    stop("data-free rebuild of ", p, " produced design column(s) not in the fit: ",
+         paste(absent, collapse = ", "), ". Supply the fitting data (e.g. `fit_data`).",
+         call. = FALSE)
+  #column in coef() with NA is aliased -> zero 
   bp  <- .zap_aliased(cf[colnames(Xp)])
   lp  <- as.numeric(Xp %*% bp) # parametric linear predictor
   
   # pb() smooths: linear part (coef * x) + B-spline part (see pb section)
   for (lab in pb_lab) {
-    vars <- all.vars(str2lang(lab))                    # variables used in the term
+    vars <- all.vars(str2lang(lab)) 
     if (!is.null(drop.term) && drop.term %in% vars) next   # skip pb on a dropped term
-    spec <- .pb_spec(object, p, match(lab, sm), lab)   # how to rebuild this term
+    spec <- .pb_spec(object, p, match(lab, sm), lab) 
     if (!is.list(spec)) stop("cannot rebuild ", lab, " without the original data: ", spec)
     x  <- newdata[[spec$x]]                            # the covariate in newdata
-    # gamlss fits pb()'s linear trend as a parametric coefficient named after
-    # the term, and the smooth part on top of it
+    # linear component plus smooth
     lp <- lp + .zap_aliased(cf[[lab]]) * x + .pb_eval(spec, x, lab)
   }
   

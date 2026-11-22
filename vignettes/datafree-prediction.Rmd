@@ -191,7 +191,10 @@ pieces, in this order:
 
 Each factor covariate in `newdata` is re-leveled to match the levels the model
 was trained on (`object$<p>.xlevels`), so dummy columns line up with the fitted
-coefficients. Ordered factors stay ordered.
+coefficients. The contrast coding each factor was fitted with is read back from 
+the `"contrasts"` attribute of `object$<p>.x`, **which requires fitting data**, 
+or `object$<p>.contrasts` where it's recorded on sanitized models (see 
+([section 7](#sanitize)). Ordered factors stay ordered.
 
 ## 5.2 The parametric part
 
@@ -205,6 +208,9 @@ The parametric coefficients are pulled from `coef(object, p)` by column name,
 because `coef()` also has an entry for every smoother. Some of those coefficients 
 can be `NA`: aliased columns in a rank-deficient fit, such as a linear effect of 
 `Age` if `pb(Age)` is also in the same moment and are set to 0 by `.zap_aliased()`.
+Any columns that are rebuilt in the matrix but aren't in `coef()` are caught as
+an error. The formula's intercept (or its absence, `y ~ 0 + ...`) is kept, since 
+dropping it changes how factors are coded.
 
 ```{r}
 m2 <- gamlss(Pheno ~ pb(Age) + Age + Sex + random(Study),
@@ -468,7 +474,9 @@ set of model configurations, smooths, etc. *Always check that all subject-level*
 3. Keeps only `parameters`, `family`, `type`, `N`, `noObs`, fit summaries
    (`df.fit`, `df.residual`, deviances, `aic`, `sbc`, `method`, `converged`,
    `iter`), and for each parameter its `.link`, `.formula`, `.terms`,
-   `.coefficients`, `.coefSmo`, `.xlevels`, `.s`, `.df` and `.nl.df`. `call`
+   `.coefficients`, `.coefSmo`, `.xlevels`, `.s`, `.df` and `.nl.df`, plus
+   `.contrasts` (each factor's contrast coding, copied from the discarded
+   `.x` design matrix). `call`
    (the `gamlss()` call, which can name your data object or embed a subsetting
    expression) is dropped unless `keep_call = TRUE`.
 4. Empties each `<p>.s` (matrix containing smooth components' fitted values)
