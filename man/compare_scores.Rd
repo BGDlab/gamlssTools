@@ -35,10 +35,9 @@ that model is predicted data-free.}
 }
 \value{
 invisibly, a list with the components the call produced: \code{z_diffs}, a
-named numeric of the \code{max} and \code{mean} absolute z-score difference, with
-\code{n_tied} alongside it; \code{nudged}, present only when a frame had to be moved
-off points that measured nothing; \code{centile_diffs}, a named list holding, for each level
-of \code{sim_grid_list}, the maximum absolute z difference at each centile checked.
+named numeric of the \code{max} and \code{mean} absolute z-score difference; and
+\code{centile_diffs}, a named list holding, for each level of \code{sim_grid_list}, the
+maximum absolute z difference at each centile checked.
 }
 \description{
 Compare either the z-scores that two models assign the same observations and/or compare
@@ -47,14 +46,6 @@ the predicted values of y at each centile.
 \details{
 Warning: not currently set up to handle/tested with \code{data} that contains
 out-of-sample observations (i.e. new batches).
-
-A rebuilt \code{pb()} spline (see \code{\link[=sanitize_gamlss]{sanitize_gamlss()}}) interpolates the grid it was
-rebuilt on, so it reproduces the original smooth \emph{exactly} at each grid node
-and the error peaks between them. These points are uninformative and thus ignored
-by \code{z_diffs} summaries (\code{n_tied} indicates how many such points are ignored).
-If EVERY point in a frame is tied due to smooth interpolation, the comparison is
-moved off those points (by half the smallest gap between distinct covariate values),
-indicated by \code{nudged}.
 
 \code{centile_diffs} is symmetric, so the output is the same regardless of which model
 is passed as \code{gamlssModel1} vs \code{gamlssModel2}.

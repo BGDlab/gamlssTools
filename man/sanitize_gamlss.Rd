@@ -6,23 +6,13 @@
 \usage{
 sanitize_gamlss(
   gamlssModel,
-  grid_n = 2000,
-  xranges = NULL,
   random_level_map = NULL,
   keep_call = FALSE,
-  points_per_edf = 200,
   fit_data = NULL
 )
 }
 \arguments{
 \item{gamlssModel}{a fitted \code{gamlss} model object.}
-
-\item{grid_n}{number of grid points used to rebuild each \code{pb()} interpolation
-function. Defaults to 2000. Higher is more faithful to wigglier smooths but
-makes the stored object larger.}
-
-\item{xranges}{optional named list of covariate ranges, e.g.
-\code{list(age_days = c(0, 36500))}, rather than retaining data min/max.}
 
 \item{random_level_map}{optional named character vector mapping old level ->
 new label, for pseudonymising \code{random()} grouping levels. Must cover every
@@ -30,9 +20,6 @@ level of every \code{random()} term.}
 
 \item{keep_call}{logical, whether to keep \code{gamlssModel$call}. Defaults to
 \code{FALSE}: the call can name your data object or embed a subsetting expression.}
-
-\item{points_per_edf}{grid points per effective degree of freedom below which
-\code{grid_n} is warned about. Defaults to 200. Set to 0 to silence the warning.}
 
 \item{fit_data}{optional; the data the model was fitted on. Only needed for a
 \code{pvc(x, by = z)} smooth with a numeric \code{z} that does not also enter the model as
@@ -53,31 +40,29 @@ carries any length-\eqn{n} vector from which the training data could be recovere
 Retains only the components necessary for data-free prediction
 (\code{parameters}, \code{family}, each parameter's \code{.link}, \code{.formula}, \code{.terms},
 \code{.coefficients}, \code{.coefSmo}, \code{.xlevels}, and fit summaries such as the
-deviances and AIC). Within each smoother, the \code{pb()} interpolation function
-is rebuilt on a regular grid (its closure otherwise holds the sorted covariate
-values), each \code{pvc()} smooth is reduced to its B-spline coefficients plus the
-handful of numbers needed to rebuild its basis (stored as \verb{$spec}), and \code{random()}
-effect's grouping column, fitted values and standard errors are removed.
+deviances and AIC). Each \code{pb()} and \code{pvc()} smooth is reduced to its B-spline
+coefficients plus the handful of numbers needed to rebuild its basis (stored as
+\verb{$spec}), so it predicts exactly as the original does. Each \code{random()} effect's
+grouping column, fitted values and standard errors are removed.
 
 Because right now only \code{pb()}, \code{pvc()} and \code{random()} smooths can be reconstructed without the
 original data, models containing any other smoother (\code{cs()}, \code{ps()}, \code{ga()},
 \code{s()}) or parametric terms whose models are computed from the whole data
-(\code{poly()}, \code{ns()}, \code{bs()}, \code{scale()}, \code{cut()}) are rejected.
+(\code{poly()}, \code{ns()}, \code{bs()}, \code{scale()}, \code{cut()}) are rejected, as are models
+with an \code{offset()} term in any parameter's formula.
 
-pb() smooths are reconstructed over a grid of size \code{grid_n}. How much you need
-depends on how wiggly the smooth is/how many edf are used. A warning is raised when
-\code{grid_n} looks too coarse for a smooth's edf. The default based on testing is
-200 datapoints per edf, but this can be changed using the \code{points_per_edf} arg.
-Always be sure to confirm model fit is retained using \code{\link[=compare_scores]{compare_scores()}}.
+\code{pb()} and \code{pvc()} smooths are rebuilt exactly from their coefficients. Neither
+extrapolates: beyond the fitted covariate range (padded by 1\%) the rebuilt curve
+decays to 0, and a warning is raised. Confirm the sanitized model with
+\code{\link[=compare_scores]{compare_scores()}}.
 
-Quantile smooths (i.e. \code{pb.control(quantiles = TRUE)}) have not been tested for
-datasharing/reconstruction accuracy and thus are not currently supported.
+Quantile knots (\code{pb.control(quantiles = TRUE)}, \code{pvc.control(quantiles = TRUE)})
+place knots at sample quantiles of the covariate, so they are not supported.
 
-\code{pvc()} smooths are rebuilt exactly (no grid). For \code{pvc(x, by = z)} with a numeric
+For \code{pvc(x, by = z)} with a numeric
 \code{z}, gamlss centres \code{z} on its training mean but does not store that mean. It is
 read from the model when \code{z} also enters as a linear term; otherwise pass the
-fitting data as \code{fit_data} so it can be recorded. Quantile knots
-(\code{pvc.control(quantiles = TRUE)}) are not supported.
+fitting data as \code{fit_data} so it can be recorded.
 }
 \section{What still gets shared}{
 
@@ -89,12 +74,11 @@ ones.
 \item the names of \code{random()} BLUPs -- your site, study or subject labels. Use
 \code{random_level_map} to pseudonymise them.
 \item \code{N} and \code{noObs} -- the fitting sample size.
-\item each \code{pb()} smooth's covariate range. This is min/max of your data, i.e.
-two real observations, unless you declare it yourself via \code{xranges}.
-\item each \code{pvc()} smooth's covariate range (padded by 1\%, from which the min/max
-can be recovered exactly). \code{xranges} cannot hide it: the basis is built on
-the observed range. Also the training mean of a numeric \code{by} variable, and the
-levels of a factor \code{by} variable.
+\item each \code{pb()} and \code{pvc()} smooth's covariate range (padded by 1\%, from which
+the min/max of your data -- two real observations -- can be recovered
+exactly). The basis is built on the observed range, so it cannot be hidden.
+\item for \code{pvc()}, the training mean of a numeric \code{by} variable, and the levels of
+a factor \code{by} variable.
 }
 }
 
@@ -108,9 +92,7 @@ levels of a factor \code{by} variable.
 grid <- sim_grid(fit_data, "age_days", "sex", models[[1]])
 
 ## 2. sanitize (eligibility is checked for you, per model)
-clean <- lapply(models, sanitize_gamlss,
-                grid_n  = 500,
-                xranges = list(age_days = c(0, 36500)))
+clean <- lapply(models, sanitize_gamlss)
 
 ## 3. audit
 for (nm in names(clean)) \{ cat("\\n==== ", nm, " ====\\n"); audit_gamlss(clean[[nm]]) \}
@@ -135,7 +117,7 @@ iris_model <- gamlss(Sepal.Width ~ pb(Sepal.Length) + Species,
                      sigma.formula = ~ pb(Sepal.Length),
                      data = iris, family = NO, trace = FALSE)
 
-clean <- sanitize_gamlss(iris_model, xranges = list(Sepal.Length = c(4, 8)))
+clean <- sanitize_gamlss(iris_model)
 audit_gamlss(clean)
 
 #compare outputs

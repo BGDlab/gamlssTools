@@ -26,10 +26,9 @@ flagged.
 \description{
 Recursively walks a gamlssmodel object and checks for atomic vectors of
 length \code{n}, which could be a row-level vector that survived and
-needs investigating. The exception is \code{pb()}, which are reconstructed by
-\code{\link[=sanitize_gamlss]{sanitize_gamlss()}} to length \code{grid_n}, which could coincidentally be equal to
-\code{n}: here the audit confirms that the \code{x} values are evenly spaced (i.e. a
-reconstructed grid).
+needs investigating. An unsanitized \code{pb()} smooth also carries an interpolating
+spline whose table holds the observed covariate values; any such table is
+flagged whatever its length.
 }
 \details{
 The audit only sees vectors longer than \code{max_len} (Default 50). Short but still
